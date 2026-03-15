@@ -1,7 +1,7 @@
 # SteemTwist
 **Steem with a Twist** — a decentralised microblogging dApp built on the Steem blockchain.
 
-Think Twitter, but your posts are permanent, and censorship-resistant. No backend, no build tools, no server — just four static files.
+Think Twitter, but your posts are permanent, censorship-resistant, and optionally earn you crypto rewards. No backend, no build tools, no server — just four static files.
 
 ---
 
@@ -28,6 +28,7 @@ All timestamps use **UTC** to match the Steem blockchain clock.
 - 📝 Post twists up to 280 characters
 - 💬 Reply to any twist inline
 - ❤️ Upvote twists (100% weight)
+- 📖 Thread expansion — long posts and busy threads collapse to a 280-char preview; click to lazy-load the full body and replies
 - 👤 User profile pages with avatar, bio, and monthly twist history
 - 🔄 RPC fallback across multiple nodes
 - 🔒 Read-only mode when Steem Keychain is not installed
@@ -104,8 +105,18 @@ Reusable Vue 3 components.
 - `AuthComponent` — Keychain login input and logout button
 - `UserProfileComponent` — cover image, avatar, display name, and bio
 - `LoadingSpinnerComponent` — animated spinner with message
-- `TwistCardComponent` — renders one twist with like, reply, payout, and inline error display
+- `ThreadComponent` — lazy-loads and renders replies when a thread is expanded
+- `TwistCardComponent` — renders one twist; collapses long/busy posts with a preview and "Expand thread" button
 - `TwistComposerComponent` — textarea with 280-char counter and post button (Ctrl+Enter supported)
+
+**Thread expansion constants** (top of `components.js`)
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `PREVIEW_LENGTH` | `280` | Body chars before collapse triggers |
+| `THREAD_REPLY_THRESHOLD` | `3` | Reply count before collapse triggers |
+
+Both thresholds can be tuned without touching component logic.
 
 ### `app.js`
 
