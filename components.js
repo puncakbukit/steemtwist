@@ -188,16 +188,22 @@ const LoadingSpinnerComponent = {
 const PREVIEW_LENGTH       = 280;
 const THREAD_REPLY_THRESHOLD = 3;
 
+// Shared markdown renderer — configured once, reused everywhere.
+// marked.parse() is synchronous and returns sanitised HTML.
+const markedOptions = { breaks: true, gfm: true };
+function renderMarkdown(text) {
+  if (!text) return "";
+  return marked.parse(text, markedOptions);
+}
+
 // ---- ThreadComponent ----
-// Lazy-loads and renders replies for a collapsed twist.
-// Shown only after the user clicks "Expand thread".
+// Lazy-loads and renders replies for a twist.
+// Mounted when the user clicks the 💬 reply button OR "Expand thread".
 const ThreadComponent = {
   name: "ThreadComponent",
   props: {
-    author:      { type: String, required: true },
-    permlink:    { type: String, required: true },
-    username:    { type: String, default: "" },
-    hasKeychain: { type: Boolean, default: false }
+    author:   { type: String, required: true },
+    permlink: { type: String, required: true }
   },
   data() {
     return {
@@ -214,54 +220,44 @@ const ThreadComponent = {
     }
     this.loading = false;
   },
-  computed: {
-    avatarUrl() {
-      return username =>
-        `https://steemitimages.com/u/${username}/avatar/small`;
+  methods: {
+    avatarUrl(username) {
+      return `https://steemitimages.com/u/${username}/avatar/small`;
     },
-    relativeTime() {
-      return ts => {
-        const diff = Date.now() - steemDate(ts).getTime();
-        const s = Math.floor(diff / 1000);
-        if (s < 60)  return `${s}s ago`;
-        const m = Math.floor(s / 60);
-        if (m < 60)  return `${m}m ago`;
-        const h = Math.floor(m / 60);
-        if (h < 24)  return `${h}h ago`;
-        return `${Math.floor(h / 24)}d ago`;
-      };
-    }
+    relativeTime(ts) {
+      const diff = Date.now() - steemDate(ts).getTime();
+      const s = Math.floor(diff / 1000);
+      if (s < 60)  return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60)  return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24)  return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    },
+    // FIX 3: render reply bodies as markdown too
+    md(text) { return renderMarkdown(text); }
   },
   template: `
-    <div style="
-      margin-top:12px;border-top:2px solid #e8f5e9;padding-top:12px;
-    ">
-      <!-- Loading -->
+    <div style="margin-top:12px;border-top:2px solid #e8f5e9;padding-top:12px;">
+
       <div v-if="loading" style="color:#aaa;font-size:13px;padding:8px 0;">
         Loading replies…
       </div>
 
-      <!-- Error -->
       <div v-else-if="loadError" style="color:#b71c1c;font-size:13px;">
         ⚠️ {{ loadError }}
       </div>
 
-      <!-- Empty -->
       <div v-else-if="replies.length === 0" style="color:#aaa;font-size:13px;">
         No replies yet.
       </div>
 
-      <!-- Reply list -->
       <div v-else>
         <div
           v-for="reply in replies"
           :key="reply.permlink"
-          style="
-            display:flex;gap:10px;padding:10px 0;
-            border-bottom:1px solid #f0f0f0;
-          "
+          style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;"
         >
-          <!-- Avatar -->
           <a :href="'/#/@' + reply.author" style="flex-shrink:0;">
             <img
               :src="avatarUrl(reply.author)"
@@ -269,7 +265,6 @@ const ThreadComponent = {
               @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
             />
           </a>
-          <!-- Content -->
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
               <a
@@ -278,13 +273,12 @@ const ThreadComponent = {
               >@{{ reply.author }}</a>
               <span style="font-size:11px;color:#bbb;">{{ relativeTime(reply.created) }}</span>
             </div>
-            <p style="
-              margin:0;font-size:14px;line-height:1.5;
-              white-space:pre-wrap;word-break:break-word;color:#333;
-            ">{{ reply.body }}</p>
+            <!-- FIX 3: v-html renders markdown instead of raw text -->
+            <div class="twist-body" v-html="md(reply.body)"></div>
           </div>
         </div>
       </div>
+
     </div>
   `
 };
@@ -293,7 +287,8 @@ const ThreadComponent = {
 // Renders a single twist.
 // Long-body posts (> PREVIEW_LENGTH) or busy threads (children > THREAD_REPLY_THRESHOLD)
 // are shown collapsed with a preview and an "Expand thread" button.
-// Expanding lazy-loads the full body and replies via ThreadComponent.
+// The 💬 reply button independently toggles ThreadComponent for any post that has replies,
+// fixing the case where short posts with replies never showed them.
 const TwistCardComponent = {
   name: "TwistCardComponent",
   components: { ThreadComponent },
@@ -305,14 +300,15 @@ const TwistCardComponent = {
   emits: ["voted", "replied"],
   data() {
     return {
-      showReplyBox:   false,
-      replyText:      "",
-      isReplying:     false,
-      isVoting:       false,
-      hasVoted:       false,
-      replyCount:     this.post.children || 0,
-      lastError:      "",
-      threadExpanded: false
+      showReplyBox:    false,
+      showReplies:     false,   // FIX 2: independent toggle for reply list
+      replyText:       "",
+      isReplying:      false,
+      isVoting:        false,
+      hasVoted:        false,
+      replyCount:      this.post.children || 0,
+      lastError:       "",
+      threadExpanded:  false
     };
   },
   computed: {
@@ -329,20 +325,35 @@ const TwistCardComponent = {
       if (h < 24)  return `${h}h ago`;
       return `${Math.floor(h / 24)}d ago`;
     },
-    netVotes() {
-      return this.post.net_votes || 0;
+    // FIX 1: count only upvotes (percent > 0), ignore downvotes
+    upvoteCount() {
+      const votes = this.post.active_votes || [];
+      const ups = votes.filter(v => v.percent > 0).length;
+      return ups + (this.hasVoted ? 1 : 0);
     },
     canAct() {
       return !!this.username && this.hasKeychain;
     },
-    // True when body exceeds limit OR thread is busy.
+    // True when body exceeds limit OR thread is busy — triggers collapse UI.
     isLong() {
       return this.post.body.length > PREVIEW_LENGTH ||
              (this.post.children || 0) > THREAD_REPLY_THRESHOLD;
     },
-    // 280-char preview with ellipsis for collapsed display.
+    // Plain-text 280-char preview for the collapsed state.
     bodyPreview() {
       return this.post.body.slice(0, PREVIEW_LENGTH) + "…";
+    },
+    // FIX 3: rendered markdown for the full body
+    bodyHtml() {
+      return renderMarkdown(this.post.body);
+    },
+    // FIX 3: rendered markdown for the preview (strip HTML tags for plain preview)
+    bodyPreviewHtml() {
+      return renderMarkdown(this.bodyPreview);
+    },
+    // FIX 2: thread should be visible if expanded (long posts) OR replies toggled
+    showThread() {
+      return this.threadExpanded || this.showReplies;
     }
   },
   methods: {
@@ -359,6 +370,15 @@ const TwistCardComponent = {
         }
       });
     },
+    // FIX 2: toggle reply list AND reply compose box together
+    toggleReplies() {
+      if (this.replyCount > 0) {
+        this.showReplies = !this.showReplies;
+      }
+      if (this.canAct) {
+        this.showReplyBox = !this.showReplyBox;
+      }
+    },
     submitReply() {
       const text = this.replyText.trim();
       if (!text || !this.canAct) return;
@@ -367,7 +387,7 @@ const TwistCardComponent = {
         this.isReplying = false;
         if (res.success) {
           this.replyText    = "";
-          this.showReplyBox = false;
+          this.showReplies  = true;
           this.replyCount++;
           this.$emit("replied", this.post);
         } else {
@@ -399,12 +419,15 @@ const TwistCardComponent = {
         </div>
       </div>
 
-      <!-- Body: collapsed preview OR full text -->
-      <p style="margin:0 0 12px;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word;">
-        {{ isLong && !threadExpanded ? bodyPreview : post.body }}
-      </p>
+      <!-- FIX 3: body rendered as markdown via v-html -->
+      <!-- Collapsed: preview markdown. Expanded / short: full markdown. -->
+      <div
+        class="twist-body"
+        v-html="isLong && !threadExpanded ? bodyPreviewHtml : bodyHtml"
+        style="margin-bottom:12px;"
+      ></div>
 
-      <!-- Expand / Collapse thread button -->
+      <!-- Expand / Collapse thread button (long posts only) -->
       <div v-if="isLong" style="margin-bottom:12px;">
         <button
           @click="threadExpanded = !threadExpanded"
@@ -418,18 +441,17 @@ const TwistCardComponent = {
         </button>
       </div>
 
-      <!-- Lazy-loaded thread (replies) -->
+      <!-- FIX 2: ThreadComponent shown when expanded OR when reply list is toggled -->
       <thread-component
-        v-if="threadExpanded"
+        v-if="showThread"
         :author="post.author"
         :permlink="post.permlink"
-        :username="username"
-        :has-keychain="hasKeychain"
       ></thread-component>
 
       <!-- Footer actions -->
       <div style="display:flex;align-items:center;gap:16px;font-size:13px;color:#666;margin-top:12px;">
-        <!-- Like -->
+
+        <!-- FIX 1: upvoteCount ignores downvotes -->
         <button
           @click="vote"
           :disabled="!canAct || isVoting || hasVoted"
@@ -442,21 +464,21 @@ const TwistCardComponent = {
             fontSize: '13px'
           }"
         >
-          {{ isVoting ? "…" : (hasVoted ? "❤️" : "🤍") }} {{ netVotes + (hasVoted ? 1 : 0) }}
+          {{ isVoting ? "…" : (hasVoted ? "❤️" : "🤍") }} {{ upvoteCount }}
         </button>
 
-        <!-- Reply toggle -->
+        <!-- FIX 2: clicking 💬 now both shows replies and opens compose box -->
         <button
-          @click="showReplyBox = !showReplyBox"
-          :disabled="!canAct"
+          @click="toggleReplies"
           style="background:#f5f5f5;color:#555;border:1px solid #ddd;
                  border-radius:20px;padding:4px 12px;font-size:13px;"
         >
           💬 {{ replyCount }}
         </button>
+
       </div>
 
-      <!-- Inline reply box -->
+      <!-- Inline reply compose box -->
       <div v-if="showReplyBox && canAct" style="margin-top:12px;">
         <textarea
           v-model="replyText"
