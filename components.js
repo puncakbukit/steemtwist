@@ -215,6 +215,8 @@ const ReplyCardComponent = {
       isReplying:    false,
       isVoting:      false,
       hasVoted:      false,
+      isRetwisting:  false,
+      hasRetwisted:  false,
       replyCount:    this.reply.children || 0,
       lastError:     ""
     };
@@ -233,10 +235,17 @@ const ReplyCardComponent = {
       if (h < 24)  return `${h}h ago`;
       return `${Math.floor(h / 24)}d ago`;
     },
+    absoluteTime() {
+      const d = steemDate(this.reply.created);
+      if (isNaN(d)) return "";
+      return d.toUTCString().replace(" GMT", " UTC");
+    },
+    replyUrl() {
+      return `#/@${this.reply.author}/${this.reply.permlink}`;
+    },
     bodyHtml() { return renderMarkdown(this.reply.body); },
     canAct()   { return !!this.username && this.hasKeychain; },
     indent()   { return Math.min(this.depth, 4) * 16; },
-    // Count only upvotes (percent > 0), ignore downvotes
     upvoteCount() {
       const votes = this.reply.active_votes || [];
       return votes.filter(v => v.percent > 0).length + (this.hasVoted ? 1 : 0);
@@ -252,6 +261,22 @@ const ReplyCardComponent = {
           this.hasVoted = true;
         } else {
           this.lastError = res.error || res.message || "Vote failed.";
+        }
+      });
+    },
+    retwist() {
+      if (!this.canAct || this.isRetwisting || this.hasRetwisted) return;
+      if (this.reply.author === this.username) {
+        this.lastError = "You cannot retwist your own twist.";
+        return;
+      }
+      this.isRetwisting = true;
+      retwistPost(this.username, this.reply.author, this.reply.permlink, (res) => {
+        this.isRetwisting = false;
+        if (res.success) {
+          this.hasRetwisted = true;
+        } else {
+          this.lastError = res.error || res.message || "Retwist failed.";
         }
       });
     },
@@ -297,16 +322,21 @@ const ReplyCardComponent = {
               :href="'#/@' + reply.author"
               style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:13px;"
             >@{{ reply.author }}</a>
-            <span style="font-size:11px;color:#bbb;">{{ relativeTime }}</span>
+            <!-- Timestamp linked to the reply's own page; absolute time on hover -->
+            <a
+              :href="replyUrl"
+              :title="absoluteTime"
+              style="font-size:11px;color:#bbb;text-decoration:none;"
+            >{{ relativeTime }}</a>
           </div>
 
           <!-- Body -->
           <div class="twist-body" style="font-size:14px;" v-html="bodyHtml"></div>
 
-          <!-- Actions: love + reply -->
-          <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+          <!-- Actions: love + retwist + reply + permalink -->
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
 
-            <!-- Love button -->
+            <!-- Love -->
             <button
               @click="vote"
               :disabled="!canAct || isVoting || hasVoted"
@@ -320,7 +350,22 @@ const ReplyCardComponent = {
               }"
             >{{ isVoting ? "…" : (hasVoted ? "❤️" : "🤍") }} {{ upvoteCount }}</button>
 
-            <!-- Reply button -->
+            <!-- Retwist -->
+            <button
+              @click="retwist"
+              :disabled="!canAct || isRetwisting || hasRetwisted || reply.author === username"
+              :style="{
+                background: hasRetwisted ? '#e8f5e9' : '#f5f5f5',
+                color:      hasRetwisted ? '#1b5e20'  : '#555',
+                border:     hasRetwisted ? '1px solid #a5d6a7' : '1px solid #ddd',
+                borderRadius: '20px', padding: '2px 10px',
+                cursor: (!canAct || hasRetwisted || reply.author === username) ? 'default' : 'pointer',
+                fontSize: '12px'
+              }"
+              :title="reply.author === username ? 'Cannot retwist your own twist' : ''"
+            >{{ isRetwisting ? "…" : (hasRetwisted ? "🔁 Retwisted" : "🔁") }}</button>
+
+            <!-- Reply -->
             <button
               @click="toggleReplies"
               style="
@@ -331,6 +376,13 @@ const ReplyCardComponent = {
             >
               💬 {{ replyCount > 0 ? replyCount + ' repl' + (replyCount === 1 ? 'y' : 'ies') : 'Reply' }}
             </button>
+
+            <!-- Permalink -->
+            <a
+              :href="replyUrl"
+              style="font-size:11px;color:#bbb;text-decoration:none;"
+              title="Open reply page"
+            >🔗</a>
 
           </div>
 
