@@ -91,8 +91,9 @@ Pure async helpers with no Vue or DOM dependencies.
 - `getMonthlyRoot()` → e.g. `feed-2026-03` (UTC)
 - `generateTwistPermlink(username)` → e.g. `tw-20260315-091530-alice` (UTC)
 - `fetchTwistFeed(monthlyRoot)` — fetches and sorts the month's twists newest-first
-- `postTwist(username, message, callback)` — posts a new twist via Keychain
-- `postTwistReply(username, message, parentAuthor, parentPermlink, callback)` — inline reply
+- `buildZeroPayoutOps(...)` — builds a `[comment, comment_options]` operation pair with `max_accepted_payout = "0.000 SBD"` and `allow_votes = true`
+- `postTwist(username, message, callback)` — broadcasts comment + comment_options atomically via `requestBroadcast`
+- `postTwistReply(username, message, parentAuthor, parentPermlink, callback)` — same, for inline replies
 - `voteTwist(voter, author, permlink, weight, callback)` — upvote via Keychain
 
 ### `components.js`
@@ -123,7 +124,30 @@ Vue Router views and root App shell.
 
 ---
 
-## RPC nodes
+## No payouts by design
+
+SteemTwist deliberately disables monetary rewards on all twists and replies. This is enforced at the **protocol level**, not just the UI, by broadcasting a `comment_options` operation atomically alongside every `comment`:
+
+```
+max_accepted_payout    = "0.000 SBD"
+allow_votes            = true    ← likes still work as appreciation signals
+allow_curation_rewards = false
+```
+
+Because both operations are sent in the same transaction, the payout limit is set from the moment of posting and cannot be changed retroactively.
+
+**Why:**
+- Prevents reward farming bots (no financial incentive for spam)
+- Keeps the Steem reward pool for long-form content
+- Removes payout timers and reward calculations from the UI
+- Reduces vote-buying and trending manipulation
+- Keeps the ecosystem community-driven
+
+Votes remain enabled so users can still express appreciation — the heart just doesn't move money.
+
+---
+
+
 
 Requests fall back automatically across this list if a node fails:
 
