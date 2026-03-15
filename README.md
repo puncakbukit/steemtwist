@@ -1,7 +1,7 @@
 # SteemTwist
 **Steem with a Twist** — a decentralised microblogging dApp built on the Steem blockchain.
 
-Think Twitter, but your posts are permanent, censorship-resistant, and optionally earn you crypto rewards. No backend, no build tools, no server — just four static files.
+Your posts are permanent and censorship-resistant. No backend, no build tools, no server — just four static files.
 
 ---
 
