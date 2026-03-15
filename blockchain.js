@@ -319,3 +319,59 @@ function postTwistReply(username, message, parentAuthor, parentPermlink, callbac
 function voteTwist(voter, author, permlink, weight, callback) {
   steem_keychain.requestVote(voter, permlink, author, weight, callback);
 }
+
+// ---- Firehose stream ----
+
+// Start streaming all operations from the blockchain.
+// Calls onTwist(post) whenever a new top-level SteemTwist post is detected.
+// Returns a stop() function — call it to cancel the stream.
+//
+// The raw stream operation only contains the comment fields (no vote counts,
+// no children count). We synthesise a minimal post object immediately for
+// zero-latency display, then enrich it with a getContent call so the card
+// has accurate metadata once the node has indexed it.
+function startFirehose(monthlyRoot, onTwist) {
+  let active = true;
+
+  steem.api.streamOperations((err, op) => {
+    if (!active) return;
+    if (err)     return;
+
+    const [type, data] = op;
+    if (type !== "comment")                          return;
+    if (data.parent_author   !== TWIST_CONFIG.ROOT_ACCOUNT) return;
+    if (data.parent_permlink !== monthlyRoot)        return;
+
+    // Build a minimal post object so the card renders instantly.
+    const now = new Date().toISOString().replace("T", " ").slice(0, 19);
+    const post = {
+      author:               data.author,
+      permlink:             data.permlink,
+      body:                 data.body,
+      parent_author:        data.parent_author,
+      parent_permlink:      data.parent_permlink,
+      created:              now,
+      net_votes:            0,
+      active_votes:         [],
+      children:             0,
+      pending_payout_value: "0.000 SBD",
+      json_metadata:        data.json_metadata || "",
+      _firehose:            true   // flag so HomeView can apply the flash style
+    };
+
+    onTwist(post);
+
+    // Enrich asynchronously — replace the synthetic post with real data
+    // once the node has had a moment to index the operation.
+    setTimeout(() => {
+      if (!active) return;
+      fetchPost(data.author, data.permlink).then(full => {
+        if (!active || !full || !full.author) return;
+        full._firehose = false;
+        onTwist(full, true /* isUpdate */);
+      }).catch(() => {});
+    }, 4000);
+  });
+
+  return { stop() { active = false; } };
+}

@@ -12,6 +12,7 @@ const { createRouter, createWebHashHistory, useRoute }                = VueRoute
 
 // ---- HomeView ----
 // Main timeline: composer + live feed of this month's twists.
+// Firehose mode streams new twists directly from the blockchain in real time.
 const HomeView = {
   name: "HomeView",
   inject: ["username", "hasKeychain", "notify"],
@@ -19,10 +20,13 @@ const HomeView = {
 
   data() {
     return {
-      twists:      [],
-      loading:     true,
-      isPosting:   false,
-      monthlyRoot: getMonthlyRoot()
+      twists:        [],
+      loading:       true,
+      isPosting:     false,
+      monthlyRoot:   getMonthlyRoot(),
+      firehoseOn:    false,
+      firehoseStream: null,    // { stop() } handle returned by startFirehose
+      firehoseError:  ""
     };
   },
 
@@ -30,11 +34,23 @@ const HomeView = {
     await this.loadFeed();
   },
 
+  unmounted() {
+    // Always stop the stream when the view is destroyed (route change, etc.)
+    this.stopFirehose();
+  },
+
   methods: {
     async loadFeed() {
       this.loading = true;
       try {
-        this.twists = await fetchTwistFeed(this.monthlyRoot);
+        const fresh = await fetchTwistFeed(this.monthlyRoot);
+        // Merge: keep any live-streamed posts not yet in the full fetch,
+        // then replace everything else with the enriched server data.
+        const serverPermalinks = new Set(fresh.map(p => p.permlink));
+        const liveOnly = this.twists.filter(
+          p => p._firehose && !serverPermalinks.has(p.permlink)
+        );
+        this.twists = [...liveOnly, ...fresh];
       } catch (e) {
         this.notify("Could not load twists. Please try again.", "error");
       }
@@ -48,30 +64,101 @@ const HomeView = {
         this.isPosting = false;
         if (res.success) {
           this.notify("Twist posted! 🌀", "success");
-          // Small delay so the node can index the new post
+          // Small delay so the node can index the new post.
+          // If firehose is on, it will likely inject the post before this runs.
           await new Promise(r => setTimeout(r, 2000));
           await this.loadFeed();
         } else {
           this.notify(res.error || res.message || "Failed to post twist.", "error");
         }
       });
+    },
+
+    toggleFirehose() {
+      if (this.firehoseOn) {
+        this.stopFirehose();
+      } else {
+        this.startFirehose();
+      }
+    },
+
+    startFirehose() {
+      this.firehoseError = "";
+      this.firehoseOn    = true;
+
+      this.firehoseStream = startFirehose(this.monthlyRoot, (post, isUpdate) => {
+        if (isUpdate) {
+          // Replace the synthetic placeholder with the enriched post.
+          const idx = this.twists.findIndex(p => p.permlink === post.permlink);
+          if (idx !== -1) {
+            this.twists.splice(idx, 1, post);
+          }
+          return;
+        }
+
+        // Deduplicate — the user's own post may arrive here AND via loadFeed().
+        if (this.twists.some(p => p.permlink === post.permlink)) return;
+
+        // Prepend with flash flag, then clear the flag after animation ends.
+        this.twists.unshift(post);
+        setTimeout(() => {
+          const p = this.twists.find(t => t.permlink === post.permlink);
+          if (p) p._firehose = false;
+        }, 2600);
+      });
+    },
+
+    stopFirehose() {
+      if (this.firehoseStream) {
+        this.firehoseStream.stop();
+        this.firehoseStream = null;
+      }
+      this.firehoseOn = false;
     }
   },
 
   template: `
     <div style="margin-top:20px;">
 
-      <!-- Month badge -->
-      <div style="font-size:13px;color:#888;margin-bottom:14px;">
-        📅 Showing twists for <strong>{{ monthlyRoot }}</strong>
+      <!-- Top bar: month badge + refresh + firehose toggle -->
+      <div style="
+        display:flex;align-items:center;flex-wrap:wrap;gap:8px;
+        font-size:13px;color:#888;margin-bottom:14px;
+      ">
+        <span>📅 <strong>{{ monthlyRoot }}</strong></span>
+
         <button
           @click="loadFeed"
-          style="margin-left:10px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;
+          style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;
                  border-radius:12px;padding:2px 10px;font-size:12px;"
         >⟳ Refresh</button>
+
+        <!-- Firehose toggle -->
+        <button
+          @click="toggleFirehose"
+          :style="{
+            borderRadius: '12px', padding: '2px 12px', fontSize: '12px',
+            fontWeight: '600', border: '1px solid',
+            background:   firehoseOn ? '#fff3e0' : '#f5f5f5',
+            color:        firehoseOn ? '#e65100' : '#888',
+            borderColor:  firehoseOn ? '#ffb74d' : '#ddd'
+          }"
+          :title="firehoseOn ? 'Stop live stream' : 'Start live stream'"
+        >
+          {{ firehoseOn ? '🔥 Firehose ON' : '🔥 Firehose OFF' }}
+        </button>
+
+        <!-- Live pulse indicator -->
+        <span v-if="firehoseOn" style="display:flex;align-items:center;gap:5px;color:#e65100;font-size:12px;">
+          <span style="
+            display:inline-block;width:8px;height:8px;border-radius:50%;
+            background:#e65100;animation:twistFlash 1s ease-in-out infinite alternate;
+          "></span>
+          Live
+        </span>
       </div>
 
-      <!-- Composer (only when logged in with Keychain) -->
+      <!-- Composer -->
       <twist-composer-component
         v-if="username && hasKeychain"
         :username="username"
@@ -101,6 +188,7 @@ const HomeView = {
         :post="post"
         :username="username"
         :has-keychain="hasKeychain"
+        :class="post._firehose ? 'twist-flash' : ''"
         @voted="loadFeed"
       ></twist-card-component>
 
@@ -174,52 +262,28 @@ const ProfileView = {
 };
 
 // ---- AboutView ----
+// Fetches README.md from the same directory and renders it as markdown.
 const AboutView = {
   name: "AboutView",
+  inject: ["notify"],
+  data() {
+    return { html: "", loading: true };
+  },
+  async created() {
+    try {
+      const res  = await fetch("README.md");
+      if (!res.ok) throw new Error(res.statusText);
+      const text = await res.text();
+      this.html  = marked.parse(text, { breaks: true, gfm: true });
+    } catch (e) {
+      this.notify("Could not load README.md.", "error");
+    }
+    this.loading = false;
+  },
   template: `
-    <div style="margin-top:30px;max-width:600px;margin-left:auto;margin-right:auto;text-align:left;">
-      <h2>About SteemTwist 🌀</h2>
-      <p>
-        <strong>SteemTwist</strong> is a decentralised microblogging dApp built on the
-        <strong>Steem blockchain</strong>. Think Twitter, but your twists are permanent
-        and censorship-resistant.
-      </p>
-
-      <h3>Terminology</h3>
-      <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:12px;">
-        <thead>
-          <tr style="background:#e8f5e9;">
-            <th style="text-align:left;padding:7px 10px;border:1px solid #c8e6c9;">Blockchain object</th>
-            <th style="text-align:left;padding:7px 10px;border:1px solid #c8e6c9;">SteemTwist term</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Root monthly post</td><td style="padding:6px 10px;border:1px solid #e0e0e0;">Feed root</td></tr>
-          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Comment reply</td>    <td style="padding:6px 10px;border:1px solid #e0e0e0;">Twist</td></tr>
-          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Reply to twist</td>   <td style="padding:6px 10px;border:1px solid #e0e0e0;">Reply</td></tr>
-          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Comment tree</td>     <td style="padding:6px 10px;border:1px solid #e0e0e0;">Thread</td></tr>
-          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Upvote</td>           <td style="padding:6px 10px;border:1px solid #e0e0e0;">Twist love ❤️</td></tr>
-        </tbody>
-      </table>
-
-      <h3>How it works</h3>
-      <ul style="line-height:1.8;">
-        <li>Each twist is a blockchain comment posted under a shared monthly feed root
-            (<code>@steemtwist / feed-YYYY-MM</code>).</li>
-        <li>Permlinks are deterministic: <code>tw-YYYYMMDD-HHMMSS-username</code>.</li>
-        <li>Authentication and signing use <strong>Steem Keychain</strong> — your keys never leave your device.</li>
-        <li>Payouts are disabled — twists are for conversation, not rewards.</li>
-        <li>The site is fully static and can be hosted on <strong>GitHub Pages</strong> for free.</li>
-      </ul>
-
-      <h3>Tech stack</h3>
-      <ul style="line-height:1.8;">
-        <li>steem-js (blockchain API)</li>
-        <li>Steem Keychain (signing)</li>
-        <li>Vue 3 CDN + Vue Router 4</li>
-        <li>Zero backend, zero build tools</li>
-      </ul>
-      <p style="color:#888;font-size:13px;margin-top:20px;">SteemTwist v0.1</p>
+    <div style="max-width:700px;margin:30px auto 0;text-align:left;">
+      <loading-spinner-component v-if="loading"></loading-spinner-component>
+      <div v-else class="twist-body readme-body" v-html="html"></div>
     </div>
   `
 };
@@ -235,7 +299,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHashHistory(),
+  history: createWebHashHistory('/steemtwist/'),
   routes
 });
 
@@ -339,9 +403,14 @@ const App = {
       flex-wrap:wrap;gap:8px;
     ">
       <router-link to="/" style="text-decoration:none;">
-        <span style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:1px;">
-          🌀 SteemTwist
-        </span>
+        <div>
+          <span style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:1px;">
+            🌀 SteemTwist
+          </span>
+          <div style="color:#a5d6a7;font-size:12px;letter-spacing:0.5px;margin-top:1px;">
+            Steem with a Twist
+          </div>
+        </div>
       </router-link>
 
       <nav style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">

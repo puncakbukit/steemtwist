@@ -202,12 +202,10 @@ function renderMarkdown(text) {
 // so the two can reference each other via the global component registry.
 const ReplyCardComponent = {
   name: "ReplyCardComponent",
-  // ThreadComponent is registered globally in app.js; no local declaration
-  // needed here — Vue resolves it at runtime from the global registry.
   inject: ["username", "hasKeychain"],
   props: {
     reply: { type: Object, required: true },
-    depth: { type: Number, default: 0 }   // indent level, capped at 4
+    depth: { type: Number, default: 0 }
   },
   data() {
     return {
@@ -215,6 +213,8 @@ const ReplyCardComponent = {
       showChildren:  false,
       replyText:     "",
       isReplying:    false,
+      isVoting:      false,
+      hasVoted:      false,
       replyCount:    this.reply.children || 0,
       lastError:     ""
     };
@@ -235,10 +235,26 @@ const ReplyCardComponent = {
     },
     bodyHtml() { return renderMarkdown(this.reply.body); },
     canAct()   { return !!this.username && this.hasKeychain; },
-    // Cap visual indent at 4 levels so deep threads stay readable on mobile
-    indent()   { return Math.min(this.depth, 4) * 16; }
+    indent()   { return Math.min(this.depth, 4) * 16; },
+    // Count only upvotes (percent > 0), ignore downvotes
+    upvoteCount() {
+      const votes = this.reply.active_votes || [];
+      return votes.filter(v => v.percent > 0).length + (this.hasVoted ? 1 : 0);
+    }
   },
   methods: {
+    vote() {
+      if (!this.canAct || this.isVoting || this.hasVoted) return;
+      this.isVoting = true;
+      voteTwist(this.username, this.reply.author, this.reply.permlink, 10000, (res) => {
+        this.isVoting = false;
+        if (res.success) {
+          this.hasVoted = true;
+        } else {
+          this.lastError = res.error || res.message || "Vote failed.";
+        }
+      });
+    },
     toggleReplies() {
       if (this.replyCount > 0) this.showChildren = !this.showChildren;
       if (this.canAct)         this.showReplyBox  = !this.showReplyBox;
@@ -287,8 +303,24 @@ const ReplyCardComponent = {
           <!-- Body -->
           <div class="twist-body" style="font-size:14px;" v-html="bodyHtml"></div>
 
-          <!-- Reply action -->
-          <div style="margin-top:6px;">
+          <!-- Actions: love + reply -->
+          <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+
+            <!-- Love button -->
+            <button
+              @click="vote"
+              :disabled="!canAct || isVoting || hasVoted"
+              :style="{
+                background: hasVoted ? '#a5d6a7' : '#e8f5e9',
+                color: hasVoted ? '#1b5e20' : '#2e7d32',
+                border: '1px solid #a5d6a7',
+                borderRadius: '20px', padding: '2px 10px',
+                cursor: (!canAct || hasVoted) ? 'default' : 'pointer',
+                fontSize: '12px'
+              }"
+            >{{ isVoting ? "…" : (hasVoted ? "❤️" : "🤍") }} {{ upvoteCount }}</button>
+
+            <!-- Reply button -->
             <button
               @click="toggleReplies"
               style="
@@ -299,13 +331,14 @@ const ReplyCardComponent = {
             >
               💬 {{ replyCount > 0 ? replyCount + ' repl' + (replyCount === 1 ? 'y' : 'ies') : 'Reply' }}
             </button>
+
           </div>
 
           <!-- Compose box -->
           <div v-if="showReplyBox && canAct" style="margin-top:8px;">
             <textarea
               v-model="replyText"
-              placeholder="Write a reply to this twist…"
+              placeholder="Write a reply…"
               maxlength="1000"
               style="
                 width:100%;box-sizing:border-box;
@@ -336,7 +369,7 @@ const ReplyCardComponent = {
             >✕</button>
           </div>
 
-          <!-- Nested children — recursive ThreadComponent -->
+          <!-- Nested children -->
           <thread-component
             v-if="showChildren"
             :author="reply.author"

@@ -75,6 +75,23 @@
     .twist-body blockquote { border-left: 3px solid #a5d6a7; margin: 6px 0; padding: 4px 10px; color: #555; }
     .twist-body a          { color: #2e7d32; }
     .twist-body img        { max-width: 100%; border-radius: 6px; margin-top: 6px; }
+    /* README rendering on the About page */
+    .readme-body           { font-size: 15px; line-height: 1.7; color: #333; }
+    .readme-body h1        { font-size: 1.6em; border-bottom: 2px solid #e8f5e9; padding-bottom: 6px; margin-bottom: 12px; }
+    .readme-body h2        { font-size: 1.3em; border-bottom: 1px solid #e8f5e9; padding-bottom: 4px; margin: 24px 0 10px; }
+    .readme-body h3        { font-size: 1.1em; margin: 18px 0 8px; }
+    .readme-body table     { width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0; }
+    .readme-body th        { background: #e8f5e9; text-align: left; padding: 7px 10px; border: 1px solid #c8e6c9; }
+    .readme-body td        { padding: 6px 10px; border: 1px solid #e0e0e0; }
+    .readme-body hr        { border: none; border-top: 1px solid #e0e0e0; margin: 20px 0; }
+    /* Firehose: flash highlight when a new twist arrives live */
+    @keyframes twistFlash {
+      0%   { background-color: #e3f2fd; }
+      100% { background-color: #fff;    }
+    }
+    .twist-flash {
+      animation: twistFlash 2.5s ease-out forwards;
+    }
   </style>
 </head>
 <body>
