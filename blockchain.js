@@ -416,6 +416,24 @@ function voteTwist(voter, author, permlink, weight, callback) {
   steem_keychain.requestVote(voter, permlink, author, weight, callback);
 }
 
+// Retwist (resteem) a post via Steem Keychain.
+// A resteem is a custom_json operation under the "follow" plugin.
+// callback: (response) => { response.success, response.error }
+function retwistPost(username, author, permlink, callback) {
+  const json = JSON.stringify([
+    "reblog",
+    { account: username, author, permlink }
+  ]);
+  steem_keychain.requestCustomJson(
+    username,
+    "follow",
+    "Posting",
+    json,
+    "Retwist",
+    callback
+  );
+}
+
 // ---- Firehose stream ----
 
 // Start streaming all operations from the blockchain.

@@ -286,8 +286,81 @@ const ProfileView = {
   `
 };
 
-// ---- AboutView ----
-// Fetches README.md from the same directory and renders it as markdown.
+// ---- TwistView ----
+// Dedicated page for a single twist at /@author/permlink.
+// Shows the full post via TwistCardComponent plus a back link.
+const TwistView = {
+  name: "TwistView",
+  inject: ["username", "hasKeychain", "notify"],
+  components: { TwistCardComponent, LoadingSpinnerComponent },
+
+  data() {
+    return { post: null, loading: true };
+  },
+
+  async created() {
+    await this.loadPost();
+  },
+
+  watch: {
+    "$route.params"() { this.loadPost(); }
+  },
+
+  methods: {
+    async loadPost() {
+      this.loading = true;
+      this.post    = null;
+      try {
+        const { user, permlink } = this.$route.params;
+        const result = await fetchPost(user, permlink);
+        // fetchPost returns an empty author string when the post doesn't exist
+        if (!result || !result.author) throw new Error("not found");
+        this.post = result;
+      } catch {
+        this.notify("Twist not found.", "error");
+      }
+      this.loading = false;
+    }
+  },
+
+  template: `
+    <div style="margin-top:20px;max-width:600px;margin-left:auto;margin-right:auto;">
+
+      <!-- Back navigation -->
+      <div style="margin-bottom:14px;">
+        <a
+          href="#"
+          @click.prevent="$router.back()"
+          style="color:#2e7d32;text-decoration:none;font-size:14px;font-weight:600;"
+        >← Back</a>
+      </div>
+
+      <loading-spinner-component v-if="loading" message="Loading twist…"></loading-spinner-component>
+
+      <div v-else-if="!post" style="color:#888;padding:40px;text-align:center;">
+        Twist not found.
+      </div>
+
+      <template v-else>
+        <!-- Full twist card -->
+        <twist-card-component
+          :post="post"
+          :username="username"
+          :has-keychain="hasKeychain"
+        ></twist-card-component>
+
+        <!-- Absolute publish time shown below the card on this page -->
+        <div style="
+          max-width:600px;margin:6px auto 0;
+          text-align:right;font-size:12px;color:#bbb;
+        ">
+          Published {{ new Date(post.created + 'Z').toUTCString().replace(' GMT', ' UTC') }}
+        </div>
+      </template>
+
+    </div>
+  `
+};
 const AboutView = {
   name: "AboutView",
   inject: ["notify"],
@@ -318,9 +391,10 @@ const AboutView = {
 // ============================================================
 
 const routes = [
-  { path: "/",        component: HomeView    },
-  { path: "/about",   component: AboutView   },
-  { path: "/@:user",  component: ProfileView }
+  { path: "/",               component: HomeView    },
+  { path: "/about",          component: AboutView   },
+  { path: "/@:user/:permlink", component: TwistView  },
+  { path: "/@:user",         component: ProfileView }
 ];
 
 const router = createRouter({

@@ -455,11 +455,13 @@ const TwistCardComponent = {
   data() {
     return {
       showReplyBox:    false,
-      showReplies:     false,   // FIX 2: independent toggle for reply list
+      showReplies:     false,
       replyText:       "",
       isReplying:      false,
       isVoting:        false,
       hasVoted:        false,
+      isRetwisting:    false,
+      hasRetwisted:    false,
       replyCount:      this.post.children || 0,
       lastError:       "",
       threadExpanded:  false
@@ -479,7 +481,16 @@ const TwistCardComponent = {
       if (h < 24)  return `${h}h ago`;
       return `${Math.floor(h / 24)}d ago`;
     },
-    // FIX 1: count only upvotes (percent > 0), ignore downvotes
+    // Full UTC timestamp shown as tooltip and on the twist page link
+    absoluteTime() {
+      const d = steemDate(this.post.created);
+      if (isNaN(d)) return "";
+      return d.toUTCString().replace(" GMT", " UTC");
+    },
+    // Hash-router link to the dedicated twist page
+    twistUrl() {
+      return `/#/@${this.post.author}/${this.post.permlink}`;
+    },
     upvoteCount() {
       const votes = this.post.active_votes || [];
       const ups = votes.filter(v => v.percent > 0).length;
@@ -488,24 +499,19 @@ const TwistCardComponent = {
     canAct() {
       return !!this.username && this.hasKeychain;
     },
-    // True when body exceeds limit OR thread is busy — triggers collapse UI.
     isLong() {
       return this.post.body.length > PREVIEW_LENGTH ||
              (this.post.children || 0) > THREAD_REPLY_THRESHOLD;
     },
-    // Plain-text 280-char preview for the collapsed state.
     bodyPreview() {
       return this.post.body.slice(0, PREVIEW_LENGTH) + "…";
     },
-    // FIX 3: rendered markdown for the full body
     bodyHtml() {
       return renderMarkdown(this.post.body);
     },
-    // FIX 3: rendered markdown for the preview (strip HTML tags for plain preview)
     bodyPreviewHtml() {
       return renderMarkdown(this.bodyPreview);
     },
-    // FIX 2: thread should be visible if expanded (long posts) OR replies toggled
     showThread() {
       return this.threadExpanded || this.showReplies;
     }
@@ -524,7 +530,23 @@ const TwistCardComponent = {
         }
       });
     },
-    // FIX 2: toggle reply list AND reply compose box together
+    retwist() {
+      if (!this.canAct || this.isRetwisting || this.hasRetwisted) return;
+      // Cannot retwist your own post
+      if (this.post.author === this.username) {
+        this.lastError = "You cannot retwist your own twist.";
+        return;
+      }
+      this.isRetwisting = true;
+      retwistPost(this.username, this.post.author, this.post.permlink, (res) => {
+        this.isRetwisting = false;
+        if (res.success) {
+          this.hasRetwisted = true;
+        } else {
+          this.lastError = res.error || res.message || "Retwist failed.";
+        }
+      });
+    },
     toggleReplies() {
       if (this.replyCount > 0) {
         this.showReplies = !this.showReplies;
@@ -569,12 +591,19 @@ const TwistCardComponent = {
             :href="'/#/@' + post.author"
             style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:14px;"
           >@{{ post.author }}</a>
-          <div style="font-size:12px;color:#999;">{{ relativeTime }}</div>
+          <!-- Timestamp: relative label linked to the twist page,
+               absolute UTC shown on hover via title attribute -->
+          <div style="font-size:12px;color:#999;">
+            <a
+              :href="twistUrl"
+              :title="absoluteTime"
+              style="color:#999;text-decoration:none;"
+            >{{ relativeTime }}</a>
+          </div>
         </div>
       </div>
 
-      <!-- FIX 3: body rendered as markdown via v-html -->
-      <!-- Collapsed: preview markdown. Expanded / short: full markdown. -->
+      <!-- Body -->
       <div
         class="twist-body"
         v-html="isLong && !threadExpanded ? bodyPreviewHtml : bodyHtml"
@@ -595,7 +624,7 @@ const TwistCardComponent = {
         </button>
       </div>
 
-      <!-- FIX 2: ThreadComponent shown when expanded OR when reply list is toggled -->
+      <!-- Thread replies -->
       <thread-component
         v-if="showThread"
         :author="post.author"
@@ -603,9 +632,9 @@ const TwistCardComponent = {
       ></thread-component>
 
       <!-- Footer actions -->
-      <div style="display:flex;align-items:center;gap:16px;font-size:13px;color:#666;margin-top:12px;">
+      <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:#666;margin-top:12px;flex-wrap:wrap;">
 
-        <!-- FIX 1: upvoteCount ignores downvotes -->
+        <!-- Love -->
         <button
           @click="vote"
           :disabled="!canAct || isVoting || hasVoted"
@@ -621,7 +650,24 @@ const TwistCardComponent = {
           {{ isVoting ? "…" : (hasVoted ? "❤️" : "🤍") }} {{ upvoteCount }}
         </button>
 
-        <!-- FIX 2: clicking 💬 now both shows replies and opens compose box -->
+        <!-- Retwist -->
+        <button
+          @click="retwist"
+          :disabled="!canAct || isRetwisting || hasRetwisted || post.author === username"
+          :style="{
+            background: hasRetwisted ? '#e8f5e9' : '#f5f5f5',
+            color:      hasRetwisted ? '#1b5e20'  : '#555',
+            border:     hasRetwisted ? '1px solid #a5d6a7' : '1px solid #ddd',
+            borderRadius: '20px', padding: '4px 12px',
+            cursor: (!canAct || hasRetwisted || post.author === username) ? 'default' : 'pointer',
+            fontSize: '13px'
+          }"
+          :title="post.author === username ? 'Cannot retwist your own twist' : ''"
+        >
+          {{ isRetwisting ? "…" : (hasRetwisted ? "🔁 Retwisted" : "🔁") }}
+        </button>
+
+        <!-- Replies -->
         <button
           @click="toggleReplies"
           style="background:#f5f5f5;color:#555;border:1px solid #ddd;
@@ -630,13 +676,25 @@ const TwistCardComponent = {
           💬 {{ replyCount }}
         </button>
 
+        <!-- Permalink -->
+        <a
+          :href="twistUrl"
+          style="margin-left:auto;font-size:12px;color:#bbb;text-decoration:none;"
+          title="Open twist page"
+        >🔗</a>
+
       </div>
 
       <!-- Inline reply compose box -->
       <div v-if="showReplyBox && canAct" style="margin-top:12px;">
         <textarea
           v-model="replyText"
-          placeholder="Write a reply to this twist…"
+          placeholder="Write a reply…"
+          maxlength="1000"
+          style="
+            width:100%;box-sizing:border-box;
+            padding:8px;border-radius:6px;border:1px solid #ccc;
+            font-size:14px;resize:vertical;min-height:60px;
           "
         ></textarea>
         <div style="text-align:right;margin-top:4px;">
