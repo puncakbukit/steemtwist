@@ -196,14 +196,171 @@ function renderMarkdown(text) {
   return marked.parse(text, markedOptions);
 }
 
+// ---- ReplyCardComponent ----
+// Renders a single reply with its own compose box and a recursive
+// ThreadComponent for its children. Declared before ThreadComponent
+// so the two can reference each other via the global component registry.
+const ReplyCardComponent = {
+  name: "ReplyCardComponent",
+  // ThreadComponent is registered globally in app.js; no local declaration
+  // needed here — Vue resolves it at runtime from the global registry.
+  inject: ["username", "hasKeychain"],
+  props: {
+    reply: { type: Object, required: true },
+    depth: { type: Number, default: 0 }   // indent level, capped at 4
+  },
+  data() {
+    return {
+      showReplyBox:  false,
+      showChildren:  false,
+      replyText:     "",
+      isReplying:    false,
+      replyCount:    this.reply.children || 0,
+      lastError:     ""
+    };
+  },
+  computed: {
+    avatarUrl() {
+      return `https://steemitimages.com/u/${this.reply.author}/avatar/small`;
+    },
+    relativeTime() {
+      const diff = Date.now() - steemDate(this.reply.created).getTime();
+      const s = Math.floor(diff / 1000);
+      if (s < 60)  return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60)  return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24)  return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    },
+    bodyHtml() { return renderMarkdown(this.reply.body); },
+    canAct()   { return !!this.username && this.hasKeychain; },
+    // Cap visual indent at 4 levels so deep threads stay readable on mobile
+    indent()   { return Math.min(this.depth, 4) * 16; }
+  },
+  methods: {
+    toggleReplies() {
+      if (this.replyCount > 0) this.showChildren = !this.showChildren;
+      if (this.canAct)         this.showReplyBox  = !this.showReplyBox;
+    },
+    submitReply() {
+      const text = this.replyText.trim();
+      if (!text || !this.canAct) return;
+      this.isReplying = true;
+      postTwistReply(this.username, text, this.reply.author, this.reply.permlink, (res) => {
+        this.isReplying = false;
+        if (res.success) {
+          this.replyText    = "";
+          this.showChildren = true;
+          this.replyCount++;
+        } else {
+          this.lastError = res.error || res.message || "Reply failed.";
+        }
+      });
+    }
+  },
+  template: `
+    <div :style="{ paddingLeft: indent + 'px' }">
+      <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+
+        <!-- Avatar -->
+        <a :href="'/#/@' + reply.author" style="flex-shrink:0;">
+          <img
+            :src="avatarUrl"
+            style="width:28px;height:28px;border-radius:50%;border:2px solid #e0e0e0;"
+            @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
+          />
+        </a>
+
+        <!-- Content -->
+        <div style="flex:1;min-width:0;">
+
+          <!-- Header -->
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
+            <a
+              :href="'/#/@' + reply.author"
+              style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:13px;"
+            >@{{ reply.author }}</a>
+            <span style="font-size:11px;color:#bbb;">{{ relativeTime }}</span>
+          </div>
+
+          <!-- Body -->
+          <div class="twist-body" style="font-size:14px;" v-html="bodyHtml"></div>
+
+          <!-- Reply action -->
+          <div style="margin-top:6px;">
+            <button
+              @click="toggleReplies"
+              style="
+                background:none;border:none;padding:0;margin:0;
+                color:#2e7d32;font-size:12px;cursor:pointer;
+                text-decoration:underline;font-weight:600;
+              "
+            >
+              💬 {{ replyCount > 0 ? replyCount + ' repl' + (replyCount === 1 ? 'y' : 'ies') : 'Reply' }}
+            </button>
+          </div>
+
+          <!-- Compose box -->
+          <div v-if="showReplyBox && canAct" style="margin-top:8px;">
+            <textarea
+              v-model="replyText"
+              placeholder="Write a reply…"
+              maxlength="1000"
+              style="
+                width:100%;box-sizing:border-box;
+                padding:7px;border-radius:6px;border:1px solid #ccc;
+                font-size:13px;resize:vertical;min-height:52px;
+              "
+            ></textarea>
+            <div style="text-align:right;margin-top:4px;">
+              <button
+                @click="submitReply"
+                :disabled="!replyText.trim() || isReplying"
+                style="font-size:12px;padding:4px 12px;"
+              >{{ isReplying ? "Posting…" : "Reply" }}</button>
+            </div>
+          </div>
+
+          <!-- Error -->
+          <div v-if="lastError" style="
+            margin-top:6px;padding:6px 8px;border-radius:6px;font-size:12px;
+            background:#ffebee;border:1px solid #ef9a9a;color:#b71c1c;
+            display:flex;justify-content:space-between;align-items:center;
+          ">
+            <span>⚠️ {{ lastError }}</span>
+            <button
+              @click="lastError = ''"
+              style="background:none;border:none;cursor:pointer;font-size:14px;
+                     padding:0;color:#b71c1c;line-height:1;"
+            >✕</button>
+          </div>
+
+          <!-- Nested children — recursive ThreadComponent -->
+          <thread-component
+            v-if="showChildren"
+            :author="reply.author"
+            :permlink="reply.permlink"
+            :depth="depth + 1"
+          ></thread-component>
+
+        </div>
+      </div>
+    </div>
+  `
+};
+
 // ---- ThreadComponent ----
-// Lazy-loads and renders replies for a twist.
-// Mounted when the user clicks the 💬 reply button OR "Expand thread".
+// Lazy-loads direct replies and renders each as a ReplyCardComponent.
+// Used recursively: TwistCardComponent → ThreadComponent → ReplyCardComponent
+//                                                        → ThreadComponent → …
 const ThreadComponent = {
   name: "ThreadComponent",
+  components: { ReplyCardComponent },
   props: {
-    author:   { type: String, required: true },
-    permlink: { type: String, required: true }
+    author:   { type: String,  required: true },
+    permlink: { type: String,  required: true },
+    depth:    { type: Number,  default: 0 }
   },
   data() {
     return {
@@ -220,27 +377,10 @@ const ThreadComponent = {
     }
     this.loading = false;
   },
-  methods: {
-    avatarUrl(username) {
-      return `https://steemitimages.com/u/${username}/avatar/small`;
-    },
-    relativeTime(ts) {
-      const diff = Date.now() - steemDate(ts).getTime();
-      const s = Math.floor(diff / 1000);
-      if (s < 60)  return `${s}s ago`;
-      const m = Math.floor(s / 60);
-      if (m < 60)  return `${m}m ago`;
-      const h = Math.floor(m / 60);
-      if (h < 24)  return `${h}h ago`;
-      return `${Math.floor(h / 24)}d ago`;
-    },
-    // FIX 3: render reply bodies as markdown too
-    md(text) { return renderMarkdown(text); }
-  },
   template: `
-    <div style="margin-top:12px;border-top:2px solid #e8f5e9;padding-top:12px;">
+    <div style="margin-top:8px;border-top:2px solid #e8f5e9;padding-top:8px;">
 
-      <div v-if="loading" style="color:#aaa;font-size:13px;padding:8px 0;">
+      <div v-if="loading" style="color:#aaa;font-size:13px;padding:6px 0;">
         Loading replies…
       </div>
 
@@ -252,32 +392,13 @@ const ThreadComponent = {
         No replies yet.
       </div>
 
-      <div v-else>
-        <div
-          v-for="reply in replies"
-          :key="reply.permlink"
-          style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;"
-        >
-          <a :href="'/#/@' + reply.author" style="flex-shrink:0;">
-            <img
-              :src="avatarUrl(reply.author)"
-              style="width:32px;height:32px;border-radius:50%;border:2px solid #e0e0e0;"
-              @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
-            />
-          </a>
-          <div style="flex:1;min-width:0;">
-            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
-              <a
-                :href="'/#/@' + reply.author"
-                style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:13px;"
-              >@{{ reply.author }}</a>
-              <span style="font-size:11px;color:#bbb;">{{ relativeTime(reply.created) }}</span>
-            </div>
-            <!-- FIX 3: v-html renders markdown instead of raw text -->
-            <div class="twist-body" v-html="md(reply.body)"></div>
-          </div>
-        </div>
-      </div>
+      <reply-card-component
+        v-else
+        v-for="reply in replies"
+        :key="reply.permlink"
+        :reply="reply"
+        :depth="depth"
+      ></reply-card-component>
 
     </div>
   `
