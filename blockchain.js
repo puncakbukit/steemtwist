@@ -136,14 +136,13 @@ function fetchPostsByUser(username, limit = 50) {
 //   and we stop paging the moment we reach entries older than the month.
 //
 // Algorithm:
-//   1. Page backwards through the user's account history in batches of 1000,
-//      starting from a large sentinel so every node handles it correctly.
+//   1. Page backwards through the user's account history in batches of 100
+//      (the maximum the Steem node allows per call), starting from -1
+//      (the latest entry).
 //   2. Keep only "comment" ops whose permlink starts with "tw-" and whose
 //      parent_permlink matches the monthly root.
 //   3. Stop only when an entry's timestamp predates the month start, or when
 //      the node returns an empty batch (true end of history).
-//      NOTE: do NOT stop on a partial batch — partial batches are normal and
-//      do not mean the account has no older history.
 //   4. Enrich the filtered raw ops with fetchPost so each object has
 //      net_votes, active_votes, children, etc. — same shape as the
 //      objects returned by fetchTwistFeed.
@@ -153,11 +152,10 @@ function fetchTwistsByUser(username, monthlyRoot) {
   const now        = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-  // FIX 1: Use a large integer as the starting sequence number.
-  // Some Steem nodes do not handle -1 reliably; a large fixed value is
-  // always interpreted as "start from the latest available entry".
-  const START_FROM = 4294967295;
-  const BATCH      = 1000;
+  // -1 tells the node to start from the latest sequence number.
+  // 100 is the maximum limit most Steem nodes allow per call.
+  const START_FROM = -1;
+  const BATCH      = 100;
   const collected  = [];
 
   function page(from) {
@@ -168,38 +166,12 @@ function fetchTwistsByUser(username, monthlyRoot) {
           return resolve();
         }
 
-        // True end of history — nothing more to page through.
-        if (!history || history.length === 0) {
-          console.log("[fetchTwistsByUser] empty batch, stopping.");
-          return resolve();
-        }
-
-        // ── DIAGNOSTIC ──────────────────────────────────────────────────
-        console.log(`[fetchTwistsByUser] batch from=${from}, got ${history.length} entries`);
-        // Log the first and last raw entries so we can see the real shape.
-        console.log("[fetchTwistsByUser] first entry (raw):", JSON.stringify(history[0]));
-        console.log("[fetchTwistsByUser] last  entry (raw):", JSON.stringify(history[history.length - 1]));
-        // ────────────────────────────────────────────────────────────────
+        if (!history || history.length === 0) return resolve();
 
         let hitOldEntry = false;
 
-        // Walk newest-to-oldest so we hit the month boundary early.
         for (let i = history.length - 1; i >= 0; i--) {
-          const entry = history[i];
-
-          // ── DIAGNOSTIC: log every comment op we encounter ────────────
-          const rawOp = entry[1]?.op;
-          if (rawOp && rawOp[0] === "comment") {
-            console.log("[fetchTwistsByUser] comment op found:", JSON.stringify({
-              timestamp:      entry[1].timestamp,
-              permlink:       rawOp[1].permlink,
-              parent_author:  rawOp[1].parent_author,
-              parent_permlink:rawOp[1].parent_permlink
-            }));
-          }
-          // ────────────────────────────────────────────────────────────
-
-          const [, item]     = entry;
+          const [, item]     = history[i];
           const [type, data] = item.op;
           const ts           = steemDate(item.timestamp);
 
@@ -213,8 +185,6 @@ function fetchTwistsByUser(username, monthlyRoot) {
           if (data.parent_permlink !== monthlyRoot)                  continue;
           if (data.parent_author   !== TWIST_CONFIG.ROOT_ACCOUNT)   continue;
 
-          // Deduplicate across page boundaries (the boundary entry is
-          // included in both the current and the next page).
           if (!collected.some(c => c.data.permlink === data.permlink)) {
             collected.push({ data, timestamp: ts });
           }
@@ -223,12 +193,9 @@ function fetchTwistsByUser(username, monthlyRoot) {
         // Stop when we've passed the month start.
         if (hitOldEntry) return resolve();
 
-        // FIX 2: Do NOT stop on a partial batch.
-        // Partial batches occur when the requested `from` is higher than
-        // the account's actual highest sequence number — perfectly normal
-        // for the very first page call with START_FROM.
-        // Only stop when the batch is empty (handled above) or when we've
-        // exhausted sequence numbers down to zero.
+        // Continue paging if there may be more history.
+        // Only stop when the batch is empty (handled above) or sequence
+        // numbers reach zero.
         const lowestSeq = history[0][0];
         if (lowestSeq <= 0) return resolve();
 
