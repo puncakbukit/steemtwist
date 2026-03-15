@@ -200,7 +200,8 @@ const TwistCardComponent = {
       isReplying:   false,
       isVoting:     false,
       hasVoted:     false,
-      replyCount:   this.post.children || 0
+      replyCount:   this.post.children || 0,
+      lastError:    ""
     };
   },
   computed: {
@@ -237,6 +238,8 @@ const TwistCardComponent = {
         if (res.success) {
           this.hasVoted = true;
           this.$emit("voted", this.post);
+        } else {
+          this.lastError = res.error || res.message || "Vote failed.";
         }
       });
     },
@@ -251,6 +254,8 @@ const TwistCardComponent = {
           this.showReplyBox = false;
           this.replyCount++;
           this.$emit("replied", this.post);
+        } else {
+          this.lastError = res.error || res.message || "Reply failed.";
         }
       });
     }
@@ -336,6 +341,20 @@ const TwistCardComponent = {
             style="font-size:13px;padding:5px 14px;"
           >{{ isReplying ? "Posting…" : "Reply" }}</button>
         </div>
+      </div>
+
+      <!-- Blockchain error -->
+      <div v-if="lastError" style="
+        margin-top:10px;padding:8px 10px;border-radius:6px;font-size:13px;
+        background:#ffebee;border:1px solid #ef9a9a;color:#b71c1c;
+        display:flex;justify-content:space-between;align-items:center;gap:8px;
+      ">
+        <span>⚠️ {{ lastError }}</span>
+        <button
+          @click="lastError = ''"
+          style="background:none;border:none;cursor:pointer;font-size:15px;
+                 padding:0;color:#b71c1c;line-height:1;"
+        >✕</button>
       </div>
     </div>
   `

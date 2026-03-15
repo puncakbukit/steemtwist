@@ -52,7 +52,7 @@ const HomeView = {
           await new Promise(r => setTimeout(r, 2000));
           await this.loadFeed();
         } else {
-          this.notify(res.message || "Failed to post twist.", "error");
+          this.notify(res.error || res.message || "Failed to post twist.", "error");
         }
       });
     }
