@@ -5,7 +5,21 @@ Think Twitter, but your posts are permanent, censorship-resistant, and optionall
 
 ---
 
-## How it works
+## Terminology
+
+SteemTwist uses its own vocabulary. The blockchain object names are never shown in the UI.
+
+| Blockchain object | SteemTwist term |
+|---|---|
+| Root monthly post | Feed root |
+| Comment reply | **Twist** |
+| Reply to twist | Reply |
+| Comment tree | Thread |
+| Upvote | **Twist love** ❤️ |
+
+---
+
+
 
 Every twist is a Steem blockchain **comment** posted as a reply under a shared monthly root post owned by `@steemtwist`. All twists for a given month live under a single parent, making them cheap to query with one API call.
 
@@ -26,9 +40,9 @@ All timestamps use **UTC** to match the Steem blockchain clock.
 ## Features
 
 - 📝 Post twists up to 280 characters
-- 💬 Reply to any twist inline
-- ❤️ Upvote twists (100% weight)
-- 📖 Thread expansion — long posts and busy threads collapse to a 280-char preview; click to lazy-load the full body and replies
+- 💬 Reply to any twist inline, and reply to replies recursively
+- ❤️ Give twist love (upvote) to any twist
+- 📖 Thread expansion — long twists and busy threads collapse to a 280-char preview; click to lazy-load the full body and replies
 - 👤 User profile pages with avatar, bio, and monthly twist history
 - 🔄 RPC fallback across multiple nodes
 - 🔒 Read-only mode when Steem Keychain is not installed
@@ -154,7 +168,7 @@ Because both operations are sent in the same transaction, the payout limit is se
 - Reduces vote-buying and trending manipulation
 - Keeps the ecosystem community-driven
 
-Votes remain enabled so users can still express appreciation — the heart just doesn't move money.
+Twist love remains enabled so users can still express appreciation — the heart just doesn't move money.
 
 ---
 

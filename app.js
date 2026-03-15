@@ -36,7 +36,7 @@ const HomeView = {
       try {
         this.twists = await fetchTwistFeed(this.monthlyRoot);
       } catch (e) {
-        this.notify("Could not load feed. Please try again.", "error");
+        this.notify("Could not load twists. Please try again.", "error");
       }
       this.loading = false;
     },
@@ -85,7 +85,7 @@ const HomeView = {
         background:#fff;border:1px solid #e0e0e0;border-radius:10px;
         padding:16px;max-width:600px;margin:0 auto 20px;color:#888;font-size:14px;
       ">
-        Log in with Steem Keychain to post twists and like posts.
+        Log in with Steem Keychain to post twists and give twist love.
       </div>
 
       <!-- Feed -->
@@ -181,17 +181,37 @@ const AboutView = {
       <h2>About SteemTwist 🌀</h2>
       <p>
         <strong>SteemTwist</strong> is a decentralised microblogging dApp built on the
-        <strong>Steem blockchain</strong>. Think Twitter, but your posts are permanent,
-        censorship-resistant, and optionally earn you crypto rewards.
+        <strong>Steem blockchain</strong>. Think Twitter, but your twists are permanent
+        and censorship-resistant.
       </p>
+
+      <h3>Terminology</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:12px;">
+        <thead>
+          <tr style="background:#e8f5e9;">
+            <th style="text-align:left;padding:7px 10px;border:1px solid #c8e6c9;">Blockchain object</th>
+            <th style="text-align:left;padding:7px 10px;border:1px solid #c8e6c9;">SteemTwist term</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Root monthly post</td><td style="padding:6px 10px;border:1px solid #e0e0e0;">Feed root</td></tr>
+          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Comment reply</td>    <td style="padding:6px 10px;border:1px solid #e0e0e0;">Twist</td></tr>
+          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Reply to twist</td>   <td style="padding:6px 10px;border:1px solid #e0e0e0;">Reply</td></tr>
+          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Comment tree</td>     <td style="padding:6px 10px;border:1px solid #e0e0e0;">Thread</td></tr>
+          <tr><td style="padding:6px 10px;border:1px solid #e0e0e0;">Upvote</td>           <td style="padding:6px 10px;border:1px solid #e0e0e0;">Twist love ❤️</td></tr>
+        </tbody>
+      </table>
+
       <h3>How it works</h3>
       <ul style="line-height:1.8;">
-        <li>Each twist is a blockchain comment posted under a shared monthly root
+        <li>Each twist is a blockchain comment posted under a shared monthly feed root
             (<code>@steemtwist / feed-YYYY-MM</code>).</li>
         <li>Permlinks are deterministic: <code>tw-YYYYMMDD-HHMMSS-username</code>.</li>
         <li>Authentication and signing use <strong>Steem Keychain</strong> — your keys never leave your device.</li>
+        <li>Payouts are disabled — twists are for conversation, not rewards.</li>
         <li>The site is fully static and can be hosted on <strong>GitHub Pages</strong> for free.</li>
       </ul>
+
       <h3>Tech stack</h3>
       <ul style="line-height:1.8;">
         <li>steem-js (blockchain API)</li>
@@ -388,7 +408,7 @@ const App = {
       <strong>Read-only mode</strong> — Install the
       <a href="https://www.google.com/search?q=steem+keychain+browser+extension" target="_blank">
         Steem Keychain</a>
-      browser extension to post twists and vote.
+      browser extension to post twists and give twist love.
     </div>
 
     <!-- Global notification -->

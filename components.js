@@ -305,7 +305,7 @@ const ReplyCardComponent = {
           <div v-if="showReplyBox && canAct" style="margin-top:8px;">
             <textarea
               v-model="replyText"
-              placeholder="Write a reply…"
+              placeholder="Write a reply to this twist…"
               maxlength="1000"
               style="
                 width:100%;box-sizing:border-box;
@@ -487,7 +487,7 @@ const TwistCardComponent = {
           this.hasVoted = true;
           this.$emit("voted", this.post);
         } else {
-          this.lastError = res.error || res.message || "Vote failed.";
+          this.lastError = res.error || res.message || "Twist love failed.";
         }
       });
     },
@@ -603,12 +603,7 @@ const TwistCardComponent = {
       <div v-if="showReplyBox && canAct" style="margin-top:12px;">
         <textarea
           v-model="replyText"
-          placeholder="Write a reply…"
-          maxlength="1000"
-          style="
-            width:100%;box-sizing:border-box;
-            padding:8px;border-radius:6px;border:1px solid #ccc;
-            font-size:14px;resize:vertical;min-height:60px;
+          placeholder="Write a reply to this twist…"
           "
         ></textarea>
         <div style="text-align:right;margin-top:4px;">
@@ -669,7 +664,7 @@ const TwistComposerComponent = {
     ">
       <textarea
         v-model="message"
-        placeholder="What's happening?"
+        placeholder="What's your twist?"
         maxlength="500"
         style="
           width:100%;box-sizing:border-box;
