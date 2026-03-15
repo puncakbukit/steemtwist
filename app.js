@@ -415,6 +415,7 @@ vueApp.component("AppNotificationComponent", AppNotificationComponent);
 vueApp.component("AuthComponent",            AuthComponent);
 vueApp.component("UserProfileComponent",     UserProfileComponent);
 vueApp.component("LoadingSpinnerComponent",  LoadingSpinnerComponent);
+vueApp.component("ThreadComponent",          ThreadComponent);
 vueApp.component("TwistCardComponent",       TwistCardComponent);
 vueApp.component("TwistComposerComponent",   TwistComposerComponent);
 

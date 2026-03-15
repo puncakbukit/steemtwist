@@ -182,11 +182,121 @@ const LoadingSpinnerComponent = {
 // STEEMTWIST COMPONENTS
 // ============================================================
 
+// Body longer than this, or children count above THREAD_REPLY_THRESHOLD,
+// triggers collapsed thread mode. Matches the composer limit so native
+// twists never collapse.
+const PREVIEW_LENGTH       = 280;
+const THREAD_REPLY_THRESHOLD = 3;
+
+// ---- ThreadComponent ----
+// Lazy-loads and renders replies for a collapsed twist.
+// Shown only after the user clicks "Expand thread".
+const ThreadComponent = {
+  name: "ThreadComponent",
+  props: {
+    author:      { type: String, required: true },
+    permlink:    { type: String, required: true },
+    username:    { type: String, default: "" },
+    hasKeychain: { type: Boolean, default: false }
+  },
+  data() {
+    return {
+      replies:   [],
+      loading:   true,
+      loadError: ""
+    };
+  },
+  async created() {
+    try {
+      this.replies = await fetchReplies(this.author, this.permlink);
+    } catch (e) {
+      this.loadError = "Could not load replies.";
+    }
+    this.loading = false;
+  },
+  computed: {
+    avatarUrl() {
+      return username =>
+        `https://steemitimages.com/u/${username}/avatar/small`;
+    },
+    relativeTime() {
+      return ts => {
+        const diff = Date.now() - steemDate(ts).getTime();
+        const s = Math.floor(diff / 1000);
+        if (s < 60)  return `${s}s ago`;
+        const m = Math.floor(s / 60);
+        if (m < 60)  return `${m}m ago`;
+        const h = Math.floor(m / 60);
+        if (h < 24)  return `${h}h ago`;
+        return `${Math.floor(h / 24)}d ago`;
+      };
+    }
+  },
+  template: `
+    <div style="
+      margin-top:12px;border-top:2px solid #e8f5e9;padding-top:12px;
+    ">
+      <!-- Loading -->
+      <div v-if="loading" style="color:#aaa;font-size:13px;padding:8px 0;">
+        Loading replies…
+      </div>
+
+      <!-- Error -->
+      <div v-else-if="loadError" style="color:#b71c1c;font-size:13px;">
+        ⚠️ {{ loadError }}
+      </div>
+
+      <!-- Empty -->
+      <div v-else-if="replies.length === 0" style="color:#aaa;font-size:13px;">
+        No replies yet.
+      </div>
+
+      <!-- Reply list -->
+      <div v-else>
+        <div
+          v-for="reply in replies"
+          :key="reply.permlink"
+          style="
+            display:flex;gap:10px;padding:10px 0;
+            border-bottom:1px solid #f0f0f0;
+          "
+        >
+          <!-- Avatar -->
+          <a :href="'/#/@' + reply.author" style="flex-shrink:0;">
+            <img
+              :src="avatarUrl(reply.author)"
+              style="width:32px;height:32px;border-radius:50%;border:2px solid #e0e0e0;"
+              @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
+            />
+          </a>
+          <!-- Content -->
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
+              <a
+                :href="'/#/@' + reply.author"
+                style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:13px;"
+              >@{{ reply.author }}</a>
+              <span style="font-size:11px;color:#bbb;">{{ relativeTime(reply.created) }}</span>
+            </div>
+            <p style="
+              margin:0;font-size:14px;line-height:1.5;
+              white-space:pre-wrap;word-break:break-word;color:#333;
+            ">{{ reply.body }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+};
+
 // ---- TwistCardComponent ----
-// Renders a single twist post with avatar, author, body, timestamp,
-// vote button, reply button, and inline reply form.
+// Renders a single twist.
+// Long-body posts (> PREVIEW_LENGTH) or busy threads (children > THREAD_REPLY_THRESHOLD)
+// are shown collapsed with a preview and an "Expand thread" button.
+// Expanding lazy-loads the full body and replies via ThreadComponent.
 const TwistCardComponent = {
   name: "TwistCardComponent",
+  components: { ThreadComponent },
   props: {
     post:        { type: Object,  required: true },
     username:    { type: String,  default: "" },
@@ -195,13 +305,14 @@ const TwistCardComponent = {
   emits: ["voted", "replied"],
   data() {
     return {
-      showReplyBox: false,
-      replyText:    "",
-      isReplying:   false,
-      isVoting:     false,
-      hasVoted:     false,
-      replyCount:   this.post.children || 0,
-      lastError:    ""
+      showReplyBox:   false,
+      replyText:      "",
+      isReplying:     false,
+      isVoting:       false,
+      hasVoted:       false,
+      replyCount:     this.post.children || 0,
+      lastError:      "",
+      threadExpanded: false
     };
   },
   computed: {
@@ -211,22 +322,27 @@ const TwistCardComponent = {
     relativeTime() {
       const diff = Date.now() - steemDate(this.post.created).getTime();
       const s = Math.floor(diff / 1000);
-      if (s < 60)   return `${s}s ago`;
+      if (s < 60)  return `${s}s ago`;
       const m = Math.floor(s / 60);
-      if (m < 60)   return `${m}m ago`;
+      if (m < 60)  return `${m}m ago`;
       const h = Math.floor(m / 60);
-      if (h < 24)   return `${h}h ago`;
+      if (h < 24)  return `${h}h ago`;
       return `${Math.floor(h / 24)}d ago`;
     },
     netVotes() {
       return this.post.net_votes || 0;
     },
-    pendingPayout() {
-      const v = parseFloat(this.post.pending_payout_value) || 0;
-      return v > 0 ? `$${v.toFixed(2)}` : "";
-    },
     canAct() {
       return !!this.username && this.hasKeychain;
+    },
+    // True when body exceeds limit OR thread is busy.
+    isLong() {
+      return this.post.body.length > PREVIEW_LENGTH ||
+             (this.post.children || 0) > THREAD_REPLY_THRESHOLD;
+    },
+    // 280-char preview with ellipsis for collapsed display.
+    bodyPreview() {
+      return this.post.body.slice(0, PREVIEW_LENGTH) + "…";
     }
   },
   methods: {
@@ -283,13 +399,36 @@ const TwistCardComponent = {
         </div>
       </div>
 
-      <!-- Body -->
+      <!-- Body: collapsed preview OR full text -->
       <p style="margin:0 0 12px;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word;">
-        {{ post.body }}
+        {{ isLong && !threadExpanded ? bodyPreview : post.body }}
       </p>
 
+      <!-- Expand / Collapse thread button -->
+      <div v-if="isLong" style="margin-bottom:12px;">
+        <button
+          @click="threadExpanded = !threadExpanded"
+          style="
+            background:none;border:none;padding:0;
+            color:#2e7d32;font-size:13px;font-weight:600;
+            cursor:pointer;text-decoration:underline;
+          "
+        >
+          {{ threadExpanded ? "▲ Collapse thread" : "▼ Expand thread" }}
+        </button>
+      </div>
+
+      <!-- Lazy-loaded thread (replies) -->
+      <thread-component
+        v-if="threadExpanded"
+        :author="post.author"
+        :permlink="post.permlink"
+        :username="username"
+        :has-keychain="hasKeychain"
+      ></thread-component>
+
       <!-- Footer actions -->
-      <div style="display:flex;align-items:center;gap:16px;font-size:13px;color:#666;">
+      <div style="display:flex;align-items:center;gap:16px;font-size:13px;color:#666;margin-top:12px;">
         <!-- Like -->
         <button
           @click="vote"
@@ -315,11 +454,6 @@ const TwistCardComponent = {
         >
           💬 {{ replyCount }}
         </button>
-
-        <!-- Payout -->
-        <span v-if="pendingPayout" style="margin-left:auto;color:#2e7d32;font-weight:600;">
-          {{ pendingPayout }}
-        </span>
       </div>
 
       <!-- Inline reply box -->

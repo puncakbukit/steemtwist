@@ -244,48 +244,74 @@ function fetchTwistFeed(monthlyRoot) {
   );
 }
 
+// Build a [comment, comment_options] operation pair with payouts disabled.
+// max_accepted_payout = "0.000 SBD" prevents any monetary reward.
+// allow_votes = true so likes still work as appreciation signals.
+function buildZeroPayoutOps(username, body, parentAuthor, parentPermlink, permlink, jsonMetadata) {
+  const comment = [
+    "comment",
+    {
+      parent_author:   parentAuthor,
+      parent_permlink: parentPermlink,
+      author:          username,
+      permlink:        permlink,
+      title:           "",
+      body:            body,
+      json_metadata:   JSON.stringify(jsonMetadata)
+    }
+  ];
+
+  const commentOptions = [
+    "comment_options",
+    {
+      author:                    username,
+      permlink:                  permlink,
+      max_accepted_payout:       "0.000 SBD",
+      percent_steem_dollars:     10000,
+      allow_votes:               true,   // likes remain active
+      allow_curation_rewards:    false,  // no curation rewards either
+      extensions:                []
+    }
+  ];
+
+  return [comment, commentOptions];
+}
+
 // Post a new twist via Steem Keychain.
-// callback: (response) => { response.success, response.message }
+// Broadcasts comment + comment_options atomically so payouts are disabled
+// from the moment of posting (cannot be changed after the fact).
+// callback: (response) => { response.success, response.error }
 function postTwist(username, message, callback) {
   const root     = getMonthlyRoot();
   const permlink = generateTwistPermlink(username);
 
-  steem_keychain.requestPost(
+  const ops = buildZeroPayoutOps(
     username,
-    "",                             // title — empty for micro-posts
     message,
-    root,                           // parentPermlink
-    TWIST_CONFIG.ROOT_ACCOUNT,      // parentAuthor
-    JSON.stringify({
-      app:  "steemtwist/0.1",
-      type: "micro",
-      tags: [TWIST_CONFIG.TAG]
-    }),
+    TWIST_CONFIG.ROOT_ACCOUNT,  // parentAuthor
+    root,                       // parentPermlink
     permlink,
-    "",
-    callback
+    { app: "steemtwist/0.1", type: "micro", tags: [TWIST_CONFIG.TAG] }
   );
+
+  steem_keychain.requestBroadcast(username, ops, "Posting", callback);
 }
 
 // Post a reply to an existing twist via Steem Keychain.
+// Also broadcasts with zero payout for consistency.
 function postTwistReply(username, message, parentAuthor, parentPermlink, callback) {
   const replyPermlink = generateTwistPermlink(username);
 
-  steem_keychain.requestPost(
+  const ops = buildZeroPayoutOps(
     username,
-    "",
     message,
-    parentPermlink,
     parentAuthor,
-    JSON.stringify({
-      app:  "steemtwist/0.1",
-      type: "micro-reply",
-      tags: [TWIST_CONFIG.TAG]
-    }),
+    parentPermlink,
     replyPermlink,
-    "",
-    callback
+    { app: "steemtwist/0.1", type: "micro-reply", tags: [TWIST_CONFIG.TAG] }
   );
+
+  steem_keychain.requestBroadcast(username, ops, "Posting", callback);
 }
 
 // Vote on a twist via Steem Keychain.
