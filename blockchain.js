@@ -169,13 +169,37 @@ function fetchTwistsByUser(username, monthlyRoot) {
         }
 
         // True end of history — nothing more to page through.
-        if (!history || history.length === 0) return resolve();
+        if (!history || history.length === 0) {
+          console.log("[fetchTwistsByUser] empty batch, stopping.");
+          return resolve();
+        }
+
+        // ── DIAGNOSTIC ──────────────────────────────────────────────────
+        console.log(`[fetchTwistsByUser] batch from=${from}, got ${history.length} entries`);
+        // Log the first and last raw entries so we can see the real shape.
+        console.log("[fetchTwistsByUser] first entry (raw):", JSON.stringify(history[0]));
+        console.log("[fetchTwistsByUser] last  entry (raw):", JSON.stringify(history[history.length - 1]));
+        // ────────────────────────────────────────────────────────────────
 
         let hitOldEntry = false;
 
         // Walk newest-to-oldest so we hit the month boundary early.
         for (let i = history.length - 1; i >= 0; i--) {
-          const [, item]     = history[i];
+          const entry = history[i];
+
+          // ── DIAGNOSTIC: log every comment op we encounter ────────────
+          const rawOp = entry[1]?.op;
+          if (rawOp && rawOp[0] === "comment") {
+            console.log("[fetchTwistsByUser] comment op found:", JSON.stringify({
+              timestamp:      entry[1].timestamp,
+              permlink:       rawOp[1].permlink,
+              parent_author:  rawOp[1].parent_author,
+              parent_permlink:rawOp[1].parent_permlink
+            }));
+          }
+          // ────────────────────────────────────────────────────────────
+
+          const [, item]     = entry;
           const [type, data] = item.op;
           const ts           = steemDate(item.timestamp);
 
