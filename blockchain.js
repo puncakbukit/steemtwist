@@ -151,44 +151,54 @@ function fetchTwistsByUser(username, monthlyRoot) {
   const now        = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-  const BATCH = 1000;
+  const BATCH     = 1000;
   const collected = [];  // raw comment op data objects
 
+  // getAccountHistory returns entries sorted oldest-first (ascending sequence).
+  // We request from the latest entry backwards using `from` = highest seq we
+  // want, `limit` = batch size. The node returns up to `limit` entries whose
+  // sequence number is <= `from`.
+  //
+  // Iteration must go newest-to-oldest (reverse) so that the early-stop
+  // fires as soon as we pass the month boundary — otherwise we'd break on
+  // the very first (oldest) entry in every batch.
   function page(from) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       steem.api.getAccountHistory(username, from, BATCH, (err, history) => {
-        if (err) return reject(err);
-        if (!history || history.length === 0) return resolve();
+        // Resolve (not reject) on error so Promise.all in loadProfile
+        // still shows the profile even if the history scan fails.
+        if (err || !history || history.length === 0) return resolve();
 
         let hitOldEntry = false;
 
-        for (const entry of history) {
-          const [, item]    = entry;
+        // Iterate newest-first (reverse) to detect the month boundary early.
+        for (let i = history.length - 1; i >= 0; i--) {
+          const [, item]     = history[i];
           const [type, data] = item.op;
           const ts           = steemDate(item.timestamp);
 
-          // Stop scanning once we are past the start of the month.
+          // Once we pass the start of the month going backwards, stop.
           if (ts < monthStart) {
             hitOldEntry = true;
             break;
           }
 
-          if (type !== "comment")                        continue;
-          if (!data.permlink.startsWith("tw-"))          continue;
-          if (data.parent_permlink !== monthlyRoot)      continue;
+          if (type !== "comment")                               continue;
+          if (!data.permlink.startsWith("tw-"))                 continue;
+          if (data.parent_permlink !== monthlyRoot)             continue;
           if (data.parent_author   !== TWIST_CONFIG.ROOT_ACCOUNT) continue;
 
           collected.push({ data, timestamp: ts });
         }
 
-        // Stop if we hit an old entry, or if batch was smaller than BATCH
-        // (meaning we've reached the beginning of the account history).
+        // Stop if we passed the month boundary, or if the batch was smaller
+        // than BATCH (beginning of account history reached).
         if (hitOldEntry || history.length < BATCH) return resolve();
 
-        // Page further back: lowest sequence number in this batch minus 1.
+        // Page further back: the lowest sequence in this batch minus 1.
         const lowestSeq = history[0][0];
         if (lowestSeq <= 0) return resolve();
-        page(lowestSeq - 1).then(resolve).catch(reject);
+        page(lowestSeq - 1).then(resolve);
       });
     });
   }
@@ -205,8 +215,8 @@ function fetchTwistsByUser(username, monthlyRoot) {
     );
 
     return enriched
-      .filter(p => p && p.author)                              // drop failed fetches
-      .sort((a, b) => steemDate(b.created) - steemDate(a.created)); // newest first
+      .filter(p => p && p.author)
+      .sort((a, b) => steemDate(b.created) - steemDate(a.created));
   });
 }
 
