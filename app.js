@@ -398,7 +398,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHashHistory('/steemtwist/'),
+  history: createWebHashHistory('/steemtwist'),
   routes
 });
 
@@ -540,7 +540,7 @@ const App = {
           >Sign in</button>
         </template>
         <template v-else>
-          <a :href="'/#/@' + username" style="text-decoration:none;">
+          <a :href="'#/@' + username" style="text-decoration:none;">
             <img
               :src="'https://steemitimages.com/u/' + username + '/avatar/small'"
               style="width:32px;height:32px;border-radius:50%;border:2px solid #a5d6a7;vertical-align:middle;"

@@ -280,7 +280,7 @@ const ReplyCardComponent = {
       <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;">
 
         <!-- Avatar -->
-        <a :href="'/#/@' + reply.author" style="flex-shrink:0;">
+        <a :href="'#/@' + reply.author" style="flex-shrink:0;">
           <img
             :src="avatarUrl"
             style="width:28px;height:28px;border-radius:50%;border:2px solid #e0e0e0;"
@@ -294,7 +294,7 @@ const ReplyCardComponent = {
           <!-- Header -->
           <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
             <a
-              :href="'/#/@' + reply.author"
+              :href="'#/@' + reply.author"
               style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:13px;"
             >@{{ reply.author }}</a>
             <span style="font-size:11px;color:#bbb;">{{ relativeTime }}</span>
@@ -489,7 +489,7 @@ const TwistCardComponent = {
     },
     // Hash-router link to the dedicated twist page
     twistUrl() {
-      return `/#/@${this.post.author}/${this.post.permlink}`;
+      return `#/@${this.post.author}/${this.post.permlink}`;
     },
     upvoteCount() {
       const votes = this.post.active_votes || [];
@@ -579,7 +579,7 @@ const TwistCardComponent = {
     ">
       <!-- Header -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-        <a :href="'/#/@' + post.author">
+        <a :href="'#/@' + post.author">
           <img
             :src="avatarUrl"
             style="width:40px;height:40px;border-radius:50%;border:2px solid #e0e0e0;"
@@ -588,7 +588,7 @@ const TwistCardComponent = {
         </a>
         <div>
           <a
-            :href="'/#/@' + post.author"
+            :href="'#/@' + post.author"
             style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:14px;"
           >@{{ post.author }}</a>
           <!-- Timestamp: relative label linked to the twist page,
