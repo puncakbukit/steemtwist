@@ -105,11 +105,21 @@ Pure async helpers with no Vue or DOM dependencies.
 - `TWIST_CONFIG` — central config (`ROOT_ACCOUNT`, `ROOT_PREFIX`, `TAG`, `POST_PREFIX`)
 - `getMonthlyRoot()` → e.g. `feed-2026-03` (UTC)
 - `generateTwistPermlink(username)` → e.g. `tw-20260315-091530-alice` (UTC)
-- `fetchTwistFeed(monthlyRoot)` — fetches and sorts the month's twists newest-first
+- `fetchTwistFeed(monthlyRoot)` — fetches and sorts the month's twists newest-first via `getContentReplies` on the monthly root
+- `fetchTwistsByUser(username, monthlyRoot)` — scans the user's account history in reverse-chronological batches of 1000, filters to `tw-` permlinks for the current month, then enriches each result with `fetchPost`; used by `ProfileView` instead of loading the full feed
 - `buildZeroPayoutOps(...)` — builds a `[comment, comment_options]` operation pair with `max_accepted_payout = "0.000 SBD"` and `allow_votes = true`
 - `postTwist(username, message, callback)` — broadcasts comment + comment_options atomically via `requestBroadcast`
 - `postTwistReply(username, message, parentAuthor, parentPermlink, callback)` — same, for inline replies
 - `voteTwist(voter, author, permlink, weight, callback)` — upvote via Keychain
+- `startFirehose(monthlyRoot, onTwist)` — streams live `comment` operations from the blockchain, filters to SteemTwist twists, synthesises an instant post object and then enriches it after 4 s; returns `{ stop() }`
+
+## Data source architecture
+
+| Context | API used | Why |
+|---|---|---|
+| Home feed (all authors) | `getContentReplies` on monthly root | Only way to get a global cross-author feed |
+| Profile page (one author) | `getAccountHistory` + `fetchPost` | Scans one user's log; stops at month boundary — faster than loading the full feed |
+| Real-time updates | `streamOperations` (firehose) | Pushed by the node on every new block (~3 s) |
 
 ### `components.js`
 

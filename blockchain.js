@@ -125,6 +125,91 @@ function fetchPostsByUser(username, limit = 50) {
   );
 }
 
+// ---- Account-history twist scanner ----
+
+// Fetch all twists posted by a single user in the given month, using the
+// account history index instead of getContentReplies on the root post.
+//
+// Why this is faster for profile pages:
+//   getContentReplies walks the entire monthly comment tree (all authors).
+//   getAccountHistory only reads one user's operation log — much smaller —
+//   and we stop paging the moment we reach entries older than the month.
+//
+// Algorithm:
+//   1. Page backwards through the user's account history in batches of 1000.
+//   2. Keep only "comment" ops whose permlink starts with "tw-" and whose
+//      parent_permlink matches the monthly root.
+//   3. Stop when the oldest entry in a batch predates the current month,
+//      or when we receive a partial batch (no more history).
+//   4. Enrich the filtered raw ops with fetchPost so each object has
+//      net_votes, active_votes, children, etc. — same shape as the
+//      objects returned by fetchTwistFeed.
+//
+// Returns a Promise<post[]> sorted newest-first.
+function fetchTwistsByUser(username, monthlyRoot) {
+  // Month boundary in UTC — entries older than this are skipped.
+  const now        = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  const BATCH = 1000;
+  const collected = [];  // raw comment op data objects
+
+  function page(from) {
+    return new Promise((resolve, reject) => {
+      steem.api.getAccountHistory(username, from, BATCH, (err, history) => {
+        if (err) return reject(err);
+        if (!history || history.length === 0) return resolve();
+
+        let hitOldEntry = false;
+
+        for (const entry of history) {
+          const [, item]    = entry;
+          const [type, data] = item.op;
+          const ts           = steemDate(item.timestamp);
+
+          // Stop scanning once we are past the start of the month.
+          if (ts < monthStart) {
+            hitOldEntry = true;
+            break;
+          }
+
+          if (type !== "comment")                        continue;
+          if (!data.permlink.startsWith("tw-"))          continue;
+          if (data.parent_permlink !== monthlyRoot)      continue;
+          if (data.parent_author   !== TWIST_CONFIG.ROOT_ACCOUNT) continue;
+
+          collected.push({ data, timestamp: ts });
+        }
+
+        // Stop if we hit an old entry, or if batch was smaller than BATCH
+        // (meaning we've reached the beginning of the account history).
+        if (hitOldEntry || history.length < BATCH) return resolve();
+
+        // Page further back: lowest sequence number in this batch minus 1.
+        const lowestSeq = history[0][0];
+        if (lowestSeq <= 0) return resolve();
+        page(lowestSeq - 1).then(resolve).catch(reject);
+      });
+    });
+  }
+
+  return page(-1).then(async () => {
+    if (collected.length === 0) return [];
+
+    // Enrich each raw op with a full getContent call to get vote counts,
+    // children count, and all other fields TwistCardComponent expects.
+    const enriched = await Promise.all(
+      collected.map(({ data }) =>
+        fetchPost(data.author, data.permlink).catch(() => null)
+      )
+    );
+
+    return enriched
+      .filter(p => p && p.author)                              // drop failed fetches
+      .sort((a, b) => steemDate(b.created) - steemDate(a.created)); // newest first
+  });
+}
+
 // ---- Keychain helpers ----
 
 // Post a new root post or a comment via Steem Keychain.

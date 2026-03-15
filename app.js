@@ -197,7 +197,9 @@ const HomeView = {
 };
 
 // ---- ProfileView ----
-// Displays a Steem user's profile + their recent twists.
+// Displays a Steem user's profile + their twists this month.
+// Uses fetchTwistsByUser (account history scan) instead of fetching the
+// entire monthly feed and filtering — much faster for individual profiles.
 const ProfileView = {
   name: "ProfileView",
   inject: ["username", "hasKeychain", "notify"],
@@ -213,19 +215,34 @@ const ProfileView = {
   },
 
   async created() {
-    const user = this.$route.params.user;
-    this.loading = true;
-    try {
-      const [profile, allTwists] = await Promise.all([
-        fetchAccount(user),
-        fetchTwistFeed(this.monthlyRoot)
-      ]);
-      this.profileData = profile;
-      this.userTwists  = allTwists.filter(t => t.author === user);
-    } catch {
-      this.notify("Failed to load profile.", "error");
+    await this.loadProfile();
+  },
+
+  // Reload when navigating between profiles without unmounting the view
+  // (e.g. clicking a username while already on a profile page).
+  watch: {
+    "$route.params.user"() { this.loadProfile(); }
+  },
+
+  methods: {
+    async loadProfile() {
+      const user    = this.$route.params.user;
+      this.loading  = true;
+      this.userTwists  = [];
+      this.profileData = null;
+      try {
+        // Run profile fetch and account-history twist scan concurrently.
+        const [profile, twists] = await Promise.all([
+          fetchAccount(user),
+          fetchTwistsByUser(user, this.monthlyRoot)
+        ]);
+        this.profileData = profile;
+        this.userTwists  = twists;
+      } catch {
+        this.notify("Failed to load profile.", "error");
+      }
+      this.loading = false;
     }
-    this.loading = false;
   },
 
   template: `
@@ -240,9 +257,17 @@ const ProfileView = {
         <user-profile-component :profile-data="profileData"></user-profile-component>
 
         <div style="margin-top:30px;">
-          <h3 style="max-width:600px;margin:0 auto 12px;text-align:left;color:#333;">
-            🌀 Twists this month
-          </h3>
+          <div style="
+            max-width:600px;margin:0 auto 12px;
+            display:flex;align-items:center;justify-content:space-between;
+          ">
+            <h3 style="margin:0;color:#333;">🌀 Twists this month</h3>
+            <button
+              @click="loadProfile"
+              style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;
+                     border-radius:12px;padding:2px 10px;font-size:12px;"
+            >⟳ Refresh</button>
+          </div>
 
           <div v-if="userTwists.length === 0" style="color:#aaa;padding:20px;font-size:14px;">
             No twists from @{{ $route.params.user }} this month.
