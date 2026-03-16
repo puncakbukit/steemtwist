@@ -259,7 +259,10 @@ const ReplyCardComponent = {
     indent()   { return Math.min(this.depth, 4) * 16; },
     upvoteCount() {
       const votes = this.reply.active_votes || [];
-      return votes.filter(v => v.percent > 0).length + (this.hasVoted ? 1 : 0);
+      const count = votes.length > 0
+        ? votes.filter(v => v.percent > 0).length
+        : Math.max(0, this.reply.net_votes || 0);
+      return count + (this.hasVoted ? 1 : 0);
     }
   },
   methods: {
@@ -556,8 +559,13 @@ const TwistCardComponent = {
     },
     upvoteCount() {
       const votes = this.post.active_votes || [];
-      const ups = votes.filter(v => v.percent > 0).length;
-      return ups + (this.hasVoted ? 1 : 0);
+      // active_votes is only populated by getContent (single post fetch).
+      // getContentReplies returns it empty, so fall back to net_votes which
+      // is always present and equals upvotes minus downvotes.
+      const count = votes.length > 0
+        ? votes.filter(v => v.percent > 0).length
+        : Math.max(0, this.post.net_votes || 0);
+      return count + (this.hasVoted ? 1 : 0);
     },
     canAct() {
       return !!this.username && this.hasKeychain;

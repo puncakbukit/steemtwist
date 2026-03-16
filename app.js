@@ -493,15 +493,17 @@ const App = {
     }
 
     // Fetch and cache the logged-in user's profile for the global header.
+    // When no user is logged in, falls back to @steemtwist so the header
+    // always has a cover image and identity rather than showing empty.
     async function loadProfile(user) {
-      if (!user) { profileData.value = null; return; }
-      profileData.value = await fetchAccount(user).catch(() => null);
+      const target = user || TWIST_CONFIG.ROOT_ACCOUNT;
+      profileData.value = await fetchAccount(target).catch(() => null);
     }
 
     onMounted(() => {
       setRPC(0);
-      // Pre-fetch profile if already logged in from localStorage
-      if (username.value) loadProfile(username.value);
+      // Always load a profile — logged-in user's own, or @steemtwist as fallback
+      loadProfile(username.value);
       let attempts = 0;
       const interval = setInterval(() => {
         attempts++;
@@ -544,11 +546,11 @@ const App = {
 
     function logout() {
       username.value      = "";
-      profileData.value   = null;
       loginError.value    = "";
       showLoginForm.value = false;
       localStorage.removeItem("steem_user");
       notify("Logged out.", "info");
+      loadProfile("");   // reload @steemtwist as fallback
     }
 
     provide("username",    username);
@@ -640,16 +642,17 @@ const App = {
         </nav>
       </div>
 
-      <!-- ── Profile strip (logged-in user only) ────────── -->
-      <div v-if="username" style="
+      <!-- ── Profile strip — logged-in user OR @steemtwist fallback ── -->
+      <div v-if="profileData" style="
         position:relative;z-index:2;
         padding:0 20px 16px;
         display:flex;align-items:flex-end;gap:14px;
       ">
         <!-- Avatar -->
-        <a :href="'#/@' + username" style="text-decoration:none;flex-shrink:0;">
+        <a :href="username ? '#/@' + username : '#/@' + profileData.username"
+           style="text-decoration:none;flex-shrink:0;">
           <img
-            :src="'https://steemitimages.com/u/' + username + '/avatar'"
+            :src="'https://steemitimages.com/u/' + (username || profileData.username) + '/avatar'"
             style="
               width:72px;height:72px;border-radius:50%;
               border:3px solid rgba(255,255,255,0.5);
@@ -664,12 +667,12 @@ const App = {
         <div style="min-width:0;padding-bottom:4px;">
           <div style="font-size:17px;font-weight:700;color:#fff;
                       text-shadow:0 1px 6px rgba(0,0,0,0.5);line-height:1.2;">
-            {{ profileData ? profileData.displayName : username }}
+            {{ profileData.displayName }}
           </div>
           <div style="font-size:13px;color:#e0d0ff;margin-top:1px;">
-            @{{ username }}
+            @{{ username || profileData.username }}
           </div>
-          <div v-if="profileData && profileData.about"
+          <div v-if="profileData.about"
                style="font-size:13px;color:#c0b0e0;margin-top:3px;
                       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px;">
             {{ profileData.about }}
@@ -677,7 +680,7 @@ const App = {
         </div>
       </div>
 
-      <!-- Guest: keep a little bottom padding so the gradient has height -->
+      <!-- Fallback spacer while profile is still loading -->
       <div v-else style="height:8px;position:relative;z-index:2;"></div>
 
     </div><!-- /global header -->
