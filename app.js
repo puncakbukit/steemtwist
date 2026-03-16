@@ -307,9 +307,14 @@ const ProfileView = {
       </div>
 
       <template v-else>
-        <user-profile-component :profile-data="profileData"></user-profile-component>
+        <!-- Show profile header only when viewing someone else's profile.
+             The logged-in user's own header is already in the global banner. -->
+        <user-profile-component
+          v-if="$route.params.user !== username"
+          :profile-data="profileData"
+        ></user-profile-component>
 
-        <div style="margin-top:30px;">
+        <div style="margin-top:20px;">
           <div style="
             max-width:600px;margin:0 auto 12px;
             display:flex;align-items:center;justify-content:space-between;
@@ -318,7 +323,7 @@ const ProfileView = {
             <button
               @click="loadProfile"
               style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
-                     border-radius:12px;padding:2px 10px;font-size:12px;"
+                     border-radius:12px;padding:2px 10px;font-size:12px;margin:0;"
             >⟳ Refresh</button>
           </div>
 
@@ -477,6 +482,7 @@ const App = {
     const showLoginForm = ref(false);
     const isLoggingIn   = ref(false);
     const notification  = ref({ message: "", type: "error" });
+    const profileData   = ref(null);   // logged-in user's profile, fetched on login/mount
     const currentRoute  = useRoute();
 
     function notify(message, type = "error") {
@@ -486,8 +492,16 @@ const App = {
       notification.value = { message: "", type: "error" };
     }
 
+    // Fetch and cache the logged-in user's profile for the global header.
+    async function loadProfile(user) {
+      if (!user) { profileData.value = null; return; }
+      profileData.value = await fetchAccount(user).catch(() => null);
+    }
+
     onMounted(() => {
       setRPC(0);
+      // Pre-fetch profile if already logged in from localStorage
+      if (username.value) loadProfile(username.value);
       let attempts = 0;
       const interval = setInterval(() => {
         attempts++;
@@ -524,11 +538,13 @@ const App = {
         loginError.value    = "";
         showLoginForm.value = false;
         notify("Logged in as @" + user, "success");
+        loadProfile(user);
       });
     }
 
     function logout() {
       username.value      = "";
+      profileData.value   = null;
       loginError.value    = "";
       showLoginForm.value = false;
       localStorage.removeItem("steem_user");
@@ -543,73 +559,128 @@ const App = {
       username, hasKeychain, keychainReady,
       loginError, showLoginForm, isLoggingIn,
       notification, notify, dismissNotification,
-      login, logout, currentRoute
+      login, logout, profileData, currentRoute
     };
   },
 
   template: `
-    <!-- Header -->
-    <div style="
-      background: linear-gradient(135deg, #1a3af5 0%, #8b2fc9 55%, #e0187a 100%);
-      padding:12px 20px;
-      display:flex;align-items:center;justify-content:space-between;
-      flex-wrap:wrap;gap:8px;
-      box-shadow: 0 2px 16px rgba(168,85,247,0.4);
-    ">
-      <router-link to="/" style="text-decoration:none;">
-        <div>
-          <span style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:1px;
-                       text-shadow:0 0 20px rgba(34,211,238,0.6);">
-            🌀 SteemTwist
-          </span>
-          <div style="color:#e0d0ff;font-size:15px;letter-spacing:0.5px;margin-top:2px;font-weight:500;">
-            Steem with a Twist
+    <!-- ═══════════════════════════════════════════════════════
+         GLOBAL HEADER — cover image + nav bar + profile strip
+    ══════════════════════════════════════════════════════════ -->
+    <div style="position:relative;overflow:hidden;">
+
+      <!-- Cover layer: user cover image, falls back to gradient -->
+      <div :style="{
+        position:'absolute', inset:0,
+        backgroundImage: (profileData && profileData.coverImage)
+          ? 'url(' + profileData.coverImage + ')'
+          : 'none',
+        backgroundSize:'cover', backgroundPosition:'center',
+        zIndex:0
+      }"></div>
+
+      <!-- Always-on gradient overlay so nav stays readable over any cover -->
+      <div style="
+        position:absolute;inset:0;
+        background:linear-gradient(135deg,
+          rgba(26,58,245,0.85) 0%,
+          rgba(139,47,201,0.80) 55%,
+          rgba(224,24,122,0.75) 100%);
+        zIndex:1;
+      "></div>
+
+      <!-- ── Top nav bar ─────────────────────────────────── -->
+      <div style="
+        position:relative;z-index:2;
+        padding:12px 20px;
+        display:flex;align-items:center;justify-content:space-between;
+        flex-wrap:wrap;gap:8px;
+        box-shadow:0 2px 16px rgba(168,85,247,0.4);
+      ">
+        <router-link to="/" style="text-decoration:none;">
+          <div>
+            <span style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:1px;
+                         text-shadow:0 0 20px rgba(34,211,238,0.6);">
+              🌀 SteemTwist
+            </span>
+            <div style="color:#e0d0ff;font-size:15px;letter-spacing:0.5px;margin-top:2px;font-weight:500;">
+              Steem with a Twist
+            </div>
+          </div>
+        </router-link>
+
+        <nav style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+          <router-link to="/" exact-active-class="nav-active"
+            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+          >Home</router-link>
+
+          <router-link v-if="username" :to="'/@' + username" exact-active-class="nav-active"
+            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+          >My Profile</router-link>
+
+          <router-link to="/about" exact-active-class="nav-active"
+            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+          >About</router-link>
+
+          <template v-if="!username">
+            <button
+              @click="showLoginForm = !showLoginForm"
+              style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
+                     color:#fff;padding:5px 16px;border-radius:20px;font-size:14px;
+                     backdrop-filter:blur(4px);margin:0;"
+            >Sign in</button>
+          </template>
+          <template v-else>
+            <button
+              @click="logout"
+              style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);
+                     color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;margin:0;"
+            >Logout</button>
+          </template>
+        </nav>
+      </div>
+
+      <!-- ── Profile strip (logged-in user only) ────────── -->
+      <div v-if="username" style="
+        position:relative;z-index:2;
+        padding:0 20px 16px;
+        display:flex;align-items:flex-end;gap:14px;
+      ">
+        <!-- Avatar -->
+        <a :href="'#/@' + username" style="text-decoration:none;flex-shrink:0;">
+          <img
+            :src="'https://steemitimages.com/u/' + username + '/avatar'"
+            style="
+              width:72px;height:72px;border-radius:50%;
+              border:3px solid rgba(255,255,255,0.5);
+              background:#1a1030;
+              box-shadow:0 0 20px rgba(168,85,247,0.5);
+            "
+            @error="$event.target.src='https://steemitimages.com/u/steemtwist/avatar'"
+          />
+        </a>
+
+        <!-- Name / bio -->
+        <div style="min-width:0;padding-bottom:4px;">
+          <div style="font-size:17px;font-weight:700;color:#fff;
+                      text-shadow:0 1px 6px rgba(0,0,0,0.5);line-height:1.2;">
+            {{ profileData ? profileData.displayName : username }}
+          </div>
+          <div style="font-size:13px;color:#e0d0ff;margin-top:1px;">
+            @{{ username }}
+          </div>
+          <div v-if="profileData && profileData.about"
+               style="font-size:13px;color:#c0b0e0;margin-top:3px;
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px;">
+            {{ profileData.about }}
           </div>
         </div>
-      </router-link>
+      </div>
 
-      <nav style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
-        <router-link
-          to="/"
-          exact-active-class="nav-active"
-          style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
-        >Home</router-link>
+      <!-- Guest: keep a little bottom padding so the gradient has height -->
+      <div v-else style="height:8px;position:relative;z-index:2;"></div>
 
-        <router-link
-          v-if="username"
-          :to="'/@' + username"
-          exact-active-class="nav-active"
-          style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
-        >My Profile</router-link>
-
-        <router-link
-          to="/about"
-          exact-active-class="nav-active"
-          style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
-        >About</router-link>
-
-        <template v-if="!username">
-          <button
-            @click="showLoginForm = !showLoginForm"
-            style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
-                   color:#fff;padding:5px 16px;border-radius:20px;font-size:14px;backdrop-filter:blur(4px);"
-          >Sign in</button>
-        </template>
-        <template v-else>
-          <a :href="'#/@' + username" style="text-decoration:none;">
-            <img
-              :src="'https://steemitimages.com/u/' + username + '/avatar/small'"
-              style="width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,0.6);vertical-align:middle;"
-            />
-          </a>
-          <button
-            @click="logout"
-            style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);
-                   color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;"
-          >Logout</button>
-        </template>
-      </nav>
-    </div>
+    </div><!-- /global header -->
 
     <!-- Inline login form -->
     <div v-if="!username && showLoginForm" style="
