@@ -619,9 +619,10 @@ const TwistCardComponent = {
       });
     },
     toggleReplies() {
-      if (this.replyCount > 0) {
-        this.showReplies = !this.showReplies;
-      }
+      // Always toggle the reply list — even if replyCount is 0, the user
+      // may want to see "No replies yet" or post the first reply.
+      // This also fixes the case where children=0 but replies exist on-chain.
+      this.showReplies = !this.showReplies;
       if (this.canAct) {
         this.showReplyBox = !this.showReplyBox;
       }

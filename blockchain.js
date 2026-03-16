@@ -335,12 +335,20 @@ function generateTwistPermlink(username) {
 }
 
 // Fetch all direct-reply twists for the given monthly root.
+// First fetches the list via getContentReplies (fast), then enriches each
+// post with getContent in parallel so active_votes is always populated —
+// giving accurate upvote counts consistent with the twist-specific page.
 // Resolves to an array sorted newest-first.
 function fetchTwistFeed(monthlyRoot) {
-  return fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, monthlyRoot).then(replies =>
-    [...replies].sort(
-      (a, b) => steemDate(b.created) - steemDate(a.created)
-    )
+  return fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, monthlyRoot).then(replies => {
+    // Enrich all posts in parallel to get active_votes, net_votes, children.
+    return Promise.all(
+      replies.map(r => fetchPost(r.author, r.permlink).catch(() => r))
+    );
+  }).then(enriched =>
+    enriched
+      .filter(p => p && p.author)
+      .sort((a, b) => steemDate(b.created) - steemDate(a.created))
   );
 }
 
