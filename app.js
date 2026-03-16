@@ -579,13 +579,13 @@ const App = {
         zIndex:0
       }"></div>
 
-      <!-- Always-on gradient overlay so nav stays readable over any cover -->
+      <!-- Gradient overlay: opaque at top (for nav legibility), fades out toward bottom -->
       <div style="
         position:absolute;inset:0;
-        background:linear-gradient(135deg,
-          rgba(26,58,245,0.85) 0%,
-          rgba(139,47,201,0.80) 55%,
-          rgba(224,24,122,0.75) 100%);
+        background:linear-gradient(to bottom,
+          rgba(30,10,60,0.72) 0%,
+          rgba(30,10,60,0.30) 55%,
+          rgba(30,10,60,0.08) 100%);
         zIndex:1;
       "></div>
 
