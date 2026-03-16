@@ -196,6 +196,15 @@ function renderMarkdown(text) {
   return marked.parse(text, markedOptions);
 }
 
+// Strip the SteemTwist back-link appended by buildZeroPayoutOps before
+// rendering. The link takes the form:
+//   \n\n<sub>Posted via [SteemTwist](...)</sub>
+// Matching on the opening <sub>Posted via is sufficient and tolerates any URL.
+function stripBackLink(text) {
+  if (!text) return "";
+  return text.replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "").trimEnd();
+}
+
 // ---- ReplyCardComponent ----
 // Renders a single reply with its own compose box and a recursive
 // ThreadComponent for its children. Declared before ThreadComponent
@@ -243,7 +252,7 @@ const ReplyCardComponent = {
     replyUrl() {
       return `#/@${this.reply.author}/${this.reply.permlink}`;
     },
-    bodyHtml() { return renderMarkdown(this.reply.body); },
+    bodyHtml() { return renderMarkdown(stripBackLink(this.reply.body)); },
     canAct()   { return !!this.username && this.hasKeychain; },
     indent()   { return Math.min(this.depth, 4) * 16; },
     upvoteCount() {
@@ -552,14 +561,14 @@ const TwistCardComponent = {
       return !!this.username && this.hasKeychain;
     },
     isLong() {
-      return this.post.body.length > PREVIEW_LENGTH ||
+      return stripBackLink(this.post.body).length > PREVIEW_LENGTH ||
              (this.post.children || 0) > THREAD_REPLY_THRESHOLD;
     },
     bodyPreview() {
-      return this.post.body.slice(0, PREVIEW_LENGTH) + "…";
+      return stripBackLink(this.post.body).slice(0, PREVIEW_LENGTH) + "…";
     },
     bodyHtml() {
-      return renderMarkdown(this.post.body);
+      return renderMarkdown(stripBackLink(this.post.body));
     },
     bodyPreviewHtml() {
       return renderMarkdown(this.bodyPreview);

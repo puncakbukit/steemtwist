@@ -305,7 +305,11 @@ const TWIST_CONFIG = {
   ROOT_ACCOUNT: "steemtwist",
   ROOT_PREFIX:  "feed-",
   TAG:          "steemtwist",
-  POST_PREFIX:  "tw"
+  POST_PREFIX:  "tw",
+  // All tags attached to every twist. First tag is the Steem category.
+  TAGS:         ["steemtwist", "microblog", "steem", "twist", "social", "web"],
+  // Canonical dApp URL embedded as a back-link at the end of every body.
+  DAPP_URL:     "https://puncakbukit.github.io/steemtwist"
 };
 
 // Returns the current monthly root permlink, e.g. "feed-2026-03".
@@ -343,7 +347,14 @@ function fetchTwistFeed(monthlyRoot) {
 // Build a [comment, comment_options] operation pair with payouts disabled.
 // max_accepted_payout = "0.000 SBD" prevents any monetary reward.
 // allow_votes = true so likes still work as appreciation signals.
+//
+// A back-link to the dApp is appended to every body so other Steem interfaces
+// (Steemit, Busy, etc.) show the origin. SteemTwist strips it before rendering.
 function buildZeroPayoutOps(username, body, parentAuthor, parentPermlink, permlink, jsonMetadata) {
+  const bodyWithLink =
+    body.trimEnd() +
+    `\n\n<sub>Posted via [SteemTwist](${TWIST_CONFIG.DAPP_URL})</sub>`;
+
   const comment = [
     "comment",
     {
@@ -352,7 +363,7 @@ function buildZeroPayoutOps(username, body, parentAuthor, parentPermlink, permli
       author:          username,
       permlink:        permlink,
       title:           "",
-      body:            body,
+      body:            bodyWithLink,
       json_metadata:   JSON.stringify(jsonMetadata)
     }
   ];
@@ -384,10 +395,10 @@ function postTwist(username, message, callback) {
   const ops = buildZeroPayoutOps(
     username,
     message,
-    TWIST_CONFIG.ROOT_ACCOUNT,  // parentAuthor
-    root,                       // parentPermlink
+    TWIST_CONFIG.ROOT_ACCOUNT,
+    root,
     permlink,
-    { app: "steemtwist/0.1", type: "micro", tags: [TWIST_CONFIG.TAG] }
+    { app: "steemtwist/0.1", type: "micro", tags: TWIST_CONFIG.TAGS }
   );
 
   steem_keychain.requestBroadcast(username, ops, "Posting", callback);
@@ -404,7 +415,7 @@ function postTwistReply(username, message, parentAuthor, parentPermlink, callbac
     parentAuthor,
     parentPermlink,
     replyPermlink,
-    { app: "steemtwist/0.1", type: "micro-reply", tags: [TWIST_CONFIG.TAG] }
+    { app: "steemtwist/0.1", type: "micro-reply", tags: TWIST_CONFIG.TAGS }
   );
 
   steem_keychain.requestBroadcast(username, ops, "Posting", callback);
