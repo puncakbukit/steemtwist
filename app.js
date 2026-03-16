@@ -12,7 +12,9 @@ const { createRouter, createWebHashHistory, useRoute }                = VueRoute
 
 // ---- HomeView ----
 // Main timeline: composer + live feed of this month's twists.
-// Firehose mode streams new twists directly from the blockchain in real time.
+// Supports three sort modes (New / Hot / Top) computed client-side from
+// blockchain vote data. Firehose mode streams new twists and live votes,
+// triggering instant re-ranking without any server round-trips.
 const HomeView = {
   name: "HomeView",
   inject: ["username", "hasKeychain", "notify"],
@@ -20,14 +22,23 @@ const HomeView = {
 
   data() {
     return {
-      twists:        [],
-      loading:       true,
-      isPosting:     false,
-      monthlyRoot:   getMonthlyRoot(),
-      firehoseOn:    false,
-      firehoseStream: null,    // { stop() } handle returned by startFirehose
+      twists:         [],
+      loading:        true,
+      isPosting:      false,
+      monthlyRoot:    getMonthlyRoot(),
+      sortMode:       "new",        // "new" | "hot" | "top"
+      firehoseOn:     false,
+      firehoseStream: null,
       firehoseError:  ""
     };
+  },
+
+  computed: {
+    // Apply the selected ranking formula to the raw twists array.
+    // Entirely reactive — switching sortMode re-sorts instantly with no fetch.
+    sortedTwists() {
+      return sortTwists(this.twists, this.sortMode);
+    }
   },
 
   async created() {
@@ -35,7 +46,6 @@ const HomeView = {
   },
 
   unmounted() {
-    // Always stop the stream when the view is destroyed (route change, etc.)
     this.stopFirehose();
   },
 
@@ -44,12 +54,11 @@ const HomeView = {
       this.loading = true;
       try {
         const fresh = await fetchTwistFeed(this.monthlyRoot);
-        // Merge: keep any live-streamed posts not yet in the full fetch,
-        // then replace everything else with the enriched server data.
         const serverPermalinks = new Set(fresh.map(p => p.permlink));
         const liveOnly = this.twists.filter(
           p => p._firehose && !serverPermalinks.has(p.permlink)
         );
+        // Store unsorted — sortedTwists computed handles ordering.
         this.twists = [...liveOnly, ...fresh];
       } catch (e) {
         this.notify("Could not load twists. Please try again.", "error");
@@ -64,8 +73,6 @@ const HomeView = {
         this.isPosting = false;
         if (res.success) {
           this.notify("Twist posted! 🌀", "success");
-          // Small delay so the node can index the new post.
-          // If firehose is on, it will likely inject the post before this runs.
           await new Promise(r => setTimeout(r, 2000));
           await this.loadFeed();
         } else {
@@ -75,37 +82,48 @@ const HomeView = {
     },
 
     toggleFirehose() {
-      if (this.firehoseOn) {
-        this.stopFirehose();
-      } else {
-        this.startFirehose();
-      }
+      this.firehoseOn ? this.stopFirehose() : this.startFirehose();
     },
 
     startFirehose() {
       this.firehoseError = "";
       this.firehoseOn    = true;
 
-      this.firehoseStream = startFirehose(this.monthlyRoot, (post, isUpdate) => {
-        if (isUpdate) {
-          // Replace the synthetic placeholder with the enriched post.
-          const idx = this.twists.findIndex(p => p.permlink === post.permlink);
-          if (idx !== -1) {
-            this.twists.splice(idx, 1, post);
+      this.firehoseStream = startFirehose(
+        this.monthlyRoot,
+
+        // onTwist — new post or enrichment update
+        (post, isUpdate) => {
+          if (isUpdate) {
+            const idx = this.twists.findIndex(p => p.permlink === post.permlink);
+            if (idx !== -1) this.twists.splice(idx, 1, post);
+            return;
           }
-          return;
+          if (this.twists.some(p => p.permlink === post.permlink)) return;
+          this.twists.push(post);   // push, not unshift — sortedTwists handles order
+          setTimeout(() => {
+            const p = this.twists.find(t => t.permlink === post.permlink);
+            if (p) p._firehose = false;
+          }, 2600);
+        },
+
+        // onVote — update active_votes in-place so sortedTwists re-ranks live
+        (author, permlink, voter, weight) => {
+          const post = this.twists.find(
+            p => p.author === author && p.permlink === permlink
+          );
+          if (!post) return;
+          const votes = post.active_votes || [];
+          const existing = votes.findIndex(v => v.voter === voter);
+          if (existing !== -1) {
+            votes.splice(existing, 1, { voter, percent: weight });
+          } else {
+            votes.push({ voter, percent: weight });
+          }
+          // Trigger Vue reactivity on the array property
+          post.active_votes = [...votes];
         }
-
-        // Deduplicate — the user's own post may arrive here AND via loadFeed().
-        if (this.twists.some(p => p.permlink === post.permlink)) return;
-
-        // Prepend with flash flag, then clear the flag after animation ends.
-        this.twists.unshift(post);
-        setTimeout(() => {
-          const p = this.twists.find(t => t.permlink === post.permlink);
-          if (p) p._firehose = false;
-        }, 2600);
-      });
+      );
     },
 
     stopFirehose() {
@@ -120,7 +138,7 @@ const HomeView = {
   template: `
     <div style="margin-top:20px;">
 
-      <!-- Top bar: month badge + refresh + firehose toggle -->
+      <!-- Top bar -->
       <div style="
         display:flex;align-items:center;flex-wrap:wrap;gap:8px;
         font-size:13px;color:#888;margin-bottom:14px;
@@ -137,18 +155,16 @@ const HomeView = {
         <button
           @click="toggleFirehose"
           :style="{
-            borderRadius: '12px', padding: '2px 12px', fontSize: '12px',
-            fontWeight: '600', border: '1px solid',
-            background:   firehoseOn ? '#fff3e0' : '#f5f5f5',
-            color:        firehoseOn ? '#e65100' : '#888',
-            borderColor:  firehoseOn ? '#ffb74d' : '#ddd'
+            borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
+            fontWeight:'600', border:'1px solid',
+            background:  firehoseOn ? '#fff3e0' : '#f5f5f5',
+            color:       firehoseOn ? '#e65100' : '#888',
+            borderColor: firehoseOn ? '#ffb74d' : '#ddd'
           }"
           :title="firehoseOn ? 'Stop live stream' : 'Start live stream'"
-        >
-          {{ firehoseOn ? '🔥 Firehose ON' : '🔥 Firehose OFF' }}
-        </button>
+        >{{ firehoseOn ? '🔥 Firehose ON' : '🔥 Firehose OFF' }}</button>
 
-        <!-- Live pulse indicator -->
+        <!-- Live pulse -->
         <span v-if="firehoseOn" style="display:flex;align-items:center;gap:5px;color:#e65100;font-size:12px;">
           <span style="
             display:inline-block;width:8px;height:8px;border-radius:50%;
@@ -156,6 +172,24 @@ const HomeView = {
           "></span>
           Live
         </span>
+
+        <!-- Sort mode tabs — right-aligned -->
+        <div style="margin-left:auto;display:flex;gap:4px;">
+          <button
+            v-for="mode in [{key:'new',label:'🕒 New'},{key:'hot',label:'🔥 Hot'},{key:'top',label:'⬆ Top'}]"
+            :key="mode.key"
+            @click="sortMode = mode.key"
+            :style="{
+              borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
+              fontWeight: sortMode === mode.key ? '700' : '400',
+              border:'1px solid',
+              background:  sortMode === mode.key ? '#1b5e20' : '#f5f5f5',
+              color:       sortMode === mode.key ? '#fff'     : '#555',
+              borderColor: sortMode === mode.key ? '#1b5e20'  : '#ddd',
+              cursor:'pointer'
+            }"
+          >{{ mode.label }}</button>
+        </div>
       </div>
 
       <!-- Composer -->
@@ -178,12 +212,12 @@ const HomeView = {
       <!-- Feed -->
       <loading-spinner-component v-if="loading" message="Loading twists…"></loading-spinner-component>
 
-      <div v-else-if="twists.length === 0" style="color:#aaa;padding:40px 0;font-size:15px;">
+      <div v-else-if="sortedTwists.length === 0" style="color:#aaa;padding:40px 0;font-size:15px;">
         No twists yet this month. Be the first! 🌀
       </div>
 
       <twist-card-component
-        v-for="post in twists"
+        v-for="post in sortedTwists"
         :key="post.permlink"
         :post="post"
         :username="username"

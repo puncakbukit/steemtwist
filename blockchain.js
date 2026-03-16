@@ -445,17 +445,53 @@ function retwistPost(username, author, permlink, callback) {
   );
 }
 
-// ---- Firehose stream ----
+// ---- Client-side ranking ----
+
+// Sum of positive vote percents — a Steem-Power-weighted upvote signal.
+// Accounts with more SP cast higher-percent votes, so this naturally
+// weights influential votes more than a simple count.
+function voteWeight(post) {
+  const votes = post.active_votes || [];
+  return votes.reduce((sum, v) => sum + (v.percent > 0 ? v.percent : 0), 0);
+}
+
+// "Hot" score — gravity decay formula inspired by Hacker News.
+// score = voteWeight / (ageHours + 2)^1.5
+// Effect: newer posts need fewer votes to rank high;
+//         older posts decay even with many votes.
+function scoreHot(post) {
+  const ageHours = (Date.now() - steemDate(post.created).getTime()) / 3_600_000;
+  return voteWeight(post) / Math.pow(ageHours + 2, 1.5);
+}
+
+// "Top" score — pure vote weight, no time decay.
+// Equivalent to Reddit's "Top of all time" within the monthly feed.
+function scoreTop(post) {
+  return voteWeight(post);
+}
+
+// "New" score — simple chronological, newest first.
+function scoreNew(post) {
+  return steemDate(post.created).getTime();
+}
+
+// Apply a named sort mode to an array of posts.
+// Returns a new sorted array; never mutates the original.
+function sortTwists(posts, mode) {
+  const fn = mode === "hot" ? scoreHot
+           : mode === "top" ? scoreTop
+           : scoreNew;
+  return [...posts].sort((a, b) => fn(b) - fn(a));
+}
 
 // Start streaming all operations from the blockchain.
+// Start streaming all operations from the blockchain.
 // Calls onTwist(post) whenever a new top-level SteemTwist post is detected.
+// Calls onVote(author, permlink, voter, percent) whenever a vote lands on
+// any post — HomeView uses this to update active_votes in-memory so the
+// ranking computed property re-sorts without a full reload.
 // Returns a stop() function — call it to cancel the stream.
-//
-// The raw stream operation only contains the comment fields (no vote counts,
-// no children count). We synthesise a minimal post object immediately for
-// zero-latency display, then enrich it with a getContent call so the card
-// has accurate metadata once the node has indexed it.
-function startFirehose(monthlyRoot, onTwist) {
+function startFirehose(monthlyRoot, onTwist, onVote) {
   let active = true;
 
   steem.api.streamOperations((err, op) => {
@@ -463,9 +499,17 @@ function startFirehose(monthlyRoot, onTwist) {
     if (err)     return;
 
     const [type, data] = op;
-    if (type !== "comment")                          return;
-    if (data.parent_author   !== TWIST_CONFIG.ROOT_ACCOUNT) return;
-    if (data.parent_permlink !== monthlyRoot)        return;
+
+    // ── Vote op: forward to caller for live ranking updates ──────────
+    if (type === "vote" && typeof onVote === "function") {
+      onVote(data.author, data.permlink, data.voter, data.weight);
+      return;
+    }
+
+    // ── Comment op: new twist ────────────────────────────────────────
+    if (type !== "comment")                                    return;
+    if (data.parent_author   !== TWIST_CONFIG.ROOT_ACCOUNT)   return;
+    if (data.parent_permlink !== monthlyRoot)                  return;
 
     // Build a minimal post object so the card renders instantly.
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
@@ -481,13 +525,12 @@ function startFirehose(monthlyRoot, onTwist) {
       children:             0,
       pending_payout_value: "0.000 SBD",
       json_metadata:        data.json_metadata || "",
-      _firehose:            true   // flag so HomeView can apply the flash style
+      _firehose:            true
     };
 
     onTwist(post);
 
-    // Enrich asynchronously — replace the synthetic post with real data
-    // once the node has had a moment to index the operation.
+    // Enrich asynchronously once the node has indexed the operation.
     setTimeout(() => {
       if (!active) return;
       fetchPost(data.author, data.permlink).then(full => {
