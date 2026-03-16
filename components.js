@@ -39,10 +39,10 @@ const AppNotificationComponent = {
         fontSize: "14px", gap: "10px"
       };
       if (this.type === "success")
-        return { ...base, background: "#e8f5e9", border: "1px solid #a5d6a7", color: "#1b5e20" };
+        return { ...base, background: "#0a2d12", border: "1px solid #166534", color: "#86efac" };
       if (this.type === "info")
-        return { ...base, background: "#e3f2fd", border: "1px solid #90caf9", color: "#0d47a1" };
-      return   { ...base, background: "#ffebee", border: "1px solid #ef9a9a", color: "#b71c1c" };
+        return { ...base, background: "#0a1a2d", border: "1px solid #1e3a5f", color: "#93c5fd" };
+      return   { ...base, background: "#2d0a0a", border: "1px solid #7f1d1d", color: "#fca5a5" };
     },
     icon() {
       if (this.type === "success") return "✅";
@@ -101,18 +101,18 @@ const AuthComponent = {
           type="text"
           placeholder="Steem username"
           autocomplete="username"
-          style="padding:7px 10px;border-radius:6px;border:1px solid #ccc;font-size:14px;width:180px;"
+          style="padding:7px 10px;border-radius:20px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;width:180px;"
           @keydown="onKeydown"
         />
         <button @click="submit" :disabled="!usernameInput.trim() || isLoggingIn">Sign in</button>
-        <button @click="$emit('close')" style="background:#888;">Cancel</button>
+        <button @click="$emit('close')" style="background:#2e2050;border-radius:20px;">Cancel</button>
         <div v-if="loginError" style="width:100%;color:#c62828;font-size:13px;margin-top:4px;">
           {{ loginError }}
         </div>
       </template>
       <template v-else>
         <span style="font-size:14px;">Logged in as <strong>@{{ username }}</strong></span>
-        <button @click="$emit('logout')" style="background:#888;">Logout</button>
+        <button @click="$emit('logout')" style="background:#2e2050;border-radius:20px;">Logout</button>
       </template>
     </div>
   `
@@ -136,22 +136,24 @@ const UserProfileComponent = {
   },
   template: `
     <div v-if="profileData">
-      <!-- Cover image -->
+      <!-- Cover image — falls back to @steemtwist gradient cover -->
       <div :style="{
-        backgroundImage: 'url(' + safeUrl(profileData.coverImage) + ')',
+        backgroundImage: safeUrl(profileData.coverImage)
+          ? 'url(' + safeUrl(profileData.coverImage) + ')'
+          : 'linear-gradient(135deg,#1a3af5 0%,#8b2fc9 55%,#e0187a 100%)',
         backgroundSize: 'cover', backgroundPosition: 'center',
-        height: '150px', borderRadius: '8px'
+        height: '150px', borderRadius: '10px'
       }"></div>
       <!-- Avatar + info -->
       <div style="display:flex;align-items:center;margin-top:-40px;padding:10px;">
         <img
-          :src="safeUrl(profileData.profileImage) || 'https://via.placeholder.com/80'"
-          style="width:80px;height:80px;border-radius:50%;border:3px solid white;background:white;"
+          :src="safeUrl(profileData.profileImage) || 'https://steemitimages.com/u/steemtwist/avatar'"
+          style="width:80px;height:80px;border-radius:50%;border:3px solid #1a1030;background:#1a1030;"
         />
         <div style="margin-left:15px;">
-          <h2 style="margin:0;">{{ profileData.displayName }}</h2>
-          <small style="color:#555;">@{{ profileData.username }}</small>
-          <p style="margin:5px 0;">{{ profileData.about }}</p>
+          <h2 style="margin:0;color:#e8e0f0;">{{ profileData.displayName }}</h2>
+          <small style="color:#9b8db0;">@{{ profileData.username }}</small>
+          <p style="margin:5px 0;color:#9b8db0;">{{ profileData.about }}</p>
         </div>
       </div>
     </div>
@@ -166,10 +168,10 @@ const LoadingSpinnerComponent = {
     message: { type: String, default: "Loading..." }
   },
   template: `
-    <div style="text-align:center;padding:30px;color:#888;">
+    <div style="text-align:center;padding:30px;color:#5a4e70;">
       <div style="
         display:inline-block;width:32px;height:32px;
-        border:4px solid #ccc;border-top-color:#2e7d32;
+        border:4px solid #2e2050;border-top-color:#a855f7;
         border-radius:50%;animation:spin 0.8s linear infinite;
       "></div>
       <p style="margin-top:10px;font-size:14px;">{{ message }}</p>
@@ -311,13 +313,13 @@ const ReplyCardComponent = {
   },
   template: `
     <div :style="{ paddingLeft: indent + 'px' }">
-      <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+      <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #2e2050;">
 
         <!-- Avatar -->
         <a :href="'#/@' + reply.author" style="flex-shrink:0;">
           <img
             :src="avatarUrl"
-            style="width:28px;height:28px;border-radius:50%;border:2px solid #e0e0e0;"
+            style="width:28px;height:28px;border-radius:50%;border:2px solid #2e2050;"
             @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
           />
         </a>
@@ -329,13 +331,13 @@ const ReplyCardComponent = {
           <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
             <a
               :href="'#/@' + reply.author"
-              style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:13px;"
+              style="font-weight:bold;color:#a855f7;text-decoration:none;font-size:13px;"
             >@{{ reply.author }}</a>
             <!-- Timestamp linked to the reply's own page; absolute time on hover -->
             <a
               :href="replyUrl"
               :title="absoluteTime"
-              style="font-size:11px;color:#bbb;text-decoration:none;"
+              style="font-size:11px;color:#5a4e70;text-decoration:none;"
             >{{ relativeTime }}</a>
           </div>
 
@@ -350,9 +352,9 @@ const ReplyCardComponent = {
               @click="vote"
               :disabled="!canAct || isVoting || hasVoted"
               :style="{
-                background: hasVoted ? '#a5d6a7' : '#e8f5e9',
-                color: hasVoted ? '#1b5e20' : '#2e7d32',
-                border: '1px solid #a5d6a7',
+                background: hasVoted ? '#3b0764' : '#1e1535',
+                color: hasVoted ? '#e879f9' : '#9b8db0',
+                border: hasVoted ? '1px solid #a855f7' : '1px solid #2e2050',
                 borderRadius: '20px', padding: '2px 10px',
                 cursor: (!canAct || hasVoted) ? 'default' : 'pointer',
                 fontSize: '12px'
@@ -364,9 +366,9 @@ const ReplyCardComponent = {
               @click="retwist"
               :disabled="!canAct || isRetwisting || hasRetwisted || reply.author === username"
               :style="{
-                background: hasRetwisted ? '#e8f5e9' : '#f5f5f5',
-                color:      hasRetwisted ? '#1b5e20'  : '#555',
-                border:     hasRetwisted ? '1px solid #a5d6a7' : '1px solid #ddd',
+                background: hasRetwisted ? '#0c2d1a' : '#1e1535',
+                color:      hasRetwisted ? '#4ade80'  : '#9b8db0',
+                border:     hasRetwisted ? '1px solid #166534' : '1px solid #2e2050',
                 borderRadius: '20px', padding: '2px 10px',
                 cursor: (!canAct || hasRetwisted || reply.author === username) ? 'default' : 'pointer',
                 fontSize: '12px'
@@ -379,7 +381,7 @@ const ReplyCardComponent = {
               @click="toggleReplies"
               style="
                 background:none;border:none;padding:0;margin:0;
-                color:#2e7d32;font-size:12px;cursor:pointer;
+                color:#a855f7;font-size:12px;cursor:pointer;
                 text-decoration:underline;font-weight:600;
               "
             >
@@ -389,7 +391,7 @@ const ReplyCardComponent = {
             <!-- Permalink -->
             <a
               :href="replyUrl"
-              style="font-size:11px;color:#bbb;text-decoration:none;"
+              style="font-size:11px;color:#5a4e70;text-decoration:none;"
               title="Open reply page"
             >🔗</a>
 
@@ -403,7 +405,7 @@ const ReplyCardComponent = {
               maxlength="1000"
               style="
                 width:100%;box-sizing:border-box;
-                padding:7px;border-radius:6px;border:1px solid #ccc;
+                padding:7px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;
                 font-size:13px;resize:vertical;min-height:52px;
               "
             ></textarea>
@@ -419,14 +421,14 @@ const ReplyCardComponent = {
           <!-- Error -->
           <div v-if="lastError" style="
             margin-top:6px;padding:6px 8px;border-radius:6px;font-size:12px;
-            background:#ffebee;border:1px solid #ef9a9a;color:#b71c1c;
+            background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;
             display:flex;justify-content:space-between;align-items:center;
           ">
             <span>⚠️ {{ lastError }}</span>
             <button
               @click="lastError = ''"
               style="background:none;border:none;cursor:pointer;font-size:14px;
-                     padding:0;color:#b71c1c;line-height:1;"
+                     padding:0;color:#fca5a5;line-height:1;"
             >✕</button>
           </div>
 
@@ -472,17 +474,17 @@ const ThreadComponent = {
     this.loading = false;
   },
   template: `
-    <div style="margin-top:8px;border-top:2px solid #e8f5e9;padding-top:8px;">
+    <div style="margin-top:8px;border-top:2px solid #2e2050;padding-top:8px;">
 
-      <div v-if="loading" style="color:#aaa;font-size:13px;padding:6px 0;">
+      <div v-if="loading" style="color:#5a4e70;font-size:13px;padding:6px 0;">
         Loading replies…
       </div>
 
-      <div v-else-if="loadError" style="color:#b71c1c;font-size:13px;">
+      <div v-else-if="loadError" style="color:#fca5a5;font-size:13px;">
         ⚠️ {{ loadError }}
       </div>
 
-      <div v-else-if="replies.length === 0" style="color:#aaa;font-size:13px;">
+      <div v-else-if="replies.length === 0" style="color:#5a4e70;font-size:13px;">
         No replies yet.
       </div>
 
@@ -635,7 +637,7 @@ const TwistCardComponent = {
   },
   template: `
     <div style="
-      background:#fff;border:1px solid #e0e0e0;border-radius:10px;
+      background:#1e1535;border:1px solid #2e2050;border-radius:12px;
       padding:14px 16px;margin:10px auto;max-width:600px;text-align:left;
     ">
       <!-- Header -->
@@ -643,22 +645,20 @@ const TwistCardComponent = {
         <a :href="'#/@' + post.author">
           <img
             :src="avatarUrl"
-            style="width:40px;height:40px;border-radius:50%;border:2px solid #e0e0e0;"
+            style="width:40px;height:40px;border-radius:50%;border:2px solid #2e2050;"
             @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
           />
         </a>
         <div>
           <a
             :href="'#/@' + post.author"
-            style="font-weight:bold;color:#1b5e20;text-decoration:none;font-size:14px;"
+            style="font-weight:bold;color:#a855f7;text-decoration:none;font-size:14px;"
           >@{{ post.author }}</a>
-          <!-- Timestamp: relative label linked to the twist page,
-               absolute UTC shown on hover via title attribute -->
-          <div style="font-size:12px;color:#999;">
+          <div style="font-size:12px;color:#5a4e70;">
             <a
               :href="twistUrl"
               :title="absoluteTime"
-              style="color:#999;text-decoration:none;"
+              style="color:#5a4e70;text-decoration:none;"
             >{{ relativeTime }}</a>
           </div>
         </div>
@@ -677,7 +677,7 @@ const TwistCardComponent = {
           @click="threadExpanded = !threadExpanded"
           style="
             background:none;border:none;padding:0;
-            color:#2e7d32;font-size:13px;font-weight:600;
+            color:#a855f7;font-size:13px;font-weight:600;
             cursor:pointer;text-decoration:underline;
           "
         >
@@ -693,54 +693,48 @@ const TwistCardComponent = {
       ></thread-component>
 
       <!-- Footer actions -->
-      <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:#666;margin-top:12px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:12px;font-size:13px;margin-top:12px;flex-wrap:wrap;">
 
         <!-- Love -->
         <button
           @click="vote"
           :disabled="!canAct || isVoting || hasVoted"
           :style="{
-            background: hasVoted ? '#a5d6a7' : '#e8f5e9',
-            color: hasVoted ? '#1b5e20' : '#2e7d32',
-            border: '1px solid #a5d6a7',
-            borderRadius: '20px', padding: '4px 12px',
+            background: hasVoted ? '#3b0764' : '#1e1535',
+            color:      hasVoted ? '#e879f9' : '#9b8db0',
+            border:     hasVoted ? '1px solid #a855f7' : '1px solid #2e2050',
+            borderRadius:'20px', padding:'4px 12px',
             cursor: (!canAct || hasVoted) ? 'default' : 'pointer',
-            fontSize: '13px'
+            fontSize:'13px', margin:0
           }"
-        >
-          {{ isVoting ? "…" : (hasVoted ? "❤️" : "🤍") }} {{ upvoteCount }}
-        </button>
+        >{{ isVoting ? "…" : (hasVoted ? "❤️" : "🤍") }} {{ upvoteCount }}</button>
 
         <!-- Retwist -->
         <button
           @click="retwist"
           :disabled="!canAct || isRetwisting || hasRetwisted || post.author === username"
           :style="{
-            background: hasRetwisted ? '#e8f5e9' : '#f5f5f5',
-            color:      hasRetwisted ? '#1b5e20'  : '#555',
-            border:     hasRetwisted ? '1px solid #a5d6a7' : '1px solid #ddd',
-            borderRadius: '20px', padding: '4px 12px',
+            background: hasRetwisted ? '#0c2d1a' : '#1e1535',
+            color:      hasRetwisted ? '#4ade80' : '#9b8db0',
+            border:     hasRetwisted ? '1px solid #166534' : '1px solid #2e2050',
+            borderRadius:'20px', padding:'4px 12px',
             cursor: (!canAct || hasRetwisted || post.author === username) ? 'default' : 'pointer',
-            fontSize: '13px'
+            fontSize:'13px', margin:0
           }"
           :title="post.author === username ? 'Cannot retwist your own twist' : ''"
-        >
-          {{ isRetwisting ? "…" : (hasRetwisted ? "🔁 Retwisted" : "🔁") }}
-        </button>
+        >{{ isRetwisting ? "…" : (hasRetwisted ? "🔁 Retwisted" : "🔁") }}</button>
 
         <!-- Replies -->
         <button
           @click="toggleReplies"
-          style="background:#f5f5f5;color:#555;border:1px solid #ddd;
-                 border-radius:20px;padding:4px 12px;font-size:13px;"
-        >
-          💬 {{ replyCount }}
-        </button>
+          style="background:#1e1535;color:#9b8db0;border:1px solid #2e2050;
+                 border-radius:20px;padding:4px 12px;font-size:13px;margin:0;"
+        >💬 {{ replyCount }}</button>
 
         <!-- Permalink -->
         <a
           :href="twistUrl"
-          style="margin-left:auto;font-size:12px;color:#bbb;text-decoration:none;"
+          style="margin-left:auto;font-size:12px;color:#2e2050;text-decoration:none;"
           title="Open twist page"
         >🔗</a>
 
@@ -754,8 +748,9 @@ const TwistCardComponent = {
           maxlength="1000"
           style="
             width:100%;box-sizing:border-box;
-            padding:8px;border-radius:6px;border:1px solid #ccc;
-            font-size:14px;resize:vertical;min-height:60px;
+            padding:8px;border-radius:8px;
+            border:1px solid #2e2050;background:#0f0a1e;
+            color:#e8e0f0;font-size:14px;resize:vertical;min-height:60px;
           "
         ></textarea>
         <div style="text-align:right;margin-top:4px;">
@@ -769,15 +764,15 @@ const TwistCardComponent = {
 
       <!-- Blockchain error -->
       <div v-if="lastError" style="
-        margin-top:10px;padding:8px 10px;border-radius:6px;font-size:13px;
-        background:#ffebee;border:1px solid #ef9a9a;color:#b71c1c;
+        margin-top:10px;padding:8px 10px;border-radius:8px;font-size:13px;
+        background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;
         display:flex;justify-content:space-between;align-items:center;gap:8px;
       ">
         <span>⚠️ {{ lastError }}</span>
         <button
           @click="lastError = ''"
           style="background:none;border:none;cursor:pointer;font-size:15px;
-                 padding:0;color:#b71c1c;line-height:1;"
+                 padding:0;color:#fca5a5;line-height:1;margin:0;"
         >✕</button>
       </div>
     </div>
@@ -811,7 +806,7 @@ const TwistComposerComponent = {
   },
   template: `
     <div style="
-      background:#fff;border:1px solid #e0e0e0;border-radius:10px;
+      background:#1e1535;border:1px solid #2e2050;border-radius:12px;
       padding:16px;margin:0 auto 20px;max-width:600px;text-align:left;
     ">
       <textarea
@@ -820,17 +815,18 @@ const TwistComposerComponent = {
         maxlength="500"
         style="
           width:100%;box-sizing:border-box;
-          padding:10px;border-radius:6px;
-          border:1px solid #ccc;font-size:15px;
+          padding:10px;border-radius:8px;
+          border:1px solid #2e2050;background:#0f0a1e;
+          color:#e8e0f0;font-size:15px;
           resize:none;height:80px;
         "
         @keydown.ctrl.enter="submit"
       ></textarea>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-        <span :style="{ fontSize:'13px', color: overLimit ? '#c62828' : '#999' }">
+        <span :style="{ fontSize:'13px', color: overLimit ? '#fca5a5' : '#5a4e70' }">
           {{ charCount }} / 280
         </span>
-        <button @click="submit" :disabled="!canPost" style="padding:7px 20px;">
+        <button @click="submit" :disabled="!canPost" style="padding:7px 20px;margin:0;">
           {{ isPosting ? "Posting…" : "Twist 🌀" }}
         </button>
       </div>

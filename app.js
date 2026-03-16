@@ -141,13 +141,13 @@ const HomeView = {
       <!-- Top bar -->
       <div style="
         display:flex;align-items:center;flex-wrap:wrap;gap:8px;
-        font-size:13px;color:#888;margin-bottom:14px;
+        font-size:13px;color:#5a4e70;margin-bottom:14px;
       ">
         <span>📅 <strong>{{ monthlyRoot }}</strong></span>
 
         <button
           @click="loadFeed"
-          style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;
+          style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                  border-radius:12px;padding:2px 10px;font-size:12px;"
         >⟳ Refresh</button>
 
@@ -157,18 +157,18 @@ const HomeView = {
           :style="{
             borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
             fontWeight:'600', border:'1px solid',
-            background:  firehoseOn ? '#fff3e0' : '#f5f5f5',
-            color:       firehoseOn ? '#e65100' : '#888',
-            borderColor: firehoseOn ? '#ffb74d' : '#ddd'
+            background:  firehoseOn ? '#2d1a00' : '#1e1535',
+            color:       firehoseOn ? '#fb923c' : '#9b8db0',
+            borderColor: firehoseOn ? '#f97316' : '#2e2050'
           }"
           :title="firehoseOn ? 'Stop live stream' : 'Start live stream'"
         >{{ firehoseOn ? '🔥 Firehose ON' : '🔥 Firehose OFF' }}</button>
 
         <!-- Live pulse -->
-        <span v-if="firehoseOn" style="display:flex;align-items:center;gap:5px;color:#e65100;font-size:12px;">
+        <span v-if="firehoseOn" style="display:flex;align-items:center;gap:5px;color:#fb923c;font-size:12px;">
           <span style="
             display:inline-block;width:8px;height:8px;border-radius:50%;
-            background:#e65100;animation:twistFlash 1s ease-in-out infinite alternate;
+            background:#fb923c;animation:twistFlash 1s ease-in-out infinite alternate;
           "></span>
           Live
         </span>
@@ -180,13 +180,15 @@ const HomeView = {
             :key="mode.key"
             @click="sortMode = mode.key"
             :style="{
-              borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
+              borderRadius:'20px', padding:'2px 12px', fontSize:'12px',
               fontWeight: sortMode === mode.key ? '700' : '400',
               border:'1px solid',
-              background:  sortMode === mode.key ? '#1b5e20' : '#f5f5f5',
-              color:       sortMode === mode.key ? '#fff'     : '#555',
-              borderColor: sortMode === mode.key ? '#1b5e20'  : '#ddd',
-              cursor:'pointer'
+              background:  sortMode === mode.key
+                ? 'linear-gradient(135deg,#8b2fc9,#e0187a)'
+                : '#1e1535',
+              color:       sortMode === mode.key ? '#fff' : '#9b8db0',
+              borderColor: sortMode === mode.key ? '#a855f7' : '#2e2050',
+              cursor:'pointer', margin:0
             }"
           >{{ mode.label }}</button>
         </div>
@@ -201,18 +203,35 @@ const HomeView = {
         @post="handlePost"
       ></twist-composer-component>
 
-      <!-- CTA for guests -->
+      <!-- CTA for guests — shows @steemtwist cover + avatar as fallback -->
       <div v-if="!username" style="
-        background:#fff;border:1px solid #e0e0e0;border-radius:10px;
-        padding:16px;max-width:600px;margin:0 auto 20px;color:#888;font-size:14px;
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;
+        overflow:hidden;max-width:600px;margin:0 auto 20px;
       ">
-        Log in with Steem Keychain to post twists and give twist love.
+        <div style="
+          height:100px;
+          background:linear-gradient(135deg,#1a3af5 0%,#8b2fc9 55%,#e0187a 100%);
+          position:relative;
+        ">
+          <img
+            src="https://steemitimages.com/u/steemtwist/avatar"
+            style="
+              width:64px;height:64px;border-radius:50%;
+              border:3px solid #1e1535;position:absolute;
+              bottom:-32px;left:16px;background:#1e1535;
+            "
+            @error="$event.target.src='https://steemitimages.com/u/steemtwist/avatar/small'"
+          />
+        </div>
+        <div style="padding:40px 16px 16px;color:#9b8db0;font-size:14px;">
+          Log in with Steem Keychain to post twists and give twist love.
+        </div>
       </div>
 
       <!-- Feed -->
       <loading-spinner-component v-if="loading" message="Loading twists…"></loading-spinner-component>
 
-      <div v-else-if="sortedTwists.length === 0" style="color:#aaa;padding:40px 0;font-size:15px;">
+      <div v-else-if="sortedTwists.length === 0" style="color:#5a4e70;padding:40px 0;font-size:15px;text-align:center;">
         No twists yet this month. Be the first! 🌀
       </div>
 
@@ -283,7 +302,7 @@ const ProfileView = {
     <div style="margin-top:20px;">
       <loading-spinner-component v-if="loading"></loading-spinner-component>
 
-      <div v-else-if="!profileData" style="color:#888;padding:40px;">
+      <div v-else-if="!profileData" style="color:#5a4e70;padding:40px;">
         User @{{ $route.params.user }} not found.
       </div>
 
@@ -295,15 +314,15 @@ const ProfileView = {
             max-width:600px;margin:0 auto 12px;
             display:flex;align-items:center;justify-content:space-between;
           ">
-            <h3 style="margin:0;color:#333;">🌀 Twists this month</h3>
+            <h3 style="margin:0;color:#e8e0f0;">🌀 Twists this month</h3>
             <button
               @click="loadProfile"
-              style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;
+              style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                      border-radius:12px;padding:2px 10px;font-size:12px;"
             >⟳ Refresh</button>
           </div>
 
-          <div v-if="userTwists.length === 0" style="color:#aaa;padding:20px;font-size:14px;">
+          <div v-if="userTwists.length === 0" style="color:#5a4e70;padding:20px;font-size:14px;">
             No twists from @{{ $route.params.user }} this month.
           </div>
 
@@ -365,13 +384,13 @@ const TwistView = {
         <a
           href="#"
           @click.prevent="$router.back()"
-          style="color:#2e7d32;text-decoration:none;font-size:14px;font-weight:600;"
+          style="color:#a855f7;text-decoration:none;font-size:14px;font-weight:600;"
         >← Back</a>
       </div>
 
       <loading-spinner-component v-if="loading" message="Loading twist…"></loading-spinner-component>
 
-      <div v-else-if="!post" style="color:#888;padding:40px;text-align:center;">
+      <div v-else-if="!post" style="color:#5a4e70;padding:40px;text-align:center;">
         Twist not found.
       </div>
 
@@ -386,7 +405,7 @@ const TwistView = {
         <!-- Absolute publish time shown below the card on this page -->
         <div style="
           max-width:600px;margin:6px auto 0;
-          text-align:right;font-size:12px;color:#bbb;
+          text-align:right;font-size:12px;color:#5a4e70;
         ">
           Published {{ new Date(post.created + 'Z').toUTCString().replace(' GMT', ' UTC') }}
         </div>
@@ -531,16 +550,19 @@ const App = {
   template: `
     <!-- Header -->
     <div style="
-      background:#1b5e20;padding:12px 20px;
+      background: linear-gradient(135deg, #1a3af5 0%, #8b2fc9 55%, #e0187a 100%);
+      padding:12px 20px;
       display:flex;align-items:center;justify-content:space-between;
       flex-wrap:wrap;gap:8px;
+      box-shadow: 0 2px 16px rgba(168,85,247,0.4);
     ">
       <router-link to="/" style="text-decoration:none;">
         <div>
-          <span style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:1px;">
+          <span style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:1px;
+                       text-shadow:0 0 20px rgba(34,211,238,0.6);">
             🌀 SteemTwist
           </span>
-          <div style="color:#a5d6a7;font-size:12px;letter-spacing:0.5px;margin-top:1px;">
+          <div style="color:#e0d0ff;font-size:15px;letter-spacing:0.5px;margin-top:2px;font-weight:500;">
             Steem with a Twist
           </div>
         </div>
@@ -550,40 +572,40 @@ const App = {
         <router-link
           to="/"
           exact-active-class="nav-active"
-          style="color:#a5d6a7;text-decoration:none;padding:5px 10px;border-radius:6px;font-size:14px;"
+          style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
         >Home</router-link>
 
         <router-link
           v-if="username"
           :to="'/@' + username"
           exact-active-class="nav-active"
-          style="color:#a5d6a7;text-decoration:none;padding:5px 10px;border-radius:6px;font-size:14px;"
+          style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
         >My Profile</router-link>
 
         <router-link
           to="/about"
           exact-active-class="nav-active"
-          style="color:#a5d6a7;text-decoration:none;padding:5px 10px;border-radius:6px;font-size:14px;"
+          style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
         >About</router-link>
 
         <template v-if="!username">
           <button
             @click="showLoginForm = !showLoginForm"
-            style="background:#2e7d32;border:1px solid #a5d6a7;color:#fff;
-                   padding:5px 14px;border-radius:6px;font-size:14px;"
+            style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
+                   color:#fff;padding:5px 16px;border-radius:20px;font-size:14px;backdrop-filter:blur(4px);"
           >Sign in</button>
         </template>
         <template v-else>
           <a :href="'#/@' + username" style="text-decoration:none;">
             <img
               :src="'https://steemitimages.com/u/' + username + '/avatar/small'"
-              style="width:32px;height:32px;border-radius:50%;border:2px solid #a5d6a7;vertical-align:middle;"
+              style="width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,0.6);vertical-align:middle;"
             />
           </a>
           <button
             @click="logout"
-            style="background:transparent;border:1px solid #a5d6a7;color:#a5d6a7;
-                   padding:4px 12px;border-radius:6px;font-size:13px;"
+            style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);
+                   color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;"
           >Logout</button>
         </template>
       </nav>
@@ -591,7 +613,7 @@ const App = {
 
     <!-- Inline login form -->
     <div v-if="!username && showLoginForm" style="
-      background:#f1f8e9;border-bottom:1px solid #c5e1a5;
+      background:#1a1030;border-bottom:1px solid #2e2050;
       padding:12px;text-align:center;
     ">
       <auth-component
@@ -606,10 +628,10 @@ const App = {
     </div>
 
     <!-- Keychain not detected -->
-    <div v-if="keychainReady && !hasKeychain" class="keychain-notice">
-      <strong>Read-only mode</strong> — Install the
-      <a href="https://www.google.com/search?q=steem+keychain+browser+extension" target="_blank">
-        Steem Keychain</a>
+    <div v-if="keychainReady && !hasKeychain" class="keychain-notice" style="text-align:center;">
+      <strong style="color:#a855f7;">Read-only mode</strong> — Install the
+      <a href="https://www.google.com/search?q=steem+keychain+browser+extension" target="_blank"
+         style="color:#22d3ee;">Steem Keychain</a>
       browser extension to post twists and give twist love.
     </div>
 

@@ -23,75 +23,131 @@
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
 
   <style>
+    /* ── Design tokens ──────────────────────────────────────────────────────
+       Derived from the SteemTwist cover image gradient:
+       left  #1a3af5 (deep blue)  →  centre #8b2fc9 (purple)  →  right #e0187a (pink)
+       Accent: cyan #22d3ee  |  light-purple #a855f7  |  pink #ec4899
+    ─────────────────────────────────────────────────────────────────────── */
+    :root {
+      --bg:           #0f0a1e;
+      --surface:      #1a1030;
+      --card:         #1e1535;
+      --card-border:  #2e2050;
+      --grad-start:   #1a3af5;
+      --grad-mid:     #8b2fc9;
+      --grad-end:     #e0187a;
+      --accent:       #a855f7;
+      --accent-cyan:  #22d3ee;
+      --accent-pink:  #ec4899;
+      --text:         #e8e0f0;
+      --text-muted:   #9b8db0;
+      --text-faint:   #5a4e70;
+      --green-hi:     #4ade80;
+      --green-lo:     #166534;
+    }
+
     body {
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
       margin: 0;
       padding: 0;
-      background-color: #f5f5f5;
+      background-color: var(--bg);
+      color: var(--text);
     }
+
     h1 { margin-top: 20px; }
+
+    /* Global button baseline — overridden per-component via inline styles */
     button {
       padding: 8px 14px;
       margin: 5px;
-      border-radius: 6px;
+      border-radius: 20px;
       border: none;
       cursor: pointer;
-      background-color: #2e7d32;
-      color: white;
+      background: linear-gradient(135deg, var(--grad-mid), var(--grad-end));
+      color: #fff;
       font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.15s;
     }
-    button:hover { opacity: 0.9; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    hr { margin: 30px 0; border: none; border-top: 1px solid #ddd; }
-    .nav-active { text-decoration: underline !important; color: #1b5e20 !important; }
+    button:hover   { opacity: 0.88; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    hr { margin: 30px 0; border: none; border-top: 1px solid var(--card-border); }
+
+    /* Nav active state */
+    .nav-active {
+      text-decoration: underline !important;
+      color: var(--accent-cyan) !important;
+    }
+
+    /* Notification banners */
     .notification {
       margin: 10px auto;
       padding: 10px 14px;
-      border-radius: 6px;
+      border-radius: 10px;
       max-width: 600px;
       font-size: 14px;
     }
-    .notification.error   { background: #ffebee; border: 1px solid #ef9a9a; color: #b71c1c; }
-    .notification.success { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; }
-    .notification.info    { background: #e3f2fd; border: 1px solid #90caf9; color: #0d47a1; }
+    .notification.error   { background:#2d0a0a; border:1px solid #7f1d1d; color:#fca5a5; }
+    .notification.success { background:#0a2d12; border:1px solid #166534; color:#86efac; }
+    .notification.info    { background:#0a1a2d; border:1px solid #1e3a5f; color:#93c5fd; }
+
     .keychain-notice {
       margin: 10px auto;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      background: #fff8e1;
+      padding: 10px 14px;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text-muted);
       max-width: 600px;
+      font-size: 14px;
     }
-    /* Scoped markdown rendering inside twist cards */
-    .twist-body { font-size: 15px; line-height: 1.6; word-break: break-word; }
-    .twist-body p          { margin: 0 0 8px; }
+
+    /* Markdown inside twist cards */
+    .twist-body { font-size: 15px; line-height: 1.6; word-break: break-word; color: var(--text); }
+    .twist-body p            { margin: 0 0 8px; }
     .twist-body p:last-child { margin-bottom: 0; }
-    .twist-body h1, .twist-body h2, .twist-body h3 { font-size: 1em; font-weight: bold; margin: 6px 0 4px; }
+    .twist-body h1, .twist-body h2, .twist-body h3
+                             { font-size: 1em; font-weight: bold; margin: 6px 0 4px; color: var(--accent); }
     .twist-body ul, .twist-body ol { margin: 4px 0 8px 20px; padding: 0; }
-    .twist-body li         { margin-bottom: 2px; }
-    .twist-body code       { background: #f4f4f4; border-radius: 3px; padding: 1px 5px; font-size: 13px; }
-    .twist-body pre        { background: #f4f4f4; border-radius: 6px; padding: 10px; overflow-x: auto; }
-    .twist-body pre code   { background: none; padding: 0; }
-    .twist-body blockquote { border-left: 3px solid #a5d6a7; margin: 6px 0; padding: 4px 10px; color: #555; }
-    .twist-body a          { color: #2e7d32; }
-    .twist-body img        { max-width: 100%; border-radius: 6px; margin-top: 6px; }
-    /* README rendering on the About page */
-    .readme-body           { font-size: 15px; line-height: 1.7; color: #333; }
-    .readme-body h1        { font-size: 1.6em; border-bottom: 2px solid #e8f5e9; padding-bottom: 6px; margin-bottom: 12px; }
-    .readme-body h2        { font-size: 1.3em; border-bottom: 1px solid #e8f5e9; padding-bottom: 4px; margin: 24px 0 10px; }
-    .readme-body h3        { font-size: 1.1em; margin: 18px 0 8px; }
+    .twist-body li           { margin-bottom: 2px; }
+    .twist-body code         { background: var(--bg); border-radius: 4px; padding: 1px 5px;
+                               font-size: 13px; color: var(--accent-cyan); border: 1px solid var(--card-border); }
+    .twist-body pre          { background: var(--bg); border-radius: 8px; padding: 10px;
+                               overflow-x: auto; border: 1px solid var(--card-border); }
+    .twist-body pre code     { background: none; padding: 0; border: none; }
+    .twist-body blockquote   { border-left: 3px solid var(--accent); margin: 6px 0;
+                               padding: 4px 10px; color: var(--text-muted); }
+    .twist-body a            { color: var(--accent-cyan); }
+    .twist-body img          { max-width: 100%; border-radius: 8px; margin-top: 6px; }
+
+    /* README / About page */
+    .readme-body           { font-size: 15px; line-height: 1.7; color: var(--text); }
+    .readme-body h1        { font-size: 1.6em; border-bottom: 2px solid var(--card-border);
+                             padding-bottom: 6px; margin-bottom: 12px; color: var(--accent); }
+    .readme-body h2        { font-size: 1.3em; border-bottom: 1px solid var(--card-border);
+                             padding-bottom: 4px; margin: 24px 0 10px; color: var(--accent); }
+    .readme-body h3        { font-size: 1.1em; margin: 18px 0 8px; color: var(--text); }
     .readme-body table     { width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0; }
-    .readme-body th        { background: #e8f5e9; text-align: left; padding: 7px 10px; border: 1px solid #c8e6c9; }
-    .readme-body td        { padding: 6px 10px; border: 1px solid #e0e0e0; }
-    .readme-body hr        { border: none; border-top: 1px solid #e0e0e0; margin: 20px 0; }
-    /* Firehose: flash highlight when a new twist arrives live */
+    .readme-body th        { background: var(--surface); text-align: left;
+                             padding: 7px 10px; border: 1px solid var(--card-border); color: var(--accent); }
+    .readme-body td        { padding: 6px 10px; border: 1px solid var(--card-border); }
+    .readme-body hr        { border: none; border-top: 1px solid var(--card-border); margin: 20px 0; }
+    .readme-body code      { background: var(--bg); border-radius: 4px; padding: 1px 5px;
+                             font-size: 13px; color: var(--accent-cyan); border: 1px solid var(--card-border); }
+    .readme-body pre       { background: var(--bg); border-radius: 8px; padding: 10px;
+                             overflow-x: auto; border: 1px solid var(--card-border); }
+    .readme-body a         { color: var(--accent-cyan); }
+
+    /* Firehose new-twist flash — cyan highlight matching theme */
     @keyframes twistFlash {
-      0%   { background-color: #e3f2fd; }
-      100% { background-color: #fff;    }
+      0%   { background-color: #0e2233; }
+      100% { background-color: var(--card); }
     }
-    .twist-flash {
-      animation: twistFlash 2.5s ease-out forwards;
-    }
+    .twist-flash { animation: twistFlash 2.5s ease-out forwards; }
+
+    /* Spinner colour */
+    .spin-ring { border-top-color: var(--accent) !important; }
   </style>
 </head>
 <body>
