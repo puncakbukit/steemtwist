@@ -116,7 +116,7 @@ function fetchAllReplies(author, permlink) {
           .catch(() => r)
                      )
       );
-      console.print(JSON.stringify(enriched));
+      console.log("Enriched resolved: ", JSON.stringify(enriched));
       resolve(enriched);
     });
   });
