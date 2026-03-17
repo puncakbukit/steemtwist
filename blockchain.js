@@ -322,7 +322,7 @@ const TWIST_CONFIG = {
 };
 
 // Returns the current monthly root permlink, e.g. "feed-2026-03".
-function getMonthlyRoot() {
+window.getMonthlyRoot = function(){
   const d = new Date();
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
