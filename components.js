@@ -257,13 +257,16 @@ const ReplyCardComponent = {
     bodyHtml() { return renderMarkdown(stripBackLink(this.reply.body)); },
     canAct()   { return !!this.username && this.hasKeychain; },
     indent()   { return Math.min(this.depth, 4) * 16; },
+    
     upvoteCount() {
-      const votes = this.reply.active_votes || [];
-      const count = votes.length > 0
-        ? votes.filter(v => v.percent > 0).length
-        : Math.max(0, this.reply.net_votes || 0);
-      return count + (this.hasVoted ? 1 : 0);
-    }
+  const votes = this.reply.active_votes;
+
+  if (!votes) return this.hasVoted ? 1 : 0;
+
+  const count = votes.filter(v => v.percent > 0).length;
+
+  return count + (this.hasVoted ? 1 : 0);
+}
   },
   methods: {
     vote() {
