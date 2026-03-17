@@ -110,6 +110,7 @@ function fetchAllReplies(author, permlink) {
       );
     }
     recurse(author, permlink, async () => {
+      alert("FINAL DONE");
       const enriched = await Promise.all(
         collected.map(r =>
           callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
