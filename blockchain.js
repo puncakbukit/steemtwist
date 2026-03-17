@@ -110,18 +110,15 @@ function fetchAllReplies(author, permlink) {
       );
     }
     recurse(author, permlink, async () => {
-
-  const enriched = await Promise.all(
-    collected.map(r =>
-      callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
-        .catch(() => r)
-    )
-  );
-
-  resolve(enriched);
-
-});
-    
+      const enriched = await Promise.all(
+        collected.map(r =>
+          callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
+          .catch(() => r)
+                     )
+      );
+      console.print(JSON.stringify(enriched));
+      resolve(enriched);
+    });
   });
 }
 
