@@ -109,17 +109,19 @@ function fetchAllReplies(author, permlink) {
         }
       );
     }
+    recurse(author, permlink, async () => {
+
+  const enriched = await Promise.all(
+    collected.map(r =>
+      callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
+        .catch(() => r)
+    )
+  );
+
+  resolve(enriched);
+
+});
     
-    recurse(author, permlink, () => {
-      Promise.all(
-        collected.map(r =>
-          callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
-          .catch(() => null)
-                     )
-      ).then(enriched => {
-        resolve(enriched.filter(Boolean));
-      });
-    });
   });
 }
 
