@@ -86,40 +86,36 @@ function fetchReplies(author, permlink) {
 
 // Recursively fetch ALL nested replies for a post.
 function fetchAllReplies(author, permlink) {
-  return new Promise(resolve => {
-    const collected = [];
 
-    function recurse(author, permlink, done) {
-      callWithFallback(
-        steem.api.getContentReplies,
-        [author, permlink],
-        (err, replies) => {
-          if (err || !replies || replies.length === 0) return done();
-          let pending = replies.length;
-          replies.forEach(reply => {
-            collected.push({
-              author: reply.author,
-              permlink: reply.permlink
-            });
-            recurse(reply.author, reply.permlink, () => {
-              pending--;
-              if (pending === 0) done();
-            });
-          });
-        }
-      );
-    }
-    recurse(author, permlink, async () => {
-      alert("FINAL DONE");
-      const enriched = await Promise.all(
-        collected.map(r =>
-          callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
-          .catch(() => r)
-                     )
-      );
-      alert("Enriched resolved: " + JSON.stringify(enriched));
-      resolve(enriched);
-    });
+  function recurse(author, permlink) {
+    return callWithFallbackAsync(
+      steem.api.getContentReplies,
+      [author, permlink]
+    ).then(replies => {
+      if (!replies || replies.length === 0) return [];
+
+      return Promise.all(
+        replies.map(r =>
+          recurse(r.author, r.permlink).then(children => [
+            { author: r.author, permlink: r.permlink },
+            ...children
+          ])
+        )
+      ).then(results => results.flat());
+    }).catch(() => []);
+  }
+
+  return recurse(author, permlink).then(collected => {
+    if (collected.length === 0) return [];
+
+    return Promise.all(
+      collected.map(r =>
+        callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
+          .catch(() => null)
+      )
+    ).then(enriched =>
+      enriched.filter(Boolean)
+    );
   });
 }
 
