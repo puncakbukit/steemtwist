@@ -17,7 +17,9 @@ let currentRPCIndex = 0;
 
 function setRPC(index) {
   currentRPCIndex = index;
-  steem.api.setOptions({ url: RPC_NODES[index] });
+  steem.api.setOptions({
+    url: RPC_NODES[index]
+  });
   console.log("Switched RPC to:", RPC_NODES[index]);
 }
 
@@ -60,11 +62,11 @@ function fetchAccount(username) {
         ).profile || {};
       } catch {}
       resolve({
-        username:     account.name,
+        username: account.name,
         profileImage: profile.profile_image || "",
-        displayName:  profile.name || account.name,
-        about:        profile.about || "",
-        coverImage:   profile.cover_image || ""
+        displayName: profile.name || account.name,
+        about: profile.about || "",
+        coverImage: profile.cover_image || ""
       });
     });
   });
@@ -105,26 +107,30 @@ function fetchAllReplies(author, permlink) {
       );
     }
 
-recurse(author, permlink, () => {
+    recurse(author, permlink, () => {
 
-  Promise.all(
-    collected.map(r =>
-      callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
-        .catch(() => r)
-    )
-  ).then(enriched => {
-    resolve(enriched);
+      Promise.all(
+        collected.map(r =>
+          callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
+          .catch(() => r)
+        )
+      ).then(enriched => {
+        resolve(enriched);
+      });
+
+    });
+
   });
-
-});
-    
 }
 
 // Fetch recent posts by tag (uses getDiscussionsByCreated).
 function fetchPostsByTag(tag, limit = 20) {
   return callWithFallbackAsync(
     steem.api.getDiscussionsByCreated,
-    [{ tag, limit }]
+    [{
+      tag,
+      limit
+    }]
   );
 }
 
@@ -132,7 +138,10 @@ function fetchPostsByTag(tag, limit = 20) {
 function fetchPostsByUser(username, limit = 50) {
   return callWithFallbackAsync(
     steem.api.getDiscussionsByBlog,
-    [{ tag: username, limit }]
+    [{
+      tag: username,
+      limit
+    }]
   );
 }
 
@@ -160,14 +169,14 @@ function fetchPostsByUser(username, limit = 50) {
 //
 // Returns a Promise<post[]> sorted newest-first.
 function fetchTwistsByUser(username, monthlyRoot) {
-  const now        = new Date();
+  const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
   // -1 tells the node to start from the latest sequence number.
   // 100 is the maximum limit most Steem nodes allow per call.
   const START_FROM = -1;
-  const BATCH      = 100;
-  const collected  = [];
+  const BATCH = 100;
+  const collected = [];
 
   function page(from) {
     return new Promise((resolve) => {
@@ -182,20 +191,23 @@ function fetchTwistsByUser(username, monthlyRoot) {
         let hitOldEntry = false;
 
         for (let i = history.length - 1; i >= 0; i--) {
-          const [, item]     = history[i];
+          const [, item] = history[i];
           const [type, data] = item.op;
-          const ts           = steemDate(item.timestamp);
+          const ts = steemDate(item.timestamp);
 
           if (ts < monthStart) {
             hitOldEntry = true;
             break;
           }
 
-          if (type !== "comment")                                   continue;
-          if (!data.permlink.startsWith(TWIST_CONFIG.POST_PREFIX))  continue;
+          if (type !== "comment") continue;
+          if (!data.permlink.startsWith(TWIST_CONFIG.POST_PREFIX)) continue;
 
           if (!collected.some(c => c.data.permlink === data.permlink)) {
-            collected.push({ data, timestamp: ts });
+            collected.push({
+              data,
+              timestamp: ts
+            });
           }
         }
 
@@ -219,7 +231,9 @@ function fetchTwistsByUser(username, monthlyRoot) {
     // Enrich each raw op with a full getContent call to get vote counts,
     // children count, and all other fields TwistCardComponent expects.
     const enriched = await Promise.all(
-      collected.map(({ data }) =>
+      collected.map(({
+          data
+        }) =>
         fetchPost(data.author, data.permlink).catch(() => null)
       )
     );
@@ -257,9 +271,10 @@ function keychainPost(
   tags,
   callback
 ) {
-  const meta = typeof jsonMetadata === "string"
-    ? JSON.parse(jsonMetadata)
-    : { ...jsonMetadata };
+  const meta = typeof jsonMetadata === "string" ?
+    JSON.parse(jsonMetadata) : {
+      ...jsonMetadata
+    };
   if (tags && tags.length) meta.tags = tags;
 
   steem_keychain.requestPost(
@@ -312,17 +327,17 @@ function steemDate(ts) {
 
 const TWIST_CONFIG = {
   ROOT_ACCOUNT: "steemtwist",
-  ROOT_PREFIX:  "feed-",
-  TAG:          "steemtwist",
-  POST_PREFIX:  "tw",
+  ROOT_PREFIX: "feed-",
+  TAG: "steemtwist",
+  POST_PREFIX: "tw",
   // All tags attached to every twist. First tag is the Steem category.
-  TAGS:         ["steemtwist", "microblog", "steem", "twist", "social", "web"],
+  TAGS: ["steemtwist", "microblog", "steem", "twist", "social", "web"],
   // Canonical dApp URL embedded as a back-link at the end of every body.
-  DAPP_URL:     "https://puncakbukit.github.io/steemtwist"
+  DAPP_URL: "https://puncakbukit.github.io/steemtwist"
 };
 
 // Returns the current monthly root permlink, e.g. "feed-2026-03".
-window.getMonthlyRoot = function(){
+window.getMonthlyRoot = function() {
   const d = new Date();
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -356,8 +371,8 @@ function fetchTwistFeed(monthlyRoot) {
     );
   }).then(enriched =>
     enriched
-      .filter(p => p && p.author)
-      .sort((a, b) => steemDate(b.created) - steemDate(a.created))
+    .filter(p => p && p.author)
+    .sort((a, b) => steemDate(b.created) - steemDate(a.created))
   );
 }
 
@@ -375,26 +390,26 @@ function buildZeroPayoutOps(username, body, parentAuthor, parentPermlink, permli
   const comment = [
     "comment",
     {
-      parent_author:   parentAuthor,
+      parent_author: parentAuthor,
       parent_permlink: parentPermlink,
-      author:          username,
-      permlink:        permlink,
-      title:           "",
-      body:            bodyWithLink,
-      json_metadata:   JSON.stringify(jsonMetadata)
+      author: username,
+      permlink: permlink,
+      title: "",
+      body: bodyWithLink,
+      json_metadata: JSON.stringify(jsonMetadata)
     }
   ];
 
   const commentOptions = [
     "comment_options",
     {
-      author:                    username,
-      permlink:                  permlink,
-      max_accepted_payout:       "0.000 SBD",
-      percent_steem_dollars:     10000,
-      allow_votes:               true,   // likes remain active
-      allow_curation_rewards:    false,  // no curation rewards either
-      extensions:                []
+      author: username,
+      permlink: permlink,
+      max_accepted_payout: "0.000 SBD",
+      percent_steem_dollars: 10000,
+      allow_votes: true, // likes remain active
+      allow_curation_rewards: false, // no curation rewards either
+      extensions: []
     }
   ];
 
@@ -406,7 +421,7 @@ function buildZeroPayoutOps(username, body, parentAuthor, parentPermlink, permli
 // from the moment of posting (cannot be changed after the fact).
 // callback: (response) => { response.success, response.error }
 function postTwist(username, message, callback) {
-  const root     = getMonthlyRoot();
+  const root = getMonthlyRoot();
   const permlink = generateTwistPermlink(username);
 
   const ops = buildZeroPayoutOps(
@@ -414,8 +429,11 @@ function postTwist(username, message, callback) {
     message,
     TWIST_CONFIG.ROOT_ACCOUNT,
     root,
-    permlink,
-    { app: "steemtwist/0.1", type: "micro", tags: TWIST_CONFIG.TAGS }
+    permlink, {
+      app: "steemtwist/0.1",
+      type: "micro",
+      tags: TWIST_CONFIG.TAGS
+    }
   );
 
   steem_keychain.requestBroadcast(username, ops, "Posting", callback);
@@ -431,8 +449,11 @@ function postTwistReply(username, message, parentAuthor, parentPermlink, callbac
     message,
     parentAuthor,
     parentPermlink,
-    replyPermlink,
-    { app: "steemtwist/0.1", type: "micro-reply", tags: TWIST_CONFIG.TAGS }
+    replyPermlink, {
+      app: "steemtwist/0.1",
+      type: "micro-reply",
+      tags: TWIST_CONFIG.TAGS
+    }
   );
 
   steem_keychain.requestBroadcast(username, ops, "Posting", callback);
@@ -450,7 +471,11 @@ function voteTwist(voter, author, permlink, weight, callback) {
 function retwistPost(username, author, permlink, callback) {
   const json = JSON.stringify([
     "reblog",
-    { account: username, author, permlink }
+    {
+      account: username,
+      author,
+      permlink
+    }
   ]);
   steem_keychain.requestCustomJson(
     username,
@@ -495,9 +520,9 @@ function scoreNew(post) {
 // Apply a named sort mode to an array of posts.
 // Returns a new sorted array; never mutates the original.
 function sortTwists(posts, mode) {
-  const fn = mode === "hot" ? scoreHot
-           : mode === "top" ? scoreTop
-           : scoreNew;
+  const fn = mode === "hot" ? scoreHot :
+    mode === "top" ? scoreTop :
+    scoreNew;
   return [...posts].sort((a, b) => fn(b) - fn(a));
 }
 
@@ -513,7 +538,7 @@ function startFirehose(monthlyRoot, onTwist, onVote) {
 
   steem.api.streamOperations((err, op) => {
     if (!active) return;
-    if (err)     return;
+    if (err) return;
 
     const [type, data] = op;
 
@@ -524,25 +549,25 @@ function startFirehose(monthlyRoot, onTwist, onVote) {
     }
 
     // ── Comment op: new twist ────────────────────────────────────────
-    if (type !== "comment")                                    return;
-    if (data.parent_author   !== TWIST_CONFIG.ROOT_ACCOUNT)   return;
-    if (data.parent_permlink !== monthlyRoot)                  return;
+    if (type !== "comment") return;
+    if (data.parent_author !== TWIST_CONFIG.ROOT_ACCOUNT) return;
+    if (data.parent_permlink !== monthlyRoot) return;
 
     // Build a minimal post object so the card renders instantly.
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
     const post = {
-      author:               data.author,
-      permlink:             data.permlink,
-      body:                 data.body,
-      parent_author:        data.parent_author,
-      parent_permlink:      data.parent_permlink,
-      created:              now,
-      net_votes:            0,
-      active_votes:         [],
-      children:             0,
+      author: data.author,
+      permlink: data.permlink,
+      body: data.body,
+      parent_author: data.parent_author,
+      parent_permlink: data.parent_permlink,
+      created: now,
+      net_votes: 0,
+      active_votes: [],
+      children: 0,
       pending_payout_value: "0.000 SBD",
-      json_metadata:        data.json_metadata || "",
-      _firehose:            true
+      json_metadata: data.json_metadata || "",
+      _firehose: true
     };
 
     onTwist(post);
@@ -553,10 +578,14 @@ function startFirehose(monthlyRoot, onTwist, onVote) {
       fetchPost(data.author, data.permlink).then(full => {
         if (!active || !full || !full.author) return;
         full._firehose = false;
-        onTwist(full, true /* isUpdate */);
+        onTwist(full, true /* isUpdate */ );
       }).catch(() => {});
     }, 4000);
   });
 
-  return { stop() { active = false; } };
+  return {
+    stop() {
+      active = false;
+    }
+  };
 }
