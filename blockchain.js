@@ -105,19 +105,19 @@ function fetchAllReplies(author, permlink) {
       );
     }
 
-recurse(author, permlink, async () => {
+recurse(author, permlink, () => {
 
-  const enriched = await Promise.all(
+  Promise.all(
     collected.map(r =>
       callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
         .catch(() => r)
     )
-  );
-
-  resolve(enriched);
+  ).then(enriched => {
+    resolve(enriched);
+  });
 
 });
-
+    
 }
 
 // Fetch recent posts by tag (uses getDiscussionsByCreated).
