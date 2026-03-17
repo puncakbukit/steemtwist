@@ -97,7 +97,10 @@ function fetchAllReplies(author, permlink) {
           if (err || !replies || replies.length === 0) return done();
           let pending = replies.length;
           replies.forEach(reply => {
-            collected.push(reply);
+            collected.push({
+              author: reply.author,
+              permlink: reply.permlink
+            });
             recurse(reply.author, reply.permlink, () => {
               pending--;
               if (pending === 0) done();
@@ -106,20 +109,17 @@ function fetchAllReplies(author, permlink) {
         }
       );
     }
-
+    
     recurse(author, permlink, () => {
-
       Promise.all(
         collected.map(r =>
           callWithFallbackAsync(steem.api.getContent, [r.author, r.permlink])
-          .catch(() => r)
-        )
+          .catch(() => null)
+                     )
       ).then(enriched => {
-        resolve(enriched);
+        resolve(enriched.filter(Boolean));
       });
-
     });
-
   });
 }
 
