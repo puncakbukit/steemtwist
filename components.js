@@ -473,7 +473,17 @@ const ThreadComponent = {
   },
   async created() {
     try {
-      this.replies = await fetchReplies(this.author, this.permlink);
+      this.replies = await fetchReplies(this.author, this.permlink)
+  .then(replies =>
+    Promise.all(
+      replies.map(r =>
+        fetchPost(r.author, r.permlink).catch(() => r)
+      )
+    )
+  )
+  .then(enriched => {
+    this.replies = enriched;
+  });
     } catch (e) {
       this.loadError = "Could not load replies.";
     }
