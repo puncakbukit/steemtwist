@@ -86,8 +86,9 @@ function fetchReplies(author, permlink) {
 
 // Recursively fetch ALL nested replies for a post.
 function fetchAllReplies(author, permlink) {
-
+  alert("fetchAllReplies");
   function recurse(author, permlink) {
+    alert("recurse");
     return callWithFallbackAsync(
       steem.api.getContentReplies,
       [author, permlink]
@@ -106,6 +107,7 @@ function fetchAllReplies(author, permlink) {
   }
 
   return recurse(author, permlink).then(collected => {
+    alert("then");
     if (collected.length === 0) return [];
 
     return Promise.all(
