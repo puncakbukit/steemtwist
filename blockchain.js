@@ -199,6 +199,7 @@ function fetchTwistsByUser(username, monthlyRoot) {
           }
 
           if (type !== "comment") continue;
+          if (data.author !== username) continue;
           if (!data.permlink.startsWith(TWIST_CONFIG.POST_PREFIX)) continue;
 
           if (!collected.some(c => c.data.permlink === data.permlink)) {
