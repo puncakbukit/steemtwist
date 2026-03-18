@@ -472,23 +472,23 @@ const ThreadComponent = {
     };
   },
   async created() {
-    try {
-      this.replies = await fetchReplies(this.author, this.permlink)
-  .then(replies =>
-    Promise.all(
+  try {
+    const replies = await fetchReplies(this.author, this.permlink);
+
+    const enriched = await Promise.all(
       replies.map(r =>
         fetchPost(r.author, r.permlink).catch(() => r)
       )
-    )
-  )
-  .then(enriched => {
+    );
+
     this.replies = enriched;
-  });
-    } catch (e) {
-      this.loadError = "Could not load replies.";
-    }
-    this.loading = false;
-  },
+
+  } catch (e) {
+    this.loadError = "Could not load replies.";
+  }
+
+  this.loading = false;
+},
   template: `
     <div style="margin-top:8px;border-top:2px solid #2e2050;padding-top:8px;">
 
