@@ -472,23 +472,15 @@ const ThreadComponent = {
     };
   },
   async created() {
-  try {
-    const replies = await fetchReplies(this.author, this.permlink);
-
-    const enriched = await Promise.all(
-      replies.map(r =>
-        fetchPost(r.author, r.permlink).catch(() => r)
-      )
-    );
-
-    this.replies = enriched;
-
-  } catch (e) {
-    this.loadError = "Could not load replies.";
-  }
-
-  this.loading = false;
-},
+    try {
+      // getContentReplies already returns full post objects (body, votes,
+      // children, etc.) — no need for a second fetchPost round-trip per reply.
+      this.replies = await fetchReplies(this.author, this.permlink);
+    } catch (e) {
+      this.loadError = "Could not load replies.";
+    }
+    this.loading = false;
+  },
   template: `
     <div style="margin-top:8px;border-top:2px solid #2e2050;padding-top:8px;">
 
