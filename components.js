@@ -707,13 +707,6 @@ const TwistCardComponent = {
         </button>
       </div>
 
-      <!-- Thread replies -->
-      <thread-component
-        v-if="showThread"
-        :author="post.author"
-        :permlink="post.permlink"
-      ></thread-component>
-
       <!-- Footer actions -->
       <div style="display:flex;align-items:center;gap:12px;font-size:13px;margin-top:12px;flex-wrap:wrap;">
 
@@ -797,6 +790,14 @@ const TwistCardComponent = {
                  padding:0;color:#fca5a5;line-height:1;margin:0;"
         >✕</button>
       </div>
+
+      <!-- Thread replies — below actions so the action bar never moves -->
+      <thread-component
+        v-if="showThread"
+        :author="post.author"
+        :permlink="post.permlink"
+      ></thread-component>
+
     </div>
   `
 };
