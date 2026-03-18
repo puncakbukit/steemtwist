@@ -353,7 +353,7 @@ const TwistView = {
   components: { TwistCardComponent, LoadingSpinnerComponent },
 
   data() {
-    return { post: null, loading: true };
+    return { post: null, parentPost: null, loading: true };
   },
 
   async created() {
@@ -366,18 +366,39 @@ const TwistView = {
 
   methods: {
     async loadPost() {
-      this.loading = true;
-      this.post    = null;
+      this.loading    = true;
+      this.post       = null;
+      this.parentPost = null;
       try {
         const { user, permlink } = this.$route.params;
         const result = await fetchPost(user, permlink);
-        // fetchPost returns an empty author string when the post doesn't exist
         if (!result || !result.author) throw new Error("not found");
         this.post = result;
+
+        // If this twist is a reply to another user's twist (not the monthly
+        // feed root), fetch the parent so we can show a quoted snippet above.
+        const pa = result.parent_author;
+        const pp = result.parent_permlink;
+        if (pa && pa !== TWIST_CONFIG.ROOT_ACCOUNT) {
+          this.parentPost = await fetchPost(pa, pp).catch(() => null);
+        }
       } catch {
         this.notify("Twist not found.", "error");
       }
       this.loading = false;
+    },
+
+    // Plain-text snippet: strip markdown / HTML tags, collapse whitespace,
+    // truncate to 160 chars so the quote stays compact.
+    parentSnippet(body) {
+      if (!body) return "";
+      const plain = body
+        .replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "") // strip back-link
+        .replace(/<[^>]+>/g, "")   // strip HTML tags
+        .replace(/[#*`_~>\[\]!]/g, "")  // strip common markdown symbols
+        .replace(/\s+/g, " ")
+        .trim();
+      return plain.length > 160 ? plain.slice(0, 160) + "…" : plain;
     }
   },
 
@@ -400,6 +421,50 @@ const TwistView = {
       </div>
 
       <template v-else>
+
+        <!-- Parent twist quote — shown only when this twist is a reply -->
+        <div v-if="parentPost" style="
+          background:#16102a;border:1px solid #2e2050;border-radius:12px;
+          padding:12px 14px;margin-bottom:6px;
+          border-left:3px solid #8b2fc9;
+        ">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
+            <img
+              :src="'https://steemitimages.com/u/' + parentPost.author + '/avatar/small'"
+              style="width:24px;height:24px;border-radius:50%;border:1px solid #2e2050;flex-shrink:0;"
+              @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
+            />
+            <span style="font-size:12px;color:#9b8db0;">
+              Replying to
+              <a
+                :href="'#/@' + parentPost.author"
+                style="color:#a855f7;text-decoration:none;font-weight:600;"
+              >@{{ parentPost.author }}</a>
+            </span>
+          </div>
+
+          <!-- Quoted snippet -->
+          <div style="
+            font-size:13px;color:#9b8db0;line-height:1.5;
+            font-style:italic;word-break:break-word;
+          ">
+            "{{ parentSnippet(parentPost.body) }}"
+          </div>
+
+          <!-- Link to parent twist page -->
+          <div style="margin-top:8px;">
+            <a
+              :href="'#/@' + parentPost.author + '/' + parentPost.permlink"
+              style="font-size:12px;color:#22d3ee;text-decoration:none;font-weight:600;"
+            >↗ View original twist</a>
+          </div>
+        </div>
+
+        <!-- Connector line between quote and twist card -->
+        <div v-if="parentPost" style="
+          width:2px;height:10px;background:#2e2050;margin:0 0 0 22px;
+        "></div>
+
         <!-- Full twist card -->
         <twist-card-component
           :post="post"
