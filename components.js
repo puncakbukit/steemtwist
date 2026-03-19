@@ -537,7 +537,8 @@ const TwistCardComponent = {
   data() {
     return {
       showReplyBox:    false,
-      showReplies:     false,
+      // Auto-expand replies if the post already has some.
+      showReplies:     (this.post.children || 0) > 0,
       replyText:       "",
       isReplying:      false,
       isVoting:        false,
