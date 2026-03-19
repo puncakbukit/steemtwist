@@ -221,7 +221,9 @@ const ReplyCardComponent = {
   data() {
     return {
       showReplyBox:  false,
-      showChildren:  false,
+      // Auto-expand the first two nesting levels (depth 0 and 1).
+      // Deeper threads stay collapsed to avoid overwhelming the page.
+      showChildren:  this.depth < 2,
       replyText:     "",
       isReplying:    false,
       isVoting:      false,
