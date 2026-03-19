@@ -43,7 +43,7 @@ const HomeView = {
   },
 
   async created() {
-    await this.loadFeed();
+    await this.loadFeed(true);
   },
 
   unmounted() {
@@ -51,18 +51,22 @@ const HomeView = {
   },
 
   methods: {
-    async loadFeed() {
+    // refreshPin: if true, also re-fetches the pinned twist from chain.
+    // Kept false for vote-triggered reloads so a just-broadcast pin isn't
+    // overwritten before the node has indexed it.
+    async loadFeed(refreshPin = false) {
       this.loading = true;
       try {
-        const [fresh, pinned] = await Promise.all([
-          fetchTwistFeed(this.monthlyRoot),
-          this.username ? fetchPinnedTwist(this.username) : Promise.resolve(null)
-        ]);
+        const feedPromise = fetchTwistFeed(this.monthlyRoot);
+        const pinPromise  = refreshPin && this.username
+          ? fetchPinnedTwist(this.username)
+          : Promise.resolve(this.pinnedTwist);
+
+        const [fresh, pinned] = await Promise.all([feedPromise, pinPromise]);
         const serverPermalinks = new Set(fresh.map(p => p.permlink));
         const liveOnly = this.twists.filter(
           p => p._firehose && !serverPermalinks.has(p.permlink)
         );
-        // Store unsorted — sortedTwists computed handles ordering.
         this.twists      = [...liveOnly, ...fresh];
         this.pinnedTwist = pinned;
       } catch (e) {
@@ -158,7 +162,7 @@ const HomeView = {
         <span>📅 <strong>{{ monthlyRoot }}</strong></span>
 
         <button
-          @click="loadFeed"
+          @click="loadFeed(true)"
           style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                  border-radius:12px;padding:2px 10px;font-size:12px;"
         >⟳ Refresh</button>
@@ -254,7 +258,7 @@ const HomeView = {
             :username="username"
             :has-keychain="hasKeychain"
             :pinned="true"
-            @voted="loadFeed"
+            @voted="loadFeed()"
             @unpin="handleUnpin"
           ></twist-card-component>
         </div>
@@ -272,7 +276,7 @@ const HomeView = {
           :has-keychain="hasKeychain"
           :pinned="false"
           :class="post._firehose ? 'twist-flash' : ''"
-          @voted="loadFeed"
+          @voted="loadFeed()"
           @pin="handlePin"
         ></twist-card-component>
       </template>
@@ -311,18 +315,21 @@ const ProfileView = {
   },
 
   methods: {
-    async loadProfile() {
+    async loadProfile(refreshPin = true) {
       const user    = this.$route.params.user;
       this.loading  = true;
       this.userTwists  = [];
       this.profileData = null;
-      this.pinnedTwist = null;
+      if (refreshPin) this.pinnedTwist = null;
       try {
-        // Run all three fetches concurrently.
+        const pinPromise = refreshPin
+          ? fetchPinnedTwist(user)
+          : Promise.resolve(this.pinnedTwist);
+
         const [profile, twists, pinned] = await Promise.all([
           fetchAccount(user),
           fetchTwistsByUser(user, this.monthlyRoot),
-          fetchPinnedTwist(user)
+          pinPromise
         ]);
         this.profileData = profile;
         this.userTwists  = twists;
