@@ -621,15 +621,42 @@ function unpinTwist(username, callback) {
   );
 }
 
+// localStorage key for pending pin cache.
+// Stores { author, permlink, ts } for up to PIN_CACHE_TTL ms after a pin,
+// so the UI stays correct during the window between broadcast and indexing.
+const PIN_CACHE_KEY = "steemtwist_pending_pin";
+const PIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function setPinCache(username, author, permlink) {
+  try {
+    localStorage.setItem(PIN_CACHE_KEY + "_" + username,
+      JSON.stringify({ author, permlink, ts: Date.now() }));
+  } catch {}
+}
+
+function clearPinCache(username) {
+  try { localStorage.removeItem(PIN_CACHE_KEY + "_" + username); } catch {}
+}
+
+function getPinCache(username) {
+  try {
+    const raw = localStorage.getItem(PIN_CACHE_KEY + "_" + username);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (Date.now() - cached.ts > PIN_CACHE_TTL) {
+      localStorage.removeItem(PIN_CACHE_KEY + "_" + username);
+      return null;
+    }
+    return cached;
+  } catch { return null; }
+}
+
 // Scan a user's account history for the latest "steemtwist" custom_json
 // with action "pin" or "unpin", then return the pinned post object or null.
 //
-// Algorithm:
-//   1. Page backwards through account history in batches of 100.
-//   2. For each entry, look for custom_json ops with id === "steemtwist".
-//   3. Stop as soon as we find the first (latest) pin or unpin action.
-//   4. If the latest action is "pin", fetch and return the post.
-//      If it is "unpin" or nothing found, return null.
+// If the chain result differs from a recent localStorage cache entry
+// (written immediately on pin/unpin), the cache wins — this covers the
+// window between broadcast and node indexing (typically a few seconds).
 //
 // Returns Promise<post|null>.
 function fetchPinnedTwist(username) {
@@ -665,7 +692,27 @@ function fetchPinnedTwist(username) {
     });
   }
 
-  return page(-1).then(found => {
+  return page(-1).then(chainResult => {
+    // Check localStorage cache for a more recent pending pin/unpin
+    const cached = getPinCache(username);
+
+    // If cache exists, it was written after the last broadcast and the chain
+    // may not have indexed it yet — prefer the cache.
+    // Once the chain result matches the cache, clear the cache.
+    let found = chainResult;
+    if (cached) {
+      if (cached.author === null) {
+        // cached unpin — chain may still show old pin
+        found = null;
+      } else if (!chainResult || chainResult.permlink !== cached.permlink) {
+        // cached pin not yet on chain — use cache
+        found = { author: cached.author, permlink: cached.permlink };
+      } else {
+        // chain has caught up — safe to clear cache
+        clearPinCache(username);
+      }
+    }
+
     if (!found) return null;
     return fetchPost(found.author, found.permlink)
       .then(post => (post && post.author ? post : null))

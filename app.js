@@ -77,9 +77,11 @@ const HomeView = {
 
     handlePin(post) {
       this.pinnedTwist = post;
+      setPinCache(this.username, post.author, post.permlink);
     },
     handleUnpin() {
       this.pinnedTwist = null;
+      setPinCache(this.username, null, null);
     },
 
     async handlePost(message) {
@@ -342,9 +344,11 @@ const ProfileView = {
 
     handlePin(post) {
       this.pinnedTwist = post;
+      setPinCache(this.$route.params.user, post.author, post.permlink);
     },
     handleUnpin() {
       this.pinnedTwist = null;
+      setPinCache(this.$route.params.user, null, null);
     }
   },
 
