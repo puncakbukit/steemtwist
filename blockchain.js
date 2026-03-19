@@ -661,6 +661,11 @@ function getPinCache(username) {
 // Returns Promise<post|null>.
 function fetchPinnedTwist(username) {
   const BATCH = 100;
+  // Stop after scanning this many entries. Pin ops are always recent, so
+  // 500 entries is more than enough. Without this cap, accounts with long
+  // histories (thousands of votes/posts) would page forever.
+  const MAX_SCAN = 500;
+  let scanned = 0;
 
   function page(from) {
     return new Promise((resolve) => {
@@ -671,6 +676,7 @@ function fetchPinnedTwist(username) {
         for (let i = history.length - 1; i >= 0; i--) {
           const [, item] = history[i];
           const [type, data] = item.op;
+          scanned++;
 
           if (type !== "custom_json") continue;
           if (data.id !== "steemtwist") continue;
@@ -684,9 +690,9 @@ function fetchPinnedTwist(username) {
           }
         }
 
-        // Not found in this batch — page further back
+        // Stop if we have scanned enough or reached the beginning of history
         const lowestSeq = history[0][0];
-        if (lowestSeq <= 0) return resolve(null);
+        if (lowestSeq <= 0 || scanned >= MAX_SCAN) return resolve(null);
         page(lowestSeq - 1).then(resolve);
       });
     });
