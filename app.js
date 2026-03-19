@@ -588,7 +588,7 @@ const AboutView = {
 // ---- SignalsView ----
 // Shows all signals (notifications) received by the logged-in user.
 // Read/unread state is tracked in localStorage by sequence-number ID.
-// Signals are fetched once on mount; a "Mark all read" button clears the badge.
+// Signals are fetched once on mount and all are marked read immediately.
 const SignalsView = {
   name: "SignalsView",
   inject: ["username", "notify", "unreadSignals", "refreshUnreadSignals"],
@@ -596,16 +596,18 @@ const SignalsView = {
 
   data() {
     return {
-      signals:  [],
-      loading:  true,
-      filter:   "all"   // "all" | "unread"
+      signals: [],
+      loading: true,
+      filter:  "all"   // "all" | "unread"
     };
   },
 
   computed: {
     readIds() {
       try {
-        return new Set(JSON.parse(localStorage.getItem("steemtwist_signals_read_" + this.username) || "[]"));
+        return new Set(JSON.parse(
+          localStorage.getItem("steemtwist_signals_read_" + this.username) || "[]"
+        ));
       } catch { return new Set(); }
     },
     filteredSignals() {
@@ -625,7 +627,6 @@ const SignalsView = {
       this.notify("Could not load signals.", "error");
     }
     this.loading = false;
-    // Mark all as read once the page is opened
     this.markAllRead();
   },
 
@@ -638,7 +639,6 @@ const SignalsView = {
           JSON.stringify(ids)
         );
       } catch {}
-      // Reset the nav badge immediately
       if (typeof this.refreshUnreadSignals === "function") {
         this.refreshUnreadSignals(this.username);
       }
@@ -648,7 +648,7 @@ const SignalsView = {
     }
   },
 
-  template: \`
+  template: `
     <div style="max-width:600px;margin:20px auto 0;">
 
       <!-- Header -->
@@ -667,7 +667,7 @@ const SignalsView = {
               background:  filter === f.key ? 'linear-gradient(135deg,#8b2fc9,#e0187a)' : '#1e1535',
               color:       filter === f.key ? '#fff' : '#9b8db0',
               borderColor: filter === f.key ? '#a855f7' : '#2e2050',
-              margin:0
+              margin: 0
             }"
           >{{ f.label }}{{ f.key === 'unread' && unreadCount > 0 ? ' (' + unreadCount + ')' : '' }}</button>
         </div>
@@ -705,7 +705,7 @@ const SignalsView = {
       </div>
 
     </div>
-  \`
+  `
 };
 
 // ============================================================
