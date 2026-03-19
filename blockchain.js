@@ -588,3 +588,87 @@ function startFirehose(monthlyRoot, onTwist, onVote) {
     }
   };
 }
+
+// ============================================================
+// STEEMTWIST — Pin / Unpin helpers
+// ============================================================
+
+// Broadcast a "pin" custom_json to record which twist is pinned.
+// Only the latest pin/unpin entry in account history is used,
+// so this safely overwrites any previous pin.
+// callback: (response) => { response.success, response.error }
+function pinTwist(username, author, permlink, callback) {
+  steem_keychain.requestCustomJson(
+    username,
+    "steemtwist",
+    "Posting",
+    JSON.stringify({ action: "pin", author, permlink }),
+    "Pin twist",
+    callback
+  );
+}
+
+// Broadcast an "unpin" custom_json to clear the pinned twist.
+// callback: (response) => { response.success, response.error }
+function unpinTwist(username, callback) {
+  steem_keychain.requestCustomJson(
+    username,
+    "steemtwist",
+    "Posting",
+    JSON.stringify({ action: "unpin" }),
+    "Unpin twist",
+    callback
+  );
+}
+
+// Scan a user's account history for the latest "steemtwist" custom_json
+// with action "pin" or "unpin", then return the pinned post object or null.
+//
+// Algorithm:
+//   1. Page backwards through account history in batches of 100.
+//   2. For each entry, look for custom_json ops with id === "steemtwist".
+//   3. Stop as soon as we find the first (latest) pin or unpin action.
+//   4. If the latest action is "pin", fetch and return the post.
+//      If it is "unpin" or nothing found, return null.
+//
+// Returns Promise<post|null>.
+function fetchPinnedTwist(username) {
+  const BATCH = 100;
+
+  function page(from) {
+    return new Promise((resolve) => {
+      steem.api.getAccountHistory(username, from, BATCH, (err, history) => {
+        if (err || !history || history.length === 0) return resolve(null);
+
+        // Walk newest-first
+        for (let i = history.length - 1; i >= 0; i--) {
+          const [, item] = history[i];
+          const [type, data] = item.op;
+
+          if (type !== "custom_json") continue;
+          if (data.id !== "steemtwist") continue;
+
+          let payload;
+          try { payload = JSON.parse(data.json); } catch { continue; }
+
+          if (payload.action === "unpin") return resolve(null);
+          if (payload.action === "pin" && payload.author && payload.permlink) {
+            return resolve({ author: payload.author, permlink: payload.permlink });
+          }
+        }
+
+        // Not found in this batch — page further back
+        const lowestSeq = history[0][0];
+        if (lowestSeq <= 0) return resolve(null);
+        page(lowestSeq - 1).then(resolve);
+      });
+    });
+  }
+
+  return page(-1).then(found => {
+    if (!found) return null;
+    return fetchPost(found.author, found.permlink)
+      .then(post => (post && post.author ? post : null))
+      .catch(() => null);
+  });
+}

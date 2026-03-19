@@ -303,6 +303,24 @@ const ReplyCardComponent = {
       if (this.replyCount > 0) this.showChildren = !this.showChildren;
       if (this.canAct)         this.showReplyBox  = !this.showReplyBox;
     },
+    pinPost() {
+      if (!this.isOwnPost || this.isPinning) return;
+      this.isPinning = true;
+      pinTwist(this.username, this.post.author, this.post.permlink, (res) => {
+        this.isPinning = false;
+        if (res.success) this.$emit("pin", this.post);
+        else this.lastError = res.error || res.message || "Pin failed.";
+      });
+    },
+    unpinPost() {
+      if (!this.isOwnPost || this.isPinning) return;
+      this.isPinning = true;
+      unpinTwist(this.username, (res) => {
+        this.isPinning = false;
+        if (res.success) this.$emit("unpin", this.post);
+        else this.lastError = res.error || res.message || "Unpin failed.";
+      });
+    },
     submitReply() {
       const text = this.replyText.trim();
       if (!text || !this.canAct) return;
@@ -531,9 +549,10 @@ const TwistCardComponent = {
   props: {
     post:        { type: Object,  required: true },
     username:    { type: String,  default: "" },
-    hasKeychain: { type: Boolean, default: false }
+    hasKeychain: { type: Boolean, default: false },
+    pinned:      { type: Boolean, default: false }   // true when this card is the pinned twist
   },
-  emits: ["voted", "replied"],
+  emits: ["voted", "replied", "pin", "unpin"],
   data() {
     return {
       showReplyBox:    false,
@@ -547,10 +566,14 @@ const TwistCardComponent = {
       hasRetwisted:    false,
       replyCount:      this.post.children || 0,
       lastError:       "",
-      threadExpanded:  false
+      threadExpanded:  false,
+      isPinning:       false
     };
   },
   computed: {
+    isOwnPost() {
+      return !!this.username && this.username === this.post.author;
+    },
     avatarUrl() {
       return `https://steemitimages.com/u/${this.post.author}/avatar/small`;
     },
@@ -756,6 +779,22 @@ const TwistCardComponent = {
           style="margin-left:auto;font-size:12px;color:#2e2050;text-decoration:none;"
           title="Open twist page"
         >🔗</a>
+
+        <!-- Pin / Unpin — own posts only -->
+        <button
+          v-if="isOwnPost && hasKeychain"
+          @click="pinned ? unpinPost() : pinPost()"
+          :disabled="isPinning"
+          :style="{
+            background: pinned ? '#1a2a0a' : '#1e1535',
+            color:      pinned ? '#86efac' : '#9b8db0',
+            border:     pinned ? '1px solid #166534' : '1px solid #2e2050',
+            borderRadius:'20px', padding:'4px 10px',
+            fontSize:'12px', margin:0,
+            cursor: isPinning ? 'default' : 'pointer'
+          }"
+          :title="pinned ? 'Unpin this twist' : 'Pin to top of your profile'"
+        >{{ isPinning ? '…' : (pinned ? '📌 Pinned' : '📌') }}</button>
 
       </div>
 

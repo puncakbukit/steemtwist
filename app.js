@@ -23,6 +23,7 @@ const HomeView = {
   data() {
     return {
       twists:         [],
+      pinnedTwist:    null,   // logged-in user's pinned twist, shown above feed
       loading:        true,
       isPosting:      false,
       monthlyRoot:    getMonthlyRoot(),
@@ -53,17 +54,28 @@ const HomeView = {
     async loadFeed() {
       this.loading = true;
       try {
-        const fresh = await fetchTwistFeed(this.monthlyRoot);
+        const [fresh, pinned] = await Promise.all([
+          fetchTwistFeed(this.monthlyRoot),
+          this.username ? fetchPinnedTwist(this.username) : Promise.resolve(null)
+        ]);
         const serverPermalinks = new Set(fresh.map(p => p.permlink));
         const liveOnly = this.twists.filter(
           p => p._firehose && !serverPermalinks.has(p.permlink)
         );
         // Store unsorted — sortedTwists computed handles ordering.
-        this.twists = [...liveOnly, ...fresh];
+        this.twists      = [...liveOnly, ...fresh];
+        this.pinnedTwist = pinned;
       } catch (e) {
         this.notify("Could not load twists. Please try again.", "error");
       }
       this.loading = false;
+    },
+
+    handlePin(post) {
+      this.pinnedTwist = post;
+    },
+    handleUnpin() {
+      this.pinnedTwist = null;
     },
 
     async handlePost(message) {
@@ -231,19 +243,39 @@ const HomeView = {
       <!-- Feed -->
       <loading-spinner-component v-if="loading" message="Loading twists…"></loading-spinner-component>
 
-      <div v-else-if="sortedTwists.length === 0" style="color:#5a4e70;padding:40px 0;font-size:15px;text-align:center;">
-        No twists yet this month. Be the first! 🌀
-      </div>
+      <template v-else>
+        <!-- Pinned twist — shown above feed, skipped in the sorted list below -->
+        <div v-if="pinnedTwist" style="max-width:600px;margin:0 auto 4px;">
+          <div style="font-size:12px;color:#4ade80;font-weight:600;margin-bottom:4px;padding-left:4px;">
+            📌 Pinned twist
+          </div>
+          <twist-card-component
+            :post="pinnedTwist"
+            :username="username"
+            :has-keychain="hasKeychain"
+            :pinned="true"
+            @voted="loadFeed"
+            @unpin="handleUnpin"
+          ></twist-card-component>
+        </div>
 
-      <twist-card-component
-        v-for="post in sortedTwists"
-        :key="post.permlink"
-        :post="post"
-        :username="username"
-        :has-keychain="hasKeychain"
-        :class="post._firehose ? 'twist-flash' : ''"
-        @voted="loadFeed"
-      ></twist-card-component>
+        <div v-if="sortedTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink).length === 0"
+             style="color:#5a4e70;padding:40px 0;font-size:15px;text-align:center;">
+          No twists yet this month. Be the first! 🌀
+        </div>
+
+        <twist-card-component
+          v-for="post in sortedTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink)"
+          :key="post.permlink"
+          :post="post"
+          :username="username"
+          :has-keychain="hasKeychain"
+          :pinned="false"
+          :class="post._firehose ? 'twist-flash' : ''"
+          @voted="loadFeed"
+          @pin="handlePin"
+        ></twist-card-component>
+      </template>
 
     </div>
   `
@@ -262,6 +294,7 @@ const ProfileView = {
     return {
       profileData:  null,
       userTwists:   [],
+      pinnedTwist:  null,
       loading:      true,
       monthlyRoot:  getMonthlyRoot()
     };
@@ -283,18 +316,28 @@ const ProfileView = {
       this.loading  = true;
       this.userTwists  = [];
       this.profileData = null;
+      this.pinnedTwist = null;
       try {
-        // Run profile fetch and account-history twist scan concurrently.
-        const [profile, twists] = await Promise.all([
+        // Run all three fetches concurrently.
+        const [profile, twists, pinned] = await Promise.all([
           fetchAccount(user),
-          fetchTwistsByUser(user, this.monthlyRoot)
+          fetchTwistsByUser(user, this.monthlyRoot),
+          fetchPinnedTwist(user)
         ]);
         this.profileData = profile;
         this.userTwists  = twists;
+        this.pinnedTwist = pinned;
       } catch {
         this.notify("Failed to load profile.", "error");
       }
       this.loading = false;
+    },
+
+    handlePin(post) {
+      this.pinnedTwist = post;
+    },
+    handleUnpin() {
+      this.pinnedTwist = null;
     }
   },
 
@@ -327,16 +370,35 @@ const ProfileView = {
             >⟳ Refresh</button>
           </div>
 
-          <div v-if="userTwists.length === 0" style="color:#5a4e70;padding:20px;font-size:14px;">
+          <!-- Pinned twist -->
+          <div v-if="pinnedTwist" style="max-width:600px;margin:0 auto 4px;">
+            <div style="font-size:12px;color:#4ade80;font-weight:600;margin-bottom:4px;padding-left:4px;">
+              📌 Pinned twist
+            </div>
+            <twist-card-component
+              :post="pinnedTwist"
+              :username="username"
+              :has-keychain="hasKeychain"
+              :pinned="true"
+              @pin="handlePin"
+              @unpin="handleUnpin"
+            ></twist-card-component>
+          </div>
+
+          <div v-if="userTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink).length === 0"
+               style="color:#5a4e70;padding:20px;font-size:14px;">
             No twists from @{{ $route.params.user }} this month.
           </div>
 
           <twist-card-component
-            v-for="post in userTwists"
+            v-for="post in userTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink)"
             :key="post.permlink"
             :post="post"
             :username="username"
             :has-keychain="hasKeychain"
+            :pinned="false"
+            @pin="handlePin"
+            @unpin="handleUnpin"
           ></twist-card-component>
         </div>
       </template>
