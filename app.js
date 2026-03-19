@@ -584,12 +584,137 @@ const AboutView = {
   `
 };
 
+
+// ---- SignalsView ----
+// Shows all signals (notifications) received by the logged-in user.
+// Read/unread state is tracked in localStorage by sequence-number ID.
+// Signals are fetched once on mount; a "Mark all read" button clears the badge.
+const SignalsView = {
+  name: "SignalsView",
+  inject: ["username", "notify", "unreadSignals", "refreshUnreadSignals"],
+  components: { LoadingSpinnerComponent, SignalItemComponent },
+
+  data() {
+    return {
+      signals:  [],
+      loading:  true,
+      filter:   "all"   // "all" | "unread"
+    };
+  },
+
+  computed: {
+    readIds() {
+      try {
+        return new Set(JSON.parse(localStorage.getItem("steemtwist_signals_read_" + this.username) || "[]"));
+      } catch { return new Set(); }
+    },
+    filteredSignals() {
+      if (this.filter === "unread") return this.signals.filter(s => !this.readIds.has(s.id));
+      return this.signals;
+    },
+    unreadCount() {
+      return this.signals.filter(s => !this.readIds.has(s.id)).length;
+    }
+  },
+
+  async created() {
+    if (!this.username) { this.loading = false; return; }
+    try {
+      this.signals = await fetchSignals(this.username);
+    } catch {
+      this.notify("Could not load signals.", "error");
+    }
+    this.loading = false;
+    // Mark all as read once the page is opened
+    this.markAllRead();
+  },
+
+  methods: {
+    markAllRead() {
+      const ids = this.signals.map(s => s.id);
+      try {
+        localStorage.setItem(
+          "steemtwist_signals_read_" + this.username,
+          JSON.stringify(ids)
+        );
+      } catch {}
+      // Reset the nav badge immediately
+      if (typeof this.refreshUnreadSignals === "function") {
+        this.refreshUnreadSignals(this.username);
+      }
+    },
+    isRead(signal) {
+      return this.readIds.has(signal.id);
+    }
+  },
+
+  template: \`
+    <div style="max-width:600px;margin:20px auto 0;">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <h2 style="margin:0;color:#e8e0f0;font-size:18px;">🔔 Signals</h2>
+
+        <div style="display:flex;gap:6px;align-items:center;">
+          <!-- Filter tabs -->
+          <button
+            v-for="f in [{key:'all',label:'All'},{key:'unread',label:'Unread'}]"
+            :key="f.key"
+            @click="filter = f.key"
+            :style="{
+              borderRadius:'20px', padding:'3px 12px', fontSize:'12px',
+              fontWeight: filter === f.key ? '700' : '400', border:'1px solid',
+              background:  filter === f.key ? 'linear-gradient(135deg,#8b2fc9,#e0187a)' : '#1e1535',
+              color:       filter === f.key ? '#fff' : '#9b8db0',
+              borderColor: filter === f.key ? '#a855f7' : '#2e2050',
+              margin:0
+            }"
+          >{{ f.label }}{{ f.key === 'unread' && unreadCount > 0 ? ' (' + unreadCount + ')' : '' }}</button>
+        </div>
+      </div>
+
+      <!-- Not logged in -->
+      <div v-if="!username" style="
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;
+        padding:40px;text-align:center;color:#5a4e70;font-size:15px;
+      ">
+        Sign in to see your signals.
+      </div>
+
+      <!-- Loading -->
+      <loading-spinner-component v-else-if="loading" message="Loading signals…"></loading-spinner-component>
+
+      <!-- Empty -->
+      <div v-else-if="filteredSignals.length === 0" style="
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;
+        padding:40px;text-align:center;color:#5a4e70;font-size:15px;
+      ">
+        {{ filter === 'unread' ? 'No unread signals.' : 'No signals yet.' }}
+      </div>
+
+      <!-- Signal list -->
+      <div v-else style="
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;overflow:hidden;
+      ">
+        <signal-item-component
+          v-for="signal in filteredSignals"
+          :key="signal.id"
+          :signal="signal"
+          :read="isRead(signal)"
+        ></signal-item-component>
+      </div>
+
+    </div>
+  \`
+};
+
 // ============================================================
 // ROUTER
 // ============================================================
 
 const routes = [
   { path: "/",               component: HomeView    },
+  { path: "/signals",        component: SignalsView },
   { path: "/about",          component: AboutView   },
   { path: "/@:user/:permlink", component: TwistView  },
   { path: "/@:user",         component: ProfileView }
@@ -644,6 +769,7 @@ const App = {
       setRPC(0);
       // Always load a profile — logged-in user's own, or @steemtwist as fallback
       loadProfile(username.value);
+      if (username.value) refreshUnreadSignals(username.value);
       let attempts = 0;
       const interval = setInterval(() => {
         attempts++;
@@ -681,6 +807,7 @@ const App = {
         showLoginForm.value = false;
         notify("Logged in as @" + user, "success");
         loadProfile(user);
+        refreshUnreadSignals(user);
       });
     }
 
@@ -690,18 +817,36 @@ const App = {
       showLoginForm.value = false;
       localStorage.removeItem("steem_user");
       notify("Logged out.", "info");
+      unreadSignals.value = 0;
       loadProfile("");   // reload @steemtwist as fallback
     }
 
-    provide("username",    username);
-    provide("hasKeychain", hasKeychain);
-    provide("notify",      notify);
+    // Unread signal count — recomputed whenever the user navigates to /signals
+    // and marks everything read. Exposed via provide so any component can read it.
+    const unreadSignals = ref(0);
+
+    async function refreshUnreadSignals(user) {
+      if (!user) { unreadSignals.value = 0; return; }
+      try {
+        const signals = await fetchSignals(user);
+        let readIds;
+        try { readIds = new Set(JSON.parse(localStorage.getItem("steemtwist_signals_read_" + user) || "[]")); }
+        catch { readIds = new Set(); }
+        unreadSignals.value = signals.filter(s => !readIds.has(s.id)).length;
+      } catch { unreadSignals.value = 0; }
+    }
+
+    provide("username",       username);
+    provide("hasKeychain",    hasKeychain);
+    provide("notify",         notify);
+    provide("unreadSignals",  unreadSignals);
 
     return {
       username, hasKeychain, keychainReady,
       loginError, showLoginForm, isLoggingIn,
       notification, notify, dismissNotification,
-      login, logout, profileData, currentRoute
+      login, logout, profileData, currentRoute,
+      unreadSignals, refreshUnreadSignals
     };
   },
 
@@ -759,6 +904,24 @@ const App = {
           <router-link v-if="username" :to="'/@' + username" exact-active-class="nav-active"
             style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
           >My Profile</router-link>
+
+          <router-link
+            v-if="username"
+            to="/signals"
+            exact-active-class="nav-active"
+            @click="refreshUnreadSignals(username)"
+            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;position:relative;display:inline-flex;align-items:center;gap:5px;"
+          >
+            🔔 Signals
+            <span
+              v-if="unreadSignals > 0"
+              style="
+                background:linear-gradient(135deg,#8b2fc9,#e0187a);
+                color:#fff;font-size:10px;font-weight:700;
+                padding:1px 5px;border-radius:10px;line-height:1.4;
+              "
+            >{{ unreadSignals > 99 ? '99+' : unreadSignals }}</span>
+          </router-link>
 
           <router-link to="/about" exact-active-class="nav-active"
             style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
@@ -870,6 +1033,7 @@ const App = {
 const vueApp = createApp(App);
 
 vueApp.component("AppNotificationComponent", AppNotificationComponent);
+vueApp.component("SignalItemComponent",       SignalItemComponent);
 vueApp.component("AuthComponent",            AuthComponent);
 vueApp.component("UserProfileComponent",     UserProfileComponent);
 vueApp.component("LoadingSpinnerComponent",  LoadingSpinnerComponent);

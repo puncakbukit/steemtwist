@@ -719,3 +719,171 @@ function fetchPinnedTwist(username) {
       .catch(() => null);
   });
 }
+
+// ============================================================
+// STEEMTWIST — Signals (Notifications)
+// ============================================================
+
+// How many history entries to scan per Signals fetch.
+// 500 covers roughly a few weeks of activity for active accounts.
+const SIGNALS_SCAN_LIMIT = 500;
+
+// Classify one account-history entry into a signal object, or return null
+// if the entry is not a relevant notification for the given username.
+//
+// Signal shape:
+//   {
+//     id:        string   — unique key (sequence number as string)
+//     type:      "love" | "reply" | "mention" | "follow" | "retwist"
+//     actor:     string   — who triggered the signal
+//     permlink:  string   — relevant permlink (own post for love/reply/retwist,
+//                           actor's comment for reply/mention, "" for follow)
+//     parentPermlink: string — parent permlink for reply context (or "")
+//     body:      string   — short preview text where applicable
+//     ts:        Date
+//   }
+function classifySignalEntry(seqNum, item, username) {
+  const [type, data] = item.op;
+  const ts = steemDate(item.timestamp);
+
+  // ── Twist Love ───────────────────────────────────────────────────────────
+  if (type === "vote") {
+    if (data.author !== username) return null;         // vote on someone else's post
+    if (data.voter === username)  return null;         // self-vote
+    return {
+      id: String(seqNum),
+      type: "love",
+      actor: data.voter,
+      permlink: data.permlink,
+      parentPermlink: "",
+      body: "",
+      ts
+    };
+  }
+
+  // ── Thread Reply or Mention ──────────────────────────────────────────────
+  if (type === "comment") {
+    if (data.author === username) return null;         // own comment
+
+    const bodyLower = (data.body || "").toLowerCase();
+    const mentioned = bodyLower.includes("@" + username.toLowerCase());
+
+    // Reply: actor replied directly to one of the user's posts/comments
+    if (data.parent_author === username) {
+      return {
+        id: String(seqNum),
+        type: mentioned ? "mention" : "reply",
+        actor: data.author,
+        permlink: data.permlink,
+        parentPermlink: data.parent_permlink,
+        body: stripSignalBody(data.body),
+        ts
+      };
+    }
+
+    // Mention without being the direct parent (e.g. replying in a thread)
+    if (mentioned) {
+      return {
+        id: String(seqNum),
+        type: "mention",
+        actor: data.author,
+        permlink: data.permlink,
+        parentPermlink: data.parent_permlink,
+        body: stripSignalBody(data.body),
+        ts
+      };
+    }
+
+    return null;
+  }
+
+  // ── Follow or Retwist ────────────────────────────────────────────────────
+  if (type === "custom_json") {
+    let payload;
+    try { payload = JSON.parse(data.json); } catch { return null; }
+
+    // Follow uses the "follow" plugin — payload is ["follow", { ... }]
+    if (data.id === "follow" && Array.isArray(payload) && payload[0] === "follow") {
+      const follow = payload[1];
+      if (follow.following !== username) return null;
+      if (!follow.what || !follow.what.includes("blog")) return null;
+      return {
+        id: String(seqNum),
+        type: "follow",
+        actor: follow.follower,
+        permlink: "",
+        parentPermlink: "",
+        body: "",
+        ts
+      };
+    }
+
+    // Retwist (reblog) — payload is ["reblog", { account, author, permlink }]
+    if (data.id === "follow" && Array.isArray(payload) && payload[0] === "reblog") {
+      const reblog = payload[1];
+      if (reblog.author !== username) return null;
+      return {
+        id: String(seqNum),
+        type: "retwist",
+        actor: reblog.account,
+        permlink: reblog.permlink,
+        parentPermlink: "",
+        body: "",
+        ts
+      };
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
+// Strip body down to a readable one-line preview for signal rows.
+function stripSignalBody(body) {
+  if (!body) return "";
+  return body
+    .replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/[#*`_~>\[\]!]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+}
+
+// Fetch the latest signals for a user by scanning their account history.
+// Scans up to SIGNALS_SCAN_LIMIT entries newest-first and returns all
+// recognised signal objects sorted newest-first.
+//
+// Returns Promise<signal[]>.
+function fetchSignals(username) {
+  const BATCH = 100;
+  const collected = [];
+  let scanned = 0;
+
+  function page(from) {
+    return new Promise((resolve) => {
+      steem.api.getAccountHistory(username, from, BATCH, (err, history) => {
+        if (err || !history || history.length === 0) return resolve();
+
+        for (let i = history.length - 1; i >= 0; i--) {
+          const [seqNum, item] = history[i];
+          scanned++;
+
+          const signal = classifySignalEntry(seqNum, item, username);
+          if (signal) collected.push(signal);
+
+          if (scanned >= SIGNALS_SCAN_LIMIT) return resolve();
+        }
+
+        const lowestSeq = history[0][0];
+        if (lowestSeq <= 0 || scanned >= SIGNALS_SCAN_LIMIT) return resolve();
+        page(lowestSeq - 1).then(resolve);
+      });
+    });
+  }
+
+  return page(-1).then(() =>
+    collected.sort((a, b) => b.ts - a.ts)
+  );
+}

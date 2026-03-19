@@ -899,3 +899,122 @@ const TwistComposerComponent = {
     </div>
   `
 };
+
+// ---- SignalItemComponent ----
+// Renders a single signal (notification) row.
+// Props:
+//   signal  — signal object from fetchSignals
+//   read    — boolean, whether this signal has been seen
+const SignalItemComponent = {
+  name: "SignalItemComponent",
+  props: {
+    signal: { type: Object, required: true },
+    read:   { type: Boolean, default: false }
+  },
+  computed: {
+    icon() {
+      return { love: "❤️", reply: "💬", mention: "📣", follow: "👤", retwist: "🔁" }[this.signal.type] || "🔔";
+    },
+    label() {
+      const a = `@${this.signal.actor}`;
+      switch (this.signal.type) {
+        case "love":    return `${a} gave twist love to your twist`;
+        case "reply":   return `${a} replied to your twist`;
+        case "mention": return `${a} mentioned you`;
+        case "follow":  return `${a} followed you`;
+        case "retwist": return `${a} retwisted your twist`;
+        default:        return `${a} interacted with you`;
+      }
+    },
+    // For love and retwist, signal.permlink is the user's OWN post permlink.
+    // We don't store the post author separately, but since the signal came
+    // from the user's history it must be one of their own posts — so we
+    // inject username from the inject context via a prop workaround:
+    // instead, just link to the actor's comment for reply/mention, or
+    // show no link for love/retwist (the label is sufficient).
+    viewUrl() {
+      if (!this.signal.permlink) return null;
+      if (this.signal.type === "reply" || this.signal.type === "mention") {
+        return `#/@${this.signal.actor}/${this.signal.permlink}`;
+      }
+      return null;  // love/retwist: no single target URL without knowing post author
+    },
+    relativeTime() {
+      const diff = Date.now() - this.signal.ts.getTime();
+      const s = Math.floor(diff / 1000);
+      if (s < 60)  return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60)  return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24)  return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    },
+    absoluteTime() {
+      return this.signal.ts.toUTCString().replace(" GMT", " UTC");
+    }
+  },
+  template: `
+    <div :style="{
+      display:'flex', alignItems:'flex-start', gap:'12px',
+      padding:'12px 14px',
+      background: read ? 'var(--card, #1e1535)' : '#1a1040',
+      borderBottom:'1px solid #2e2050',
+      borderLeft: read ? '3px solid transparent' : '3px solid #a855f7',
+      transition:'background 0.2s'
+    }">
+
+      <!-- Actor avatar -->
+      <a :href="'#/@' + signal.actor" style="flex-shrink:0;">
+        <img
+          :src="'https://steemitimages.com/u/' + signal.actor + '/avatar/small'"
+          style="width:36px;height:36px;border-radius:50%;border:2px solid #2e2050;"
+          @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
+        />
+      </a>
+
+      <!-- Content -->
+      <div style="flex:1;min-width:0;">
+
+        <!-- Type icon + label -->
+        <div style="font-size:14px;color:#e8e0f0;line-height:1.4;">
+          <span style="margin-right:5px;">{{ icon }}</span>
+          <a
+            :href="'#/@' + signal.actor"
+            style="color:#a855f7;font-weight:600;text-decoration:none;"
+          >@{{ signal.actor }}</a>
+          <span style="color:#9b8db0;">
+            {{ label.replace('@' + signal.actor, '').trim() }}
+          </span>
+        </div>
+
+        <!-- Body preview -->
+        <div v-if="signal.body" style="
+          margin-top:4px;font-size:13px;color:#9b8db0;
+          font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        ">
+          "{{ signal.body }}"
+        </div>
+
+        <!-- Timestamp + link -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:5px;">
+          <span :title="absoluteTime" style="font-size:12px;color:#5a4e70;">
+            {{ relativeTime }}
+          </span>
+          <a
+            v-if="viewUrl"
+            :href="viewUrl"
+            style="font-size:12px;color:#22d3ee;text-decoration:none;"
+          >View →</a>
+        </div>
+
+      </div>
+
+      <!-- Unread dot -->
+      <div v-if="!read" style="
+        width:8px;height:8px;border-radius:50%;
+        background:#a855f7;flex-shrink:0;margin-top:4px;
+      "></div>
+
+    </div>
+  `
+};
