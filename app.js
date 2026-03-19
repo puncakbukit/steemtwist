@@ -375,11 +375,13 @@ const TwistView = {
         if (!result || !result.author) throw new Error("not found");
         this.post = result;
 
-        // If this twist is a reply to another user's twist (not the monthly
-        // feed root), fetch the parent so we can show a quoted snippet above.
+        // Fetch the parent post to show a quoted snippet above, unless
+        // this is a root twist whose parent is the monthly feed post
+        // (identified by its feed-YYYY-MM permlink pattern).
         const pa = result.parent_author;
         const pp = result.parent_permlink;
-        if (pa && pa !== TWIST_CONFIG.ROOT_ACCOUNT) {
+        const isFeedRoot = pp && pp.startsWith(TWIST_CONFIG.ROOT_PREFIX);
+        if (pa && !isFeedRoot) {
           this.parentPost = await fetchPost(pa, pp).catch(() => null);
         }
       } catch {
@@ -422,7 +424,7 @@ const TwistView = {
 
       <template v-else>
 
-        <!-- Parent twist quote — shown only when this twist is a reply -->
+        <!-- Parent twist quote — shown when this twist is a reply to another twist -->
         <div v-if="parentPost" style="
           background:#16102a;border:1px solid #2e2050;border-radius:12px;
           padding:12px 14px;margin-bottom:6px;
