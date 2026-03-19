@@ -303,24 +303,6 @@ const ReplyCardComponent = {
       if (this.replyCount > 0) this.showChildren = !this.showChildren;
       if (this.canAct)         this.showReplyBox  = !this.showReplyBox;
     },
-    pinPost() {
-      if (!this.isOwnPost || this.isPinning) return;
-      this.isPinning = true;
-      pinTwist(this.username, this.post.author, this.post.permlink, (res) => {
-        this.isPinning = false;
-        if (res.success) this.$emit("pin", this.post);
-        else this.lastError = res.error || res.message || "Pin failed.";
-      });
-    },
-    unpinPost() {
-      if (!this.isOwnPost || this.isPinning) return;
-      this.isPinning = true;
-      unpinTwist(this.username, (res) => {
-        this.isPinning = false;
-        if (res.success) this.$emit("unpin", this.post);
-        else this.lastError = res.error || res.message || "Unpin failed.";
-      });
-    },
     submitReply() {
       const text = this.replyText.trim();
       if (!text || !this.canAct) return;
@@ -666,6 +648,24 @@ const TwistCardComponent = {
       if (this.canAct) {
         this.showReplyBox = !this.showReplyBox;
       }
+    },
+    pinPost() {
+      if (!this.isOwnPost || this.isPinning) return;
+      this.isPinning = true;
+      pinTwist(this.username, this.post.author, this.post.permlink, (res) => {
+        this.isPinning = false;
+        if (res.success) this.$emit("pin", this.post);
+        else this.lastError = res.error || res.message || "Pin failed.";
+      });
+    },
+    unpinPost() {
+      if (!this.isOwnPost || this.isPinning) return;
+      this.isPinning = true;
+      unpinTwist(this.username, (res) => {
+        this.isPinning = false;
+        if (res.success) this.$emit("unpin", this.post);
+        else this.lastError = res.error || res.message || "Unpin failed.";
+      });
     },
     submitReply() {
       const text = this.replyText.trim();
