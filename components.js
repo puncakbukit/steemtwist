@@ -473,9 +473,18 @@ const ThreadComponent = {
   },
   async created() {
     try {
-      // getContentReplies already returns full post objects (body, votes,
-      // children, etc.) — no need for a second fetchPost round-trip per reply.
-      this.replies = await fetchReplies(this.author, this.permlink);
+      const replies = await fetchReplies(this.author, this.permlink);
+      // getContentReplies returns empty active_votes (a Steem node quirk that
+      // affects both the feed root and individual posts). Enrich active_votes
+      // only via a parallel getContent call so the Love count is correct.
+      // All other fields (body, children, etc.) are already populated.
+      this.replies = await Promise.all(
+        replies.map(r =>
+          fetchPost(r.author, r.permlink)
+            .then(full => ({ ...r, active_votes: full.active_votes || [] }))
+            .catch(() => r)
+        )
+      );
     } catch (e) {
       this.loadError = "Could not load replies.";
     }
