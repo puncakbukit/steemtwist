@@ -325,22 +325,33 @@ function steemDate(ts) {
 // ============================================================
 
 const TWIST_CONFIG = {
-  ROOT_ACCOUNT: "steemtwist",
-  ROOT_PREFIX: "feed-",
-  TAG: "steemtwist",
-  POST_PREFIX: "tw",
+  ROOT_ACCOUNT:        "steemtwist",
+  ROOT_PREFIX:         "feed-",
+  SECRET_ROOT_PREFIX:  "secret-",
+  TAG:                 "steemtwist",
+  POST_PREFIX:         "tw",
   // All tags attached to every twist. First tag is the Steem category.
   TAGS: ["steemtwist", "microblog", "steem", "twist", "social", "web"],
   // Canonical dApp URL embedded as a back-link at the end of every body.
   DAPP_URL: "https://puncakbukit.github.io/steemtwist"
 };
 
-// Returns the current monthly root permlink, e.g. "feed-2026-03".
+// Returns the current monthly feed root permlink, e.g. "feed-2026-03".
 window.getMonthlyRoot = function() {
   const d = new Date();
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   return `${TWIST_CONFIG.ROOT_PREFIX}${y}-${m}`;
+}
+
+// Returns the current monthly secret root permlink, e.g. "secret-2026-03".
+// Secret Twists are posted as replies to @steemtwist/secret-YYYY-MM,
+// keeping them out of the regular feed and off Steemit's post view.
+window.getSecretMonthlyRoot = function() {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${TWIST_CONFIG.SECRET_ROOT_PREFIX}${y}-${m}`;
 }
 
 // Returns a deterministic, collision-free permlink for a new twist.
@@ -1003,10 +1014,10 @@ function sendSecretTwist(sender, recipient, message, callback) {
       const payload  = encRes.result;   // already starts with #
       const permlink = generateSecretTwistPermlink(sender);
 
-      // Step 2: Broadcast rootless post
-      // body: mention triggers Signal; nothing else readable
-      // parent_author = "" → rootless (not tied to monthly feed)
-      // parent_permlink = TWIST_CONFIG.TAG → used as Steem category
+      // Step 2: Post as a reply to @steemtwist/secret-YYYY-MM.
+      // This keeps Secret Twists off Steemit's post view and out of the
+      // regular feed, while still surfacing via the mention signal.
+      const secretRoot = getSecretMonthlyRoot();
       const meta = JSON.stringify({
         type:    "secret_twist",
         to:      recipient,
@@ -1014,15 +1025,13 @@ function sendSecretTwist(sender, recipient, message, callback) {
         payload
       });
 
-      // Root posts require a non-empty title on Steem.
-      // allow_votes: true is required (false is rejected by most nodes).
       const ops = [
         ["comment", {
-          parent_author:   "",
-          parent_permlink: TWIST_CONFIG.TAG,
+          parent_author:   TWIST_CONFIG.ROOT_ACCOUNT,
+          parent_permlink: secretRoot,
           author:          sender,
           permlink,
-          title:           "Secret Twist",
+          title:           "",
           body:            `@${recipient} [encrypted]`,
           json_metadata:   meta
         }],
@@ -1065,8 +1074,8 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
 //           Discovery relies on the mention signal instead: when sender
 //           posts "@recipient [encrypted]", a comment op appears in the
 //           recipient's history as a *mention* (because they were @-tagged).
-//           We look for comment ops where parent_author = "" (rootless post)
-//           and json_metadata.type === "secret_twist" and meta.to === username.
+//           We look for comment ops where parent_author = ROOT_ACCOUNT
+//           (reply to secret monthly root) and meta.to === username.
 //           Those ops DO appear in the recipient's history via the mention
 //           notification system.
 //
@@ -1103,7 +1112,7 @@ function fetchSecretTwists(username) {
             // (mention). Check metadata to confirm it's a secret_twist.
             if (
               data.author !== username &&
-              data.parent_author === "" &&   // rootless = top-level post
+              data.parent_author === TWIST_CONFIG.ROOT_ACCOUNT &&
               data.permlink.startsWith(SECRET_TWIST_PREFIX)
             ) {
               let meta;
