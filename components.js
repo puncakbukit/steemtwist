@@ -1191,6 +1191,8 @@ const SecretTwistComposerComponent = {
 // decryption the plaintext is shown in place of the locked view.
 const SecretTwistCardComponent = {
   name: "SecretTwistCardComponent",
+  // Recursive: Vue resolves "secret-twist-card-component" from the global registry
+  // by matching this component's name, enabling nested reply rendering.
   props: {
     post:        { type: Object,  required: true },
     username:    { type: String,  default: "" },
@@ -1225,6 +1227,9 @@ const SecretTwistCardComponent = {
     isRecipient()  { return this.username === this.recipient; },
     isParticipant(){ return this.isSender || this.isRecipient; },
     canDecrypt()   { return this.isParticipant && this.hasKeychain && !!this.payload; },
+    // Can reply only if: participant, has Keychain, and did NOT author this post
+    // (prevents replying to your own message in the thread)
+    canReply()     { return this.isParticipant && this.hasKeychain && !this.isSender; },
     // The other party in the conversation — used for reply encryption
     otherParty()   { return this.isSender ? this.recipient : this.post.author; },
     avatarUrl()    { return `https://steemitimages.com/u/${this.post.author}/avatar/small`; },
@@ -1257,51 +1262,24 @@ const SecretTwistCardComponent = {
       });
     },
 
-    // Load and decrypt nested replies using fetchReplies + requestVerifyKey
+    // Load nested replies — returned as raw post objects so they can be
+    // rendered recursively by SecretTwistCardComponent instances.
     async loadReplies() {
       if (this.loadingReplies || this.repliesLoaded) return;
       this.loadingReplies = true;
       try {
         const raw = await fetchReplies(this.post.author, this.post.permlink);
-        // Decrypt each reply in sequence (Keychain doesn't support concurrent popups)
-        const decryptedReplies = [];
-        for (const r of raw) {
-          let replyMeta = {};
+        // Keep only genuine secret_twist replies
+        this.replies = raw.filter(r => {
           try {
             const m = r.json_metadata;
-            replyMeta = m ? (typeof m === "string" ? JSON.parse(m) : m) : {};
-          } catch {}
-          if (replyMeta.type !== "secret_twist" || !replyMeta.payload) continue;
-          decryptedReplies.push({
-            post:      r,
-            payload:   replyMeta.payload,
-            decrypted: null,   // lazy — decrypt on demand
-            isDecrypting: false,
-            decryptError: ""
-          });
-        }
-        this.replies = decryptedReplies;
+            const meta = m ? (typeof m === "string" ? JSON.parse(m) : m) : {};
+            return meta.type === "secret_twist";
+          } catch { return false; }
+        });
         this.repliesLoaded = true;
-      } catch {
-        // Silently ignore reply load errors
-      }
+      } catch {}
       this.loadingReplies = false;
-    },
-
-    decryptReply(reply) {
-      if (reply.isDecrypting || reply.decrypted !== null) return;
-      reply.isDecrypting = true;
-      reply.decryptError = "";
-      decryptSecretTwist(this.username, reply.post.author === this.username
-        ? this.otherParty : reply.post.author,
-        reply.payload, (res) => {
-        reply.isDecrypting = false;
-        if (res.success) {
-          reply.decrypted = (res.result || "").replace(/^#/, "");
-        } else {
-          reply.decryptError = res.error || res.message || "Decryption failed.";
-        }
-      });
     },
 
     sendReply() {
@@ -1394,9 +1372,9 @@ const SecretTwistCardComponent = {
           style="background:linear-gradient(135deg,#6d28d9,#a21caf);padding:6px 16px;font-size:13px;margin:0;"
         >{{ isDecrypting ? "Decrypting…" : "🔓 Decrypt" }}</button>
 
-        <!-- Reply button — only visible after decrypt, to participants -->
+        <!-- Reply button — only after decrypt, only to non-authors -->
         <button
-          v-if="decrypted !== null && isParticipant && hasKeychain"
+          v-if="decrypted !== null && canReply"
           @click="showReplyBox = !showReplyBox"
           style="background:#1a1030;border:1px solid #3b1f5e;color:#c084fc;
                  border-radius:20px;padding:4px 12px;font-size:12px;margin:0;"
@@ -1415,7 +1393,7 @@ const SecretTwistCardComponent = {
       </div>
 
       <!-- Inline reply composer -->
-      <div v-if="showReplyBox && isParticipant && hasKeychain" style="margin-bottom:10px;">
+      <div v-if="showReplyBox && canReply" style="margin-bottom:10px;">
         <textarea
           v-model="replyMessage"
           placeholder="Write an encrypted reply…"
@@ -1440,43 +1418,19 @@ const SecretTwistCardComponent = {
         ">⚠️ {{ replyError }}</div>
       </div>
 
-      <!-- Nested encrypted replies — shown after decrypt -->
+      <!-- Nested encrypted replies — recursive SecretTwistCardComponent -->
       <div v-if="decrypted !== null && replies.length > 0" style="
-        margin-top:8px;border-top:1px solid #2e1060;padding-top:8px;
+        margin-top:8px;border-top:1px solid #2e1060;padding-top:8px;padding-left:12px;
       ">
-        <div v-for="(r, i) in replies" :key="r.post.permlink" style="
-          display:flex;gap:8px;padding:8px 0;
-          border-bottom:1px solid #2e1060;
-        ">
-          <img
-            :src="'https://steemitimages.com/u/' + r.post.author + '/avatar/small'"
-            style="width:28px;height:28px;border-radius:50%;border:1px solid #3b1f5e;flex-shrink:0;"
-            @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
-          />
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:12px;color:#c084fc;font-weight:600;margin-bottom:4px;">
-              @{{ r.post.author }}
-              <span style="color:#5a4e70;font-weight:400;margin-left:6px;">🔒 encrypted reply</span>
-            </div>
-            <!-- Decrypted reply body -->
-            <div v-if="r.decrypted !== null" style="
-              font-size:14px;color:#e8e0f0;white-space:pre-wrap;word-break:break-word;
-              background:#0f0a1e;border-radius:6px;padding:8px;border:1px solid #3b1f5e;
-            ">{{ r.decrypted }}</div>
-            <div v-else style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:13px;color:#5a4e70;font-style:italic;">🔒 Encrypted reply</span>
-              <button
-                v-if="isParticipant && hasKeychain"
-                @click="decryptReply(r)"
-                :disabled="r.isDecrypting"
-                style="background:linear-gradient(135deg,#6d28d9,#a21caf);padding:3px 10px;font-size:12px;margin:0;"
-              >{{ r.isDecrypting ? "…" : "🔓 Decrypt" }}</button>
-            </div>
-            <div v-if="r.decryptError" style="font-size:12px;color:#fca5a5;margin-top:4px;">
-              ⚠️ {{ r.decryptError }}
-            </div>
-          </div>
-        </div>
+        <secret-twist-card-component
+          v-for="r in replies"
+          :key="r.permlink"
+          :post="r"
+          :username="username"
+          :has-keychain="hasKeychain"
+          :depth="depth + 1"
+          style="margin:0 0 8px 0;"
+        ></secret-twist-card-component>
       </div>
 
       <!-- Loading replies indicator -->
