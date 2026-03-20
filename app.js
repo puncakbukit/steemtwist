@@ -297,6 +297,7 @@ const HomeView = {
           :class="post._firehose ? 'twist-flash' : ''"
           @voted="loadFeed()"
           @pin="handlePin"
+          @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
       </template>
 
@@ -458,6 +459,7 @@ const ProfileView = {
             :pinned="false"
             @pin="handlePin"
             @unpin="handleUnpin"
+            @deleted="p => userTwists = userTwists.filter(t => t.permlink !== p.permlink)"
           ></twist-card-component>
         </div>
       </template>

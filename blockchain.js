@@ -509,6 +509,68 @@ function retwistPost(username, author, permlink, callback) {
   );
 }
 
+// Edit a twist or reply by re-broadcasting the comment op with updated body.
+// The permlink stays the same — the chain overwrites the post body.
+// comment_options cannot be changed after initial post, so only comment is sent.
+// callback: (response) => { response.success, response.error }
+function editTwist(username, post, newBody, callback) {
+  const bodyWithLink =
+    newBody.trimEnd() +
+    `
+
+<sub>Posted via [SteemTwist](${TWIST_CONFIG.DAPP_URL})</sub>`;
+
+  const op = ["comment", {
+    parent_author:   post.parent_author,
+    parent_permlink: post.parent_permlink,
+    author:          username,
+    permlink:        post.permlink,
+    title:           post.title || "",
+    body:            bodyWithLink,
+    json_metadata:   typeof post.json_metadata === "string"
+                       ? post.json_metadata
+                       : JSON.stringify(post.json_metadata || {})
+  }];
+
+  steem_keychain.requestBroadcast(username, [op], "Posting", callback);
+}
+
+// Delete a twist or reply.
+// Uses delete_comment if the post has no votes and no replies — this
+// permanently removes it from the chain.
+// If the post has activity (votes or children), falls back to blanking the
+// body (the "Steemit UX illusion") since delete_comment would be rejected.
+// callback: (response) => { response.success, response.error, response._deleted }
+function deleteTwist(username, post, callback) {
+  const hasActivity = (post.net_votes || 0) !== 0 || (post.children || 0) > 0;
+
+  if (!hasActivity) {
+    // True deletion
+    const op = ["delete_comment", { author: username, permlink: post.permlink }];
+    steem_keychain.requestBroadcast(username, [op], "Posting", (res) => {
+      if (res.success) res._deleted = true;
+      callback(res);
+    });
+  } else {
+    // Body-blank fallback — post still exists but body is cleared
+    const op = ["comment", {
+      parent_author:   post.parent_author,
+      parent_permlink: post.parent_permlink,
+      author:          username,
+      permlink:        post.permlink,
+      title:           post.title || "",
+      body:            "<deleted>",
+      json_metadata:   typeof post.json_metadata === "string"
+                         ? post.json_metadata
+                         : JSON.stringify(post.json_metadata || {})
+    }];
+    steem_keychain.requestBroadcast(username, [op], "Posting", (res) => {
+      if (res.success) res._deleted = false;  // not truly deleted, just blanked
+      callback(res);
+    });
+  }
+}
+
 // ---- Client-side ranking ----
 
 // Sum of positive vote percents — a Steem-Power-weighted upvote signal.

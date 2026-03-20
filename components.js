@@ -231,10 +231,19 @@ const ReplyCardComponent = {
       isRetwisting:  false,
       hasRetwisted:  false,
       replyCount:    this.reply.children || 0,
-      lastError:     ""
+      lastError:     "",
+      showEditBox:   false,
+      editText:      "",
+      isEditing:     false,
+      showDeleteConfirm: false,
+      isDeleting:    false,
+      editedBody:    null
     };
   },
   computed: {
+    isOwnReply() {
+      return !!this.username && this.username === this.reply.author;
+    },
     avatarUrl() {
       return `https://steemitimages.com/u/${this.reply.author}/avatar/small`;
     },
@@ -256,7 +265,7 @@ const ReplyCardComponent = {
     replyUrl() {
       return `#/@${this.reply.author}/${this.reply.permlink}`;
     },
-    bodyHtml() { return renderMarkdown(stripBackLink(this.reply.body)); },
+    bodyHtml() { return renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.reply.body)); },
     canAct()   { return !!this.username && this.hasKeychain; },
     indent()   { return Math.min(this.depth, 4) * 16; },
     
@@ -315,6 +324,39 @@ const ReplyCardComponent = {
           this.replyCount++;
         } else {
           this.lastError = res.error || res.message || "Reply failed.";
+        }
+      });
+    },
+
+    openEdit() {
+      this.editText    = stripBackLink(this.editedBody !== null ? this.editedBody : this.reply.body);
+      this.showEditBox = true;
+    },
+    saveEdit() {
+      const text = this.editText.trim();
+      if (!text || this.isEditing) return;
+      this.isEditing = true;
+      editTwist(this.username, this.reply, text, (res) => {
+        this.isEditing = false;
+        if (res.success) {
+          this.editedBody  = text;
+          this.showEditBox = false;
+        } else {
+          this.lastError = res.error || res.message || "Edit failed.";
+        }
+      });
+    },
+    confirmDelete() { this.showDeleteConfirm = true; },
+    doDelete() {
+      if (this.isDeleting) return;
+      this.isDeleting = true;
+      deleteTwist(this.username, this.reply, (res) => {
+        this.isDeleting = false;
+        this.showDeleteConfirm = false;
+        if (res.success) {
+          this.$emit("deleted", this.reply);
+        } else {
+          this.lastError = res.error || res.message || "Delete failed.";
         }
       });
     }
@@ -403,6 +445,69 @@ const ReplyCardComponent = {
               title="Open reply page"
             >🔗</a>
 
+            <!-- Edit / Delete — own replies only -->
+            <button
+              v-if="isOwnReply && hasKeychain"
+              @click="openEdit"
+              style="background:none;border:none;padding:0;font-size:12px;
+                     color:#5a4e70;cursor:pointer;"
+              title="Edit this reply"
+            >✏️</button>
+
+            <button
+              v-if="isOwnReply && hasKeychain"
+              @click="confirmDelete"
+              style="background:none;border:none;padding:0;font-size:12px;
+                     color:#5a4e70;cursor:pointer;"
+              title="Delete this reply"
+            >🗑️</button>
+
+          </div>
+
+          <!-- Inline edit box -->
+          <div v-if="showEditBox" style="margin-top:8px;">
+            <textarea
+              v-model="editText"
+              style="
+                width:100%;box-sizing:border-box;padding:7px;border-radius:8px;
+                border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;
+                font-size:13px;resize:vertical;min-height:52px;
+              "
+              @keydown.ctrl.enter="saveEdit"
+            ></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:4px;">
+              <button
+                @click="showEditBox = false"
+                style="background:#1e1535;border:1px solid #2e2050;color:#9b8db0;
+                       border-radius:20px;padding:2px 10px;font-size:12px;margin:0;"
+              >Cancel</button>
+              <button
+                @click="saveEdit"
+                :disabled="!editText.trim() || isEditing"
+                style="padding:2px 12px;font-size:12px;margin:0;"
+              >{{ isEditing ? "Saving…" : "Save" }}</button>
+            </div>
+          </div>
+
+          <!-- Delete confirmation -->
+          <div v-if="showDeleteConfirm" style="
+            margin-top:6px;padding:8px 10px;border-radius:8px;font-size:12px;
+            background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;
+          ">
+            <div style="margin-bottom:6px;">Delete this reply?</div>
+            <div style="display:flex;gap:6px;">
+              <button
+                @click="doDelete"
+                :disabled="isDeleting"
+                style="background:#7f1d1d;border:none;color:#fff;border-radius:20px;
+                       padding:2px 12px;font-size:12px;margin:0;"
+              >{{ isDeleting ? "…" : "Delete" }}</button>
+              <button
+                @click="showDeleteConfirm = false"
+                style="background:#1e1535;border:1px solid #2e2050;color:#9b8db0;
+                       border-radius:20px;padding:2px 10px;font-size:12px;margin:0;"
+              >Cancel</button>
+            </div>
           </div>
 
           <!-- Compose box -->
@@ -534,7 +639,7 @@ const TwistCardComponent = {
     hasKeychain: { type: Boolean, default: false },
     pinned:      { type: Boolean, default: false }   // true when this card is the pinned twist
   },
-  emits: ["voted", "replied", "pin", "unpin"],
+  emits: ["voted", "replied", "pin", "unpin", "deleted"],
   data() {
     return {
       showReplyBox:    false,
@@ -549,7 +654,13 @@ const TwistCardComponent = {
       replyCount:      this.post.children || 0,
       lastError:       "",
       threadExpanded:  false,
-      isPinning:       false
+      isPinning:       false,
+      showEditBox:     false,
+      editText:        "",
+      isEditing:       false,
+      showDeleteConfirm: false,
+      isDeleting:      false,
+      editedBody:      null    // local override after successful edit
     };
   },
   computed: {
@@ -605,11 +716,11 @@ const TwistCardComponent = {
     },
     bodyHtml() {
       if (this.isSecretTwist) return "<em style='color:#5a4e70'>🔒 Secret Twist — view in Private Signals</em>";
-      return renderMarkdown(stripBackLink(this.post.body));
+      return renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body));
     },
     bodyPreviewHtml() {
       if (this.isSecretTwist) return "<em style='color:#5a4e70'>🔒 Secret Twist — view in Private Signals</em>";
-      return renderMarkdown(this.bodyPreview);
+      return renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body).slice(0, PREVIEW_LENGTH) + "…");
     },
     showThread() {
       return this.threadExpanded || this.showReplies;
@@ -686,6 +797,42 @@ const TwistCardComponent = {
           this.$emit("replied", this.post);
         } else {
           this.lastError = res.error || res.message || "Reply failed.";
+        }
+      });
+    },
+
+    openEdit() {
+      // Pre-fill with the current body (strip back-link and whitespace)
+      this.editText    = stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
+      this.showEditBox = true;
+    },
+    saveEdit() {
+      const text = this.editText.trim();
+      if (!text || this.isEditing) return;
+      this.isEditing = true;
+      editTwist(this.username, this.post, text, (res) => {
+        this.isEditing = false;
+        if (res.success) {
+          this.editedBody  = text;   // update locally without refetch
+          this.showEditBox = false;
+        } else {
+          this.lastError = res.error || res.message || "Edit failed.";
+        }
+      });
+    },
+    confirmDelete() {
+      this.showDeleteConfirm = true;
+    },
+    doDelete() {
+      if (this.isDeleting) return;
+      this.isDeleting = true;
+      deleteTwist(this.username, this.post, (res) => {
+        this.isDeleting = false;
+        this.showDeleteConfirm = false;
+        if (res.success) {
+          this.$emit("deleted", this.post);
+        } else {
+          this.lastError = res.error || res.message || "Delete failed.";
         }
       });
     }
@@ -802,6 +949,69 @@ const TwistCardComponent = {
           :title="pinned ? 'Unpin this twist' : 'Pin to top of your profile'"
         >{{ isPinning ? '…' : (pinned ? '📌 Pinned' : '📌') }}</button>
 
+        <!-- Edit / Delete — own posts only -->
+        <button
+          v-if="isOwnPost && hasKeychain"
+          @click="openEdit"
+          style="background:#1e1535;color:#9b8db0;border:1px solid #2e2050;
+                 border-radius:20px;padding:4px 10px;font-size:12px;margin:0;"
+          title="Edit this twist"
+        >✏️</button>
+
+        <button
+          v-if="isOwnPost && hasKeychain"
+          @click="confirmDelete"
+          style="background:#1e1535;color:#9b8db0;border:1px solid #2e2050;
+                 border-radius:20px;padding:4px 10px;font-size:12px;margin:0;"
+          title="Delete this twist"
+        >🗑️</button>
+
+      </div>
+
+      <!-- Inline edit box -->
+      <div v-if="showEditBox" style="margin-top:12px;">
+        <textarea
+          v-model="editText"
+          style="
+            width:100%;box-sizing:border-box;padding:8px;border-radius:8px;
+            border:1px solid #2e2050;background:#0f0a1e;
+            color:#e8e0f0;font-size:14px;resize:vertical;min-height:80px;
+          "
+          @keydown.ctrl.enter="saveEdit"
+        ></textarea>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:4px;">
+          <button
+            @click="showEditBox = false"
+            style="background:#1e1535;border:1px solid #2e2050;color:#9b8db0;
+                   border-radius:20px;padding:4px 12px;font-size:12px;margin:0;"
+          >Cancel</button>
+          <button
+            @click="saveEdit"
+            :disabled="!editText.trim() || isEditing"
+            style="padding:4px 14px;font-size:12px;margin:0;"
+          >{{ isEditing ? "Saving…" : "Save" }}</button>
+        </div>
+      </div>
+
+      <!-- Delete confirmation -->
+      <div v-if="showDeleteConfirm" style="
+        margin-top:10px;padding:10px 12px;border-radius:8px;font-size:13px;
+        background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;
+      ">
+        <div style="margin-bottom:8px;">Delete this twist? This cannot be undone.</div>
+        <div style="display:flex;gap:6px;">
+          <button
+            @click="doDelete"
+            :disabled="isDeleting"
+            style="background:#7f1d1d;border:none;color:#fff;border-radius:20px;
+                   padding:4px 14px;font-size:12px;margin:0;"
+          >{{ isDeleting ? "Deleting…" : "Delete" }}</button>
+          <button
+            @click="showDeleteConfirm = false"
+            style="background:#1e1535;border:1px solid #2e2050;color:#9b8db0;
+                   border-radius:20px;padding:4px 12px;font-size:12px;margin:0;"
+          >Cancel</button>
+        </div>
       </div>
 
       <!-- Inline reply compose box -->
