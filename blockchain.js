@@ -991,11 +991,12 @@ function sendSecretTwist(sender, recipient, message, callback) {
     });
   }
 
-  // Step 1: Encrypt using Keychain's memo encoding
+  // Step 1: Encrypt — requestEncodeMessage(sender, receiver, message, keyType, callback)
   steem_keychain.requestEncodeMessage(
     sender,
     recipient,
     "#" + message,   // Keychain memo encoding; message must start with #
+    "Memo",
     (encRes) => {
       if (!encRes.success) return callback(encRes);
 
@@ -1040,19 +1041,14 @@ function sendSecretTwist(sender, recipient, message, callback) {
 }
 
 // Decrypt a Secret Twist payload via Keychain.
-// `sender` is the post author; `encodedPayload` starts with "#".
+// Uses requestVerifyKey(account, encodedMessage, "Memo", callback) —
+// the standard Steem Keychain method for decoding memo-encrypted messages.
 // callback: (response) => { response.success, response.result (plaintext) }
 function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
-  if (typeof steem_keychain.requestDecodeMessage !== "function") {
-    return callback({
-      success: false,
-      error: "Your Steem Keychain version does not support memo decryption. Please update Keychain."
-    });
-  }
-  steem_keychain.requestDecodeMessage(
+  steem_keychain.requestVerifyKey(
     recipient,
-    sender,
     encodedPayload,
+    "Memo",
     callback
   );
 }
