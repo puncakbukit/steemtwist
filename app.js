@@ -58,9 +58,9 @@ const HomeView = {
       this.loading = true;
       try {
         // Twist Stream: replies to monthly root (SteemTwist-only)
-        // Understream:  all posts tagged "steemtwist" across Steem
+        // Understream:  all recent Steem posts regardless of tags
         const feedPromise = this.understreamOn
-          ? fetchPostsByTag(TWIST_CONFIG.TAG, 50)
+          ? fetchRecentPosts(50)
           : fetchTwistFeed(this.monthlyRoot);
         const pinPromise  = refreshPin && this.username
           ? fetchPinnedTwist(this.username)
@@ -183,7 +183,7 @@ const HomeView = {
             color:       understreamOn ? '#22d3ee'  : '#9b8db0',
             borderColor: understreamOn ? '#22d3ee'  : '#2e2050'
           }"
-          :title="understreamOn ? 'Understream ON — showing all Steem posts tagged steemtwist' : 'Understream OFF — showing Twist Stream only'"
+          :title="understreamOn ? 'Understream ON — showing all recent Steem posts' : 'Understream OFF — showing Twist Stream only'"
         >🌊 Understream {{ understreamOn ? 'ON' : 'OFF' }}</button>
 
         <!-- Firehose toggle -->
@@ -1302,7 +1302,7 @@ const App = {
                          text-shadow:0 0 20px rgba(34,211,238,0.6);">
               🌀 SteemTwist
             </span>
-            <div style="color:#e0d0ff;font-size:15px;letter-spacing:0.5px;margin-top:2px;font-weight:500;">
+            <div style="color:#e0d0ff;font-size:18px;letter-spacing:0.5px;margin-top:2px;font-weight:500;">
               Steem with a Twist
             </div>
           </div>
@@ -1310,11 +1310,11 @@ const App = {
 
         <nav style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
           <router-link to="/" exact-active-class="nav-active"
-            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+            style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);"
           >Home</router-link>
 
           <router-link v-if="username" :to="'/@' + username" exact-active-class="nav-active"
-            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+            style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);"
           >My Profile</router-link>
 
           <router-link
@@ -1322,7 +1322,7 @@ const App = {
             to="/signals"
             exact-active-class="nav-active"
             @click="refreshUnreadSignals(username)"
-            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;position:relative;display:inline-flex;align-items:center;gap:5px;"
+            style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);display:inline-flex;align-items:center;gap:5px;"
           >
             🔔 Signals
             <span
@@ -1339,11 +1339,11 @@ const App = {
             v-if="username"
             to="/secret-twists"
             exact-active-class="nav-active"
-            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+            style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);"
           >🔒 Private</router-link>
 
           <router-link to="/about" exact-active-class="nav-active"
-            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+            style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);"
           >About</router-link>
 
           <template v-if="!username">

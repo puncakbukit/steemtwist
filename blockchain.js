@@ -132,6 +132,18 @@ function fetchPostsByTag(tag, limit = 20) {
   );
 }
 
+// Fetch the most recent posts across all of Steem (no tag filter).
+// Used by HomeView Understream mode.
+function fetchRecentPosts(limit = 50) {
+  return callWithFallbackAsync(
+    steem.api.getDiscussionsByCreated,
+    [{
+      tag: "",
+      limit
+    }]
+  );
+}
+
 // Fetch recent posts from a user's blog.
 function fetchPostsByUser(username, limit = 50) {
   return callWithFallbackAsync(
