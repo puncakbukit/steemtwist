@@ -1143,6 +1143,13 @@ const App = {
           clearInterval(interval);
           hasKeychain.value   = !!window.steem_keychain;
           keychainReady.value = true;
+          if (window.steem_keychain) {
+            // Log available methods to help diagnose API version issues
+            console.log("[SteemTwist] Keychain methods:",
+              Object.getOwnPropertyNames(window.steem_keychain)
+                .filter(k => typeof window.steem_keychain[k] === "function")
+            );
+          }
         }
       }, 100);
     });

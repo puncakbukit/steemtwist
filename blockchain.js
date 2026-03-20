@@ -983,7 +983,15 @@ function generateSecretTwistPermlink(username) {
 //
 // callback: (response) => { response.success, response.error }
 function sendSecretTwist(sender, recipient, message, callback) {
-  // Step 1: Encrypt
+  // Guard: requestEncodeMessage may not exist in older Keychain versions
+  if (typeof steem_keychain.requestEncodeMessage !== "function") {
+    return callback({
+      success: false,
+      error: "Your Steem Keychain version does not support memo encryption. Please update Keychain."
+    });
+  }
+
+  // Step 1: Encrypt using Keychain's memo encoding
   steem_keychain.requestEncodeMessage(
     sender,
     recipient,
@@ -1035,6 +1043,12 @@ function sendSecretTwist(sender, recipient, message, callback) {
 // `sender` is the post author; `encodedPayload` starts with "#".
 // callback: (response) => { response.success, response.result (plaintext) }
 function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
+  if (typeof steem_keychain.requestDecodeMessage !== "function") {
+    return callback({
+      success: false,
+      error: "Your Steem Keychain version does not support memo decryption. Please update Keychain."
+    });
+  }
   steem_keychain.requestDecodeMessage(
     recipient,
     sender,
