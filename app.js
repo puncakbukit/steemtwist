@@ -949,8 +949,7 @@ const SecretTwistView = {
   },
 
   computed: {
-    // Normalise to lowercase — Steem usernames are always lowercase on-chain
-    // but the stored value or recipient field could have mixed case.
+    // Normalise to lowercase — Steem usernames are always lowercase on-chain.
     usernameLC() {
       return (this.username || "").toLowerCase();
     },
@@ -972,16 +971,36 @@ const SecretTwistView = {
   },
 
   async created() {
-    if (!this.username) { this.loading = false; return; }
-    try {
-      this.posts = await fetchSecretTwists(this.username);
-    } catch {
-      this.notify("Could not load Secret Twists.", "error");
+    await this.loadPosts();
+  },
+
+  // Re-fetch whenever the logged-in user changes (login / logout / switch account).
+  // This covers: logging in as a different user, logging out, and navigating
+  // back to this page after an account switch without a full page reload.
+  watch: {
+    username(newVal) {
+      this.posts   = [];
+      this.tab     = "inbox";
+      if (newVal) {
+        this.loadPosts();
+      } else {
+        this.loading = false;
+      }
     }
-    this.loading = false;
   },
 
   methods: {
+    async loadPosts() {
+      if (!this.username) { this.loading = false; return; }
+      this.loading = true;
+      try {
+        this.posts = await fetchSecretTwists(this.username);
+      } catch {
+        this.notify("Could not load Secret Twists.", "error");
+      }
+      this.loading = false;
+    },
+
     async handleSend({ recipient, message }) {
       this.isSending = true;
       sendSecretTwist(this.username, recipient, message, async (res) => {
@@ -989,14 +1008,10 @@ const SecretTwistView = {
         if (res.success) {
           this.notify("Secret Twist sent! 🔒", "success");
           this.tab = "sent";
-          // Wait for the node to index the new post, then reload.
-          // 3 s is enough for most nodes; fetchSecretTwists will find it.
+          // Wait for the node to index the new post into account history,
+          // then reload the full list.
           await new Promise(r => setTimeout(r, 3000));
-          this.loading = true;
-          fetchSecretTwists(this.username).then(posts => {
-            this.posts   = posts;
-            this.loading = false;
-          }).catch(() => { this.loading = false; });
+          await this.loadPosts();
         } else {
           this.notify(res.error || res.message || "Failed to send Secret Twist.", "error");
         }
