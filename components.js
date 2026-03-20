@@ -1101,12 +1101,13 @@ const SecretTwistComposerComponent = {
   },
   computed: {
     charCount() { return this.message.length; },
-    overLimit()  { return this.charCount > 280; },
+    // No hard character limit for Secret Twists — the blockchain (~65 KB)
+    // is the only effective cap. Show count as information only.
     canSend() {
       return !!this.username && this.hasKeychain &&
              !!this.recipient.trim() &&
-             this.recipient.trim() !== this.username &&
-             this.charCount > 0 && !this.overLimit && !this.isSending;
+             this.recipient.trim().replace(/^@/,"") !== this.username &&
+             this.charCount > 0 && !this.isSending;
     }
   },
   methods: {
@@ -1153,24 +1154,23 @@ const SecretTwistComposerComponent = {
         </div>
       </div>
 
-      <!-- Message field -->
+      <!-- Message field — no character limit; blockchain cap is ~65 KB -->
       <textarea
         v-model="message"
         placeholder="Write your secret message…"
-        maxlength="500"
         style="
           width:100%;box-sizing:border-box;
           padding:10px;border-radius:8px;
           border:1px solid #3b1f5e;background:#0f0a1e;
           color:#e8e0f0;font-size:15px;
-          resize:none;height:80px;
+          resize:vertical;min-height:80px;
         "
         @keydown.ctrl.enter="submit"
       ></textarea>
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-        <span :style="{ fontSize:'13px', color: overLimit ? '#fca5a5' : '#5a4e70' }">
-          {{ charCount }} / 280
+        <span style="font-size:13px;color:#5a4e70;">
+          {{ charCount }} chars
         </span>
         <button
           @click="submit"
@@ -1194,13 +1194,21 @@ const SecretTwistCardComponent = {
   props: {
     post:        { type: Object,  required: true },
     username:    { type: String,  default: "" },
-    hasKeychain: { type: Boolean, default: false }
+    hasKeychain: { type: Boolean, default: false },
+    depth:       { type: Number,  default: 0 }    // nesting depth for replies
   },
   data() {
     return {
-      decrypted:    null,   // plaintext after successful decrypt
-      isDecrypting: false,
-      decryptError: ""
+      decrypted:      null,    // plaintext after successful decrypt
+      isDecrypting:   false,
+      decryptError:   "",
+      showReplyBox:   false,
+      replyMessage:   "",
+      isReplying:     false,
+      replyError:     "",
+      replies:        [],      // decrypted nested replies
+      loadingReplies: false,
+      repliesLoaded:  false
     };
   },
   computed: {
@@ -1211,12 +1219,16 @@ const SecretTwistCardComponent = {
         return typeof raw === "string" ? JSON.parse(raw) : raw;
       } catch { return {}; }
     },
-    recipient() { return this.meta.to || ""; },
-    payload()   { return this.meta.payload || ""; },
-    isSender()    { return this.username === this.post.author; },
-    isRecipient() { return this.username === this.recipient; },
-    canDecrypt()  { return (this.isSender || this.isRecipient) && this.hasKeychain && !!this.payload; },
-    avatarUrl()   { return `https://steemitimages.com/u/${this.post.author}/avatar/small`; },
+    recipient()    { return this.meta.to || ""; },
+    payload()      { return this.meta.payload || ""; },
+    isSender()     { return this.username === this.post.author; },
+    isRecipient()  { return this.username === this.recipient; },
+    isParticipant(){ return this.isSender || this.isRecipient; },
+    canDecrypt()   { return this.isParticipant && this.hasKeychain && !!this.payload; },
+    // The other party in the conversation — used for reply encryption
+    otherParty()   { return this.isSender ? this.recipient : this.post.author; },
+    avatarUrl()    { return `https://steemitimages.com/u/${this.post.author}/avatar/small`; },
+    replyCount()   { return this.post.children || 0; },
     relativeTime() {
       const diff = Date.now() - steemDate(this.post.created).getTime();
       const s = Math.floor(diff / 1000);
@@ -1233,17 +1245,88 @@ const SecretTwistCardComponent = {
       if (!this.canDecrypt || this.isDecrypting) return;
       this.isDecrypting = true;
       this.decryptError = "";
-      // Sender decrypts as recipient; recipient decrypts as sender
-      const other = this.isSender ? this.recipient : this.post.author;
-      decryptSecretTwist(this.username, other, this.payload, (res) => {
+      decryptSecretTwist(this.username, this.otherParty, this.payload, (res) => {
         this.isDecrypting = false;
         if (res.success) {
-          // Strip leading # that Keychain prepends
           this.decrypted = (res.result || "").replace(/^#/, "");
+          // Auto-load replies after decrypt if any exist
+          if (this.replyCount > 0 && !this.repliesLoaded) this.loadReplies();
         } else {
           this.decryptError = res.error || res.message || "Decryption failed.";
         }
       });
+    },
+
+    // Load and decrypt nested replies using fetchReplies + requestVerifyKey
+    async loadReplies() {
+      if (this.loadingReplies || this.repliesLoaded) return;
+      this.loadingReplies = true;
+      try {
+        const raw = await fetchReplies(this.post.author, this.post.permlink);
+        // Decrypt each reply in sequence (Keychain doesn't support concurrent popups)
+        const decryptedReplies = [];
+        for (const r of raw) {
+          let replyMeta = {};
+          try {
+            const m = r.json_metadata;
+            replyMeta = m ? (typeof m === "string" ? JSON.parse(m) : m) : {};
+          } catch {}
+          if (replyMeta.type !== "secret_twist" || !replyMeta.payload) continue;
+          decryptedReplies.push({
+            post:      r,
+            payload:   replyMeta.payload,
+            decrypted: null,   // lazy — decrypt on demand
+            isDecrypting: false,
+            decryptError: ""
+          });
+        }
+        this.replies = decryptedReplies;
+        this.repliesLoaded = true;
+      } catch {
+        // Silently ignore reply load errors
+      }
+      this.loadingReplies = false;
+    },
+
+    decryptReply(reply) {
+      if (reply.isDecrypting || reply.decrypted !== null) return;
+      reply.isDecrypting = true;
+      reply.decryptError = "";
+      decryptSecretTwist(this.username, reply.post.author === this.username
+        ? this.otherParty : reply.post.author,
+        reply.payload, (res) => {
+        reply.isDecrypting = false;
+        if (res.success) {
+          reply.decrypted = (res.result || "").replace(/^#/, "");
+        } else {
+          reply.decryptError = res.error || res.message || "Decryption failed.";
+        }
+      });
+    },
+
+    sendReply() {
+      const text = this.replyMessage.trim();
+      if (!text || !this.isParticipant || !this.hasKeychain || this.isReplying) return;
+      this.isReplying  = true;
+      this.replyError  = "";
+      replySecretTwist(
+        this.username, this.otherParty, text,
+        this.post.author, this.post.permlink,
+        (res) => {
+          this.isReplying = false;
+          if (res.success) {
+            this.replyMessage  = "";
+            this.showReplyBox  = false;
+            // Reload replies after a short delay for indexing
+            setTimeout(() => {
+              this.repliesLoaded = false;
+              this.loadReplies();
+            }, 3000);
+          } else {
+            this.replyError = res.error || res.message || "Reply failed.";
+          }
+        }
+      );
     }
   },
   template: `
@@ -1301,30 +1384,104 @@ const SecretTwistCardComponent = {
         </span>
       </div>
 
-      <!-- Decrypt button -->
-      <div v-if="canDecrypt && decrypted === null" style="margin-bottom:8px;">
+      <!-- Action bar — Decrypt + Reply (shown once decrypted) -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <!-- Decrypt button -->
         <button
+          v-if="canDecrypt && decrypted === null"
           @click="decrypt"
           :disabled="isDecrypting"
-          style="
-            background:linear-gradient(135deg,#6d28d9,#a21caf);
-            padding:6px 16px;font-size:13px;margin:0;
-          "
+          style="background:linear-gradient(135deg,#6d28d9,#a21caf);padding:6px 16px;font-size:13px;margin:0;"
         >{{ isDecrypting ? "Decrypting…" : "🔓 Decrypt" }}</button>
+
+        <!-- Reply button — only visible after decrypt, to participants -->
+        <button
+          v-if="decrypted !== null && isParticipant && hasKeychain"
+          @click="showReplyBox = !showReplyBox"
+          style="background:#1a1030;border:1px solid #3b1f5e;color:#c084fc;
+                 border-radius:20px;padding:4px 12px;font-size:12px;margin:0;"
+        >💬 {{ replyCount > 0 ? replyCount + ' repl' + (replyCount === 1 ? 'y' : 'ies') : 'Reply' }}</button>
       </div>
 
       <!-- Decrypt error -->
       <div v-if="decryptError" style="
-        padding:8px 10px;border-radius:8px;font-size:13px;
+        padding:8px 10px;border-radius:8px;font-size:13px;margin-bottom:8px;
         background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;
         display:flex;justify-content:space-between;align-items:center;
       ">
         <span>⚠️ {{ decryptError }}</span>
-        <button
-          @click="decryptError = ''"
-          style="background:none;border:none;cursor:pointer;font-size:15px;
-                 padding:0;color:#fca5a5;line-height:1;margin:0;"
-        >✕</button>
+        <button @click="decryptError = ''"
+          style="background:none;border:none;cursor:pointer;font-size:15px;padding:0;color:#fca5a5;line-height:1;margin:0;">✕</button>
+      </div>
+
+      <!-- Inline reply composer -->
+      <div v-if="showReplyBox && isParticipant && hasKeychain" style="margin-bottom:10px;">
+        <textarea
+          v-model="replyMessage"
+          placeholder="Write an encrypted reply…"
+          style="
+            width:100%;box-sizing:border-box;padding:8px;border-radius:8px;
+            border:1px solid #3b1f5e;background:#0f0a1e;
+            color:#e8e0f0;font-size:14px;resize:vertical;min-height:60px;
+          "
+          @keydown.ctrl.enter="sendReply"
+        ></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+          <span style="font-size:12px;color:#5a4e70;">{{ replyMessage.length }} chars</span>
+          <button
+            @click="sendReply"
+            :disabled="!replyMessage.trim() || isReplying"
+            style="background:linear-gradient(135deg,#6d28d9,#a21caf);padding:5px 14px;font-size:12px;margin:0;"
+          >{{ isReplying ? "Sending…" : "Send 🔒" }}</button>
+        </div>
+        <div v-if="replyError" style="
+          margin-top:6px;padding:6px 8px;border-radius:6px;font-size:12px;
+          background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;
+        ">⚠️ {{ replyError }}</div>
+      </div>
+
+      <!-- Nested encrypted replies — shown after decrypt -->
+      <div v-if="decrypted !== null && replies.length > 0" style="
+        margin-top:8px;border-top:1px solid #2e1060;padding-top:8px;
+      ">
+        <div v-for="(r, i) in replies" :key="r.post.permlink" style="
+          display:flex;gap:8px;padding:8px 0;
+          border-bottom:1px solid #2e1060;
+        ">
+          <img
+            :src="'https://steemitimages.com/u/' + r.post.author + '/avatar/small'"
+            style="width:28px;height:28px;border-radius:50%;border:1px solid #3b1f5e;flex-shrink:0;"
+            @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
+          />
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;color:#c084fc;font-weight:600;margin-bottom:4px;">
+              @{{ r.post.author }}
+              <span style="color:#5a4e70;font-weight:400;margin-left:6px;">🔒 encrypted reply</span>
+            </div>
+            <!-- Decrypted reply body -->
+            <div v-if="r.decrypted !== null" style="
+              font-size:14px;color:#e8e0f0;white-space:pre-wrap;word-break:break-word;
+              background:#0f0a1e;border-radius:6px;padding:8px;border:1px solid #3b1f5e;
+            ">{{ r.decrypted }}</div>
+            <div v-else style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:13px;color:#5a4e70;font-style:italic;">🔒 Encrypted reply</span>
+              <button
+                v-if="isParticipant && hasKeychain"
+                @click="decryptReply(r)"
+                :disabled="r.isDecrypting"
+                style="background:linear-gradient(135deg,#6d28d9,#a21caf);padding:3px 10px;font-size:12px;margin:0;"
+              >{{ r.isDecrypting ? "…" : "🔓 Decrypt" }}</button>
+            </div>
+            <div v-if="r.decryptError" style="font-size:12px;color:#fca5a5;margin-top:4px;">
+              ⚠️ {{ r.decryptError }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading replies indicator -->
+      <div v-if="loadingReplies" style="font-size:12px;color:#5a4e70;padding:6px 0;">
+        Loading replies…
       </div>
     </div>
   `

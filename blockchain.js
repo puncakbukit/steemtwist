@@ -1061,6 +1061,65 @@ function sendSecretTwist(sender, recipient, message, callback) {
   );
 }
 
+// Reply to an existing Secret Twist with an encrypted message.
+// The reply is posted as a Steem nested comment under the original post,
+// encrypted to the other party in the conversation.
+// callback: (response) => { response.success, response.error }
+function replySecretTwist(sender, recipient, message, parentAuthor, parentPermlink, callback) {
+  if (typeof steem_keychain.requestEncodeMessage !== "function") {
+    return callback({
+      success: false,
+      error: "Your Steem Keychain version does not support memo encryption. Please update Keychain."
+    });
+  }
+
+  steem_keychain.requestEncodeMessage(
+    sender,
+    recipient,
+    "#" + message,
+    "Memo",
+    (encRes) => {
+      if (!encRes.success) return callback(encRes);
+
+      const payload  = encRes.result || encRes.message || "";
+      if (!payload || !payload.startsWith("#")) {
+        return callback({ success: false, error: "Encryption produced no payload." });
+      }
+
+      const permlink = generateSecretTwistPermlink(sender);
+      const meta = JSON.stringify({
+        type:    "secret_twist",
+        to:      recipient,
+        version: SECRET_TWIST_VERSION,
+        payload
+      });
+
+      const ops = [
+        ["comment", {
+          parent_author:   parentAuthor,
+          parent_permlink: parentPermlink,
+          author:          sender,
+          permlink,
+          title:           "",
+          body:            `@${recipient} [encrypted]`,
+          json_metadata:   meta
+        }],
+        ["comment_options", {
+          author:               sender,
+          permlink,
+          max_accepted_payout:  "0.000 SBD",
+          percent_steem_dollars: 10000,
+          allow_votes:          true,
+          allow_curation_rewards: false,
+          extensions:           []
+        }]
+      ];
+
+      steem_keychain.requestBroadcast(sender, ops, "Posting", callback);
+    }
+  );
+}
+
 // Decrypt a Secret Twist payload via Keychain.
 // Uses requestVerifyKey(account, encodedMessage, "Memo", callback) —
 // the standard Steem Keychain method for decoding memo-encrypted messages.
