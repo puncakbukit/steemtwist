@@ -987,8 +987,7 @@ function sendSecretTwist(sender, recipient, message, callback) {
   steem_keychain.requestEncodeMessage(
     sender,
     recipient,
-    "#" + message,   // Keychain expects message to start with #
-    "Memo",
+    "#" + message,   // Keychain memo encoding; message must start with #
     (encRes) => {
       if (!encRes.success) return callback(encRes);
 
@@ -1040,7 +1039,6 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
     recipient,
     sender,
     encodedPayload,
-    "Memo",
     callback
   );
 }
