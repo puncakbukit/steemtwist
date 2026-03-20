@@ -926,18 +926,11 @@ const SignalItemComponent = {
         default:        return `${a} interacted with you`;
       }
     },
-    // For love and retwist, signal.permlink is the user's OWN post permlink.
-    // We don't store the post author separately, but since the signal came
-    // from the user's history it must be one of their own posts — so we
-    // inject username from the inject context via a prop workaround:
-    // instead, just link to the actor's comment for reply/mention, or
-    // show no link for love/retwist (the label is sufficient).
+    // Build a link to the relevant twist page for every signal type that
+    // has a target post. postAuthor + permlink are now stored on all types.
     viewUrl() {
-      if (!this.signal.permlink) return null;
-      if (this.signal.type === "reply" || this.signal.type === "mention") {
-        return `#/@${this.signal.actor}/${this.signal.permlink}`;
-      }
-      return null;  // love/retwist: no single target URL without knowing post author
+      if (!this.signal.postAuthor || !this.signal.permlink) return null;
+      return `#/@${this.signal.postAuthor}/${this.signal.permlink}`;
     },
     relativeTime() {
       const diff = Date.now() - this.signal.ts.getTime();

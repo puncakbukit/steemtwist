@@ -739,14 +739,13 @@ const SIGNALS_SCAN_LIMIT = 500;
 //
 // Signal shape:
 //   {
-//     id:        string   — unique key (sequence number as string)
-//     type:      "love" | "reply" | "mention" | "follow" | "retwist"
-//     actor:     string   — who triggered the signal
-//     permlink:  string   — relevant permlink (own post for love/reply/retwist,
-//                           actor's comment for reply/mention, "" for follow)
-//     parentPermlink: string — parent permlink for reply context (or "")
-//     body:      string   — short preview text where applicable
-//     ts:        Date
+//     id:         string   — unique key (sequence number as string)
+//     type:       "love" | "reply" | "mention" | "follow" | "retwist"
+//     actor:      string   — who triggered the signal
+//     postAuthor: string   — author of the target post (for building the link)
+//     permlink:   string   — permlink of the target post or actor's comment
+//     body:       string   — short preview text where applicable
+//     ts:         Date
 //   }
 function classifySignalEntry(seqNum, item, username) {
   const [type, data] = item.op;
@@ -760,8 +759,8 @@ function classifySignalEntry(seqNum, item, username) {
       id: String(seqNum),
       type: "love",
       actor: data.voter,
+      postAuthor: data.author,   // always username — the account being voted on
       permlink: data.permlink,
-      parentPermlink: "",
       body: "",
       ts
     };
@@ -780,8 +779,8 @@ function classifySignalEntry(seqNum, item, username) {
         id: String(seqNum),
         type: mentioned ? "mention" : "reply",
         actor: data.author,
+        postAuthor: data.author,   // link to the actor's comment
         permlink: data.permlink,
-        parentPermlink: data.parent_permlink,
         body: stripSignalBody(data.body),
         ts
       };
@@ -793,8 +792,8 @@ function classifySignalEntry(seqNum, item, username) {
         id: String(seqNum),
         type: "mention",
         actor: data.author,
+        postAuthor: data.author,   // link to the actor's comment
         permlink: data.permlink,
-        parentPermlink: data.parent_permlink,
         body: stripSignalBody(data.body),
         ts
       };
@@ -817,8 +816,8 @@ function classifySignalEntry(seqNum, item, username) {
         id: String(seqNum),
         type: "follow",
         actor: follow.follower,
+        postAuthor: "",
         permlink: "",
-        parentPermlink: "",
         body: "",
         ts
       };
@@ -832,8 +831,8 @@ function classifySignalEntry(seqNum, item, username) {
         id: String(seqNum),
         type: "retwist",
         actor: reblog.account,
+        postAuthor: reblog.author,   // always username — their post was retwisted
         permlink: reblog.permlink,
-        parentPermlink: "",
         body: "",
         ts
       };
