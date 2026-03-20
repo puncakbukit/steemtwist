@@ -1014,14 +1014,16 @@ function sendSecretTwist(sender, recipient, message, callback) {
         payload
       });
 
+      // Root posts require a non-empty title on Steem.
+      // allow_votes: true is required (false is rejected by most nodes).
       const ops = [
         ["comment", {
-          parent_author:  "",
+          parent_author:   "",
           parent_permlink: TWIST_CONFIG.TAG,
           author:          sender,
           permlink,
-          title:           "",
-          body:            `@${recipient} 🔒`,
+          title:           "Secret Twist",
+          body:            `@${recipient} [encrypted]`,
           json_metadata:   meta
         }],
         ["comment_options", {
@@ -1029,7 +1031,7 @@ function sendSecretTwist(sender, recipient, message, callback) {
           permlink,
           max_accepted_payout:  "0.000 SBD",
           percent_steem_dollars: 10000,
-          allow_votes:          false,
+          allow_votes:          true,
           allow_curation_rewards: false,
           extensions:           []
         }]
