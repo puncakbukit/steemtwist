@@ -949,14 +949,25 @@ const SecretTwistView = {
   },
 
   computed: {
+    // Normalise to lowercase — Steem usernames are always lowercase on-chain
+    // but the stored value or recipient field could have mixed case.
+    usernameLC() {
+      return (this.username || "").toLowerCase();
+    },
     inbox() {
       return this.posts.filter(p => {
-        try { return JSON.parse(p.json_metadata || "{}").to === this.username; }
-        catch { return false; }
+        try {
+          const meta = typeof p.json_metadata === "string"
+            ? JSON.parse(p.json_metadata || "{}")
+            : (p.json_metadata || {});
+          return (meta.to || "").toLowerCase() === this.usernameLC;
+        } catch { return false; }
       });
     },
     sent() {
-      return this.posts.filter(p => p.author === this.username);
+      return this.posts.filter(p =>
+        (p.author || "").toLowerCase() === this.usernameLC
+      );
     }
   },
 

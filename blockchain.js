@@ -1126,8 +1126,12 @@ function fetchSecretTwists(username) {
               data.permlink.startsWith(SECRET_TWIST_PREFIX)
             ) {
               let meta;
-              try { meta = JSON.parse(data.json_metadata || "{}"); } catch { meta = {}; }
-              if (meta.type === "secret_twist" && meta.to === username) {
+              try {
+                const raw = data.json_metadata;
+                meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+              } catch { meta = {}; }
+              if (meta.type === "secret_twist" &&
+                  (meta.to || "").toLowerCase() === username.toLowerCase()) {
                 if (!collected.some(c => c.permlink === data.permlink)) {
                   collected.push({ author: data.author, permlink: data.permlink });
                 }

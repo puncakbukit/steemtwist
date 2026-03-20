@@ -1205,8 +1205,11 @@ const SecretTwistCardComponent = {
   },
   computed: {
     meta() {
-      try { return JSON.parse(this.post.json_metadata || "{}"); }
-      catch { return {}; }
+      try {
+        const raw = this.post.json_metadata;
+        if (!raw) return {};
+        return typeof raw === "string" ? JSON.parse(raw) : raw;
+      } catch { return {}; }
     },
     recipient() { return this.meta.to || ""; },
     payload()   { return this.meta.payload || ""; },
