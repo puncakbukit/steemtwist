@@ -1011,7 +1011,17 @@ function sendSecretTwist(sender, recipient, message, callback) {
     (encRes) => {
       if (!encRes.success) return callback(encRes);
 
-      const payload  = encRes.result;   // already starts with #
+      // Keychain returns the encoded string in encRes.result or encRes.message
+      // depending on the version — check both.
+      const payload = encRes.result || encRes.message || "";
+      console.log("[SteemTwist] encRes:", JSON.stringify(encRes));
+      if (!payload || !payload.startsWith("#")) {
+        return callback({
+          success: false,
+          error:   "Encryption produced no payload. encRes: " + JSON.stringify(encRes)
+        });
+      }
+
       const permlink = generateSecretTwistPermlink(sender);
 
       // Step 2: Post as a reply to @steemtwist/secret-YYYY-MM.
