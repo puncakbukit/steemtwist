@@ -17,7 +17,7 @@ const { createRouter, createWebHashHistory, useRoute }                = VueRoute
 // triggering instant re-ranking without any server round-trips.
 const HomeView = {
   name: "HomeView",
-  inject: ["username", "hasKeychain", "notify"],
+  inject: ["username", "hasKeychain", "notify", "understreamOn", "toggleUnderstream"],
   components: { TwistComposerComponent, TwistCardComponent, LoadingSpinnerComponent },
 
   data() {
@@ -57,7 +57,11 @@ const HomeView = {
     async loadFeed(refreshPin = false) {
       this.loading = true;
       try {
-        const feedPromise = fetchTwistFeed(this.monthlyRoot);
+        // Twist Stream: replies to monthly root (SteemTwist-only)
+        // Understream:  all posts tagged "steemtwist" across Steem
+        const feedPromise = this.understreamOn
+          ? fetchPostsByTag(TWIST_CONFIG.TAG, 50)
+          : fetchTwistFeed(this.monthlyRoot);
         const pinPromise  = refreshPin && this.username
           ? fetchPinnedTwist(this.username)
           : Promise.resolve(this.pinnedTwist);
@@ -168,6 +172,19 @@ const HomeView = {
           style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                  border-radius:12px;padding:2px 10px;font-size:12px;"
         >⟳ Refresh</button>
+
+        <!-- Understream toggle -->
+        <button
+          @click="toggleUnderstream(); loadFeed(true)"
+          :style="{
+            borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
+            fontWeight:'600', border:'1px solid',
+            background:  understreamOn ? '#0e1a2d' : '#1e1535',
+            color:       understreamOn ? '#22d3ee'  : '#9b8db0',
+            borderColor: understreamOn ? '#22d3ee'  : '#2e2050'
+          }"
+          :title="understreamOn ? 'Understream ON — showing all Steem posts tagged steemtwist' : 'Understream OFF — showing Twist Stream only'"
+        >🌊 Understream {{ understreamOn ? 'ON' : 'OFF' }}</button>
 
         <!-- Firehose toggle -->
         <button
@@ -293,7 +310,7 @@ const HomeView = {
 // entire monthly feed and filtering — much faster for individual profiles.
 const ProfileView = {
   name: "ProfileView",
-  inject: ["username", "hasKeychain", "notify"],
+  inject: ["username", "hasKeychain", "notify", "understreamOn", "toggleUnderstream"],
   components: { UserProfileComponent, TwistCardComponent, LoadingSpinnerComponent },
 
   data() {
@@ -328,9 +345,15 @@ const ProfileView = {
           ? fetchPinnedTwist(user)
           : Promise.resolve(this.pinnedTwist);
 
+        // Twist Stream: account-history scan for tw- permlinks this month
+        // Understream:  full blog (all Steem posts by this user)
+        const twistsPromise = this.understreamOn
+          ? fetchPostsByUser(user, 50)
+          : fetchTwistsByUser(user, this.monthlyRoot);
+
         const [profile, twists, pinned] = await Promise.all([
           fetchAccount(user),
-          fetchTwistsByUser(user, this.monthlyRoot),
+          twistsPromise,
           pinPromise
         ]);
         this.profileData = profile;
@@ -383,12 +406,27 @@ const ProfileView = {
             max-width:600px;margin:0 auto 12px;
             display:flex;align-items:center;justify-content:space-between;
           ">
-            <h3 style="margin:0;color:#e8e0f0;">🌀 Twists this month</h3>
-            <button
-              @click="loadProfile"
-              style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
-                     border-radius:12px;padding:2px 10px;font-size:12px;margin:0;"
-            >⟳ Refresh</button>
+            <h3 style="margin:0;color:#e8e0f0;">
+              {{ understreamOn ? '🌊 All posts' : '🌀 Twists this month' }}
+            </h3>
+            <div style="display:flex;gap:6px;">
+              <button
+                @click="toggleUnderstream(); loadProfile(true)"
+                :style="{
+                  borderRadius:'12px', padding:'2px 10px', fontSize:'12px',
+                  fontWeight:'600', border:'1px solid', margin:0,
+                  background:  understreamOn ? '#0e1a2d' : '#1e1535',
+                  color:       understreamOn ? '#22d3ee'  : '#9b8db0',
+                  borderColor: understreamOn ? '#22d3ee'  : '#2e2050'
+                }"
+                :title="understreamOn ? 'Understream ON — showing full Steem blog' : 'Understream OFF — showing Twist Stream only'"
+              >🌊 {{ understreamOn ? 'ON' : 'OFF' }}</button>
+              <button
+                @click="loadProfile"
+                style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                       border-radius:12px;padding:2px 10px;font-size:12px;margin:0;"
+              >⟳ Refresh</button>
+            </div>
           </div>
 
           <!-- Pinned twist -->
@@ -408,7 +446,7 @@ const ProfileView = {
 
           <div v-if="userTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink).length === 0"
                style="color:#5a4e70;padding:20px;font-size:14px;">
-            No twists from @{{ $route.params.user }} this month.
+            {{ understreamOn ? 'No posts found.' : 'No twists from @' + $route.params.user + ' this month.' }}
           </div>
 
           <twist-card-component
@@ -601,7 +639,7 @@ const AboutView = {
 // Signals are fetched once on mount and all are marked read immediately.
 const SignalsView = {
   name: "SignalsView",
-  inject: ["username", "notify", "unreadSignals", "refreshUnreadSignals"],
+  inject: ["username", "notify", "unreadSignals", "refreshUnreadSignals", "understreamOn", "toggleUnderstream"],
   components: { LoadingSpinnerComponent, SignalItemComponent },
 
   data() {
@@ -620,12 +658,22 @@ const SignalsView = {
         ));
       } catch { return new Set(); }
     },
+    // In Twist Stream mode, only show signals for tw- permlinks
+    // (or signals with no permlink, like follows).
+    // In Understream mode, show all signals.
+    streamSignals() {
+      if (this.understreamOn) return this.signals;
+      return this.signals.filter(s =>
+        !s.permlink || s.permlink.startsWith(TWIST_CONFIG.POST_PREFIX)
+      );
+    },
     filteredSignals() {
-      if (this.filter === "unread") return this.signals.filter(s => !this.readIds.has(s.id));
-      return this.signals;
+      const base = this.streamSignals;
+      if (this.filter === "unread") return base.filter(s => !this.readIds.has(s.id));
+      return base;
     },
     unreadCount() {
-      return this.signals.filter(s => !this.readIds.has(s.id)).length;
+      return this.streamSignals.filter(s => !this.readIds.has(s.id)).length;
     }
   },
 
@@ -665,7 +713,20 @@ const SignalsView = {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
         <h2 style="margin:0;color:#e8e0f0;font-size:18px;">🔔 Signals</h2>
 
-        <div style="display:flex;gap:6px;align-items:center;">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <!-- Understream toggle -->
+          <button
+            @click="toggleUnderstream()"
+            :style="{
+              borderRadius:'20px', padding:'3px 12px', fontSize:'12px',
+              fontWeight:'600', border:'1px solid', margin:0,
+              background:  understreamOn ? '#0e1a2d' : '#1e1535',
+              color:       understreamOn ? '#22d3ee'  : '#9b8db0',
+              borderColor: understreamOn ? '#22d3ee'  : '#2e2050'
+            }"
+            :title="understreamOn ? 'Understream ON — all Steem activity' : 'Understream OFF — SteemTwist only'"
+          >🌊 {{ understreamOn ? 'ON' : 'OFF' }}</button>
+
           <!-- Filter tabs -->
           <button
             v-for="f in [{key:'all',label:'All'},{key:'unread',label:'Unread'}]"
@@ -983,6 +1044,14 @@ const App = {
       loadProfile("");   // reload @steemtwist as fallback
     }
 
+    // Global Understream toggle — persisted in localStorage.
+    // OFF = Twist Stream only (SteemTwist data); ON = full Steem Understream.
+    const understreamOn = ref(localStorage.getItem("steemtwist_understream") === "true");
+    function toggleUnderstream() {
+      understreamOn.value = !understreamOn.value;
+      localStorage.setItem("steemtwist_understream", understreamOn.value);
+    }
+
     // Unread signal count — recomputed whenever the user navigates to /signals
     // and marks everything read. Exposed via provide so any component can read it.
     const unreadSignals = ref(0);
@@ -998,17 +1067,20 @@ const App = {
       } catch { unreadSignals.value = 0; }
     }
 
-    provide("username",       username);
-    provide("hasKeychain",    hasKeychain);
-    provide("notify",         notify);
-    provide("unreadSignals",  unreadSignals);
+    provide("username",         username);
+    provide("hasKeychain",      hasKeychain);
+    provide("notify",           notify);
+    provide("unreadSignals",    unreadSignals);
+    provide("understreamOn",    understreamOn);
+    provide("toggleUnderstream", toggleUnderstream);
 
     return {
       username, hasKeychain, keychainReady,
       loginError, showLoginForm, isLoggingIn,
       notification, notify, dismissNotification,
       login, logout, profileData, currentRoute,
-      unreadSignals, refreshUnreadSignals
+      unreadSignals, refreshUnreadSignals,
+      understreamOn, toggleUnderstream
     };
   },
 
