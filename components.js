@@ -556,6 +556,10 @@ const TwistCardComponent = {
     isOwnPost() {
       return !!this.username && this.username === this.post.author;
     },
+    isSecretTwist() {
+      try { return JSON.parse(this.post.json_metadata || "{}").type === "secret_twist"; }
+      catch { return false; }
+    },
     avatarUrl() {
       return `https://steemitimages.com/u/${this.post.author}/avatar/small`;
     },
@@ -600,9 +604,11 @@ const TwistCardComponent = {
       return stripBackLink(this.post.body).slice(0, PREVIEW_LENGTH) + "…";
     },
     bodyHtml() {
+      if (this.isSecretTwist) return "<em style='color:#5a4e70'>🔒 Secret Twist — view in Private Signals</em>";
       return renderMarkdown(stripBackLink(this.post.body));
     },
     bodyPreviewHtml() {
+      if (this.isSecretTwist) return "<em style='color:#5a4e70'>🔒 Secret Twist — view in Private Signals</em>";
       return renderMarkdown(this.bodyPreview);
     },
     showThread() {
@@ -913,7 +919,7 @@ const SignalItemComponent = {
   },
   computed: {
     icon() {
-      return { love: "❤️", reply: "💬", mention: "📣", follow: "👤", retwist: "🔁" }[this.signal.type] || "🔔";
+      return { love: "❤️", reply: "💬", mention: "📣", follow: "👤", retwist: "🔁", secret_twist: "🔒" }[this.signal.type] || "🔔";
     },
     label() {
       const a = `@${this.signal.actor}`;
@@ -922,8 +928,9 @@ const SignalItemComponent = {
         case "reply":   return `${a} replied to your twist`;
         case "mention": return `${a} mentioned you`;
         case "follow":  return `${a} followed you`;
-        case "retwist": return `${a} retwisted your twist`;
-        default:        return `${a} interacted with you`;
+        case "retwist":       return `${a} retwisted your twist`;
+        case "secret_twist":  return `${a} sent you a Secret Twist`;
+        default:              return `${a} interacted with you`;
       }
     },
     // Build a link to the relevant twist page for every signal type that
@@ -1070,5 +1077,252 @@ const UserRowComponent = {
       <!-- Arrow -->
       <span style="color:#2e2050;font-size:16px;flex-shrink:0;">›</span>
     </a>
+  `
+};
+
+// ---- SecretTwistComposerComponent ----
+// Composer for sending a Secret Twist to a specific recipient.
+// Encrypts the message via Keychain before broadcasting.
+const SecretTwistComposerComponent = {
+  name: "SecretTwistComposerComponent",
+  props: {
+    username:    { type: String,  default: "" },
+    hasKeychain: { type: Boolean, default: false },
+    isSending:   { type: Boolean, default: false },
+    // Pre-fill recipient (e.g. when composing from a profile page)
+    toUsername:  { type: String,  default: "" }
+  },
+  emits: ["send"],
+  data() {
+    return {
+      recipient: this.toUsername,
+      message:   ""
+    };
+  },
+  computed: {
+    charCount() { return this.message.length; },
+    overLimit()  { return this.charCount > 280; },
+    canSend() {
+      return !!this.username && this.hasKeychain &&
+             !!this.recipient.trim() &&
+             this.recipient.trim() !== this.username &&
+             this.charCount > 0 && !this.overLimit && !this.isSending;
+    }
+  },
+  methods: {
+    submit() {
+      if (!this.canSend) return;
+      this.$emit("send", {
+        recipient: this.recipient.trim().replace(/^@/, ""),
+        message:   this.message.trim()
+      });
+      this.message = "";
+    }
+  },
+  template: `
+    <div style="
+      background:#1a1030;border:1px solid #3b1f5e;border-radius:12px;
+      padding:16px;margin:0 auto 20px;max-width:600px;text-align:left;
+    ">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="font-size:16px;">🔒</span>
+        <span style="color:#c084fc;font-weight:600;font-size:14px;">New Secret Twist</span>
+      </div>
+
+      <!-- Recipient field -->
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:4px;">To</label>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="color:#a855f7;font-size:15px;">@</span>
+          <input
+            v-model="recipient"
+            type="text"
+            placeholder="username"
+            autocomplete="off"
+            style="
+              flex:1;padding:7px 10px;border-radius:8px;
+              border:1px solid #3b1f5e;background:#0f0a1e;
+              color:#e8e0f0;font-size:14px;
+            "
+            @keydown.enter="submit"
+          />
+        </div>
+        <div v-if="recipient && recipient.trim() === username"
+             style="font-size:12px;color:#fca5a5;margin-top:4px;">
+          You cannot send a Secret Twist to yourself.
+        </div>
+      </div>
+
+      <!-- Message field -->
+      <textarea
+        v-model="message"
+        placeholder="Write your secret message…"
+        maxlength="500"
+        style="
+          width:100%;box-sizing:border-box;
+          padding:10px;border-radius:8px;
+          border:1px solid #3b1f5e;background:#0f0a1e;
+          color:#e8e0f0;font-size:15px;
+          resize:none;height:80px;
+        "
+        @keydown.ctrl.enter="submit"
+      ></textarea>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+        <span :style="{ fontSize:'13px', color: overLimit ? '#fca5a5' : '#5a4e70' }">
+          {{ charCount }} / 280
+        </span>
+        <button
+          @click="submit"
+          :disabled="!canSend"
+          style="
+            padding:7px 20px;margin:0;
+            background:linear-gradient(135deg,#6d28d9,#a21caf);
+          "
+        >{{ isSending ? "Sending…" : "Send 🔒" }}</button>
+      </div>
+    </div>
+  `
+};
+
+// ---- SecretTwistCardComponent ----
+// Renders a single Secret Twist. Shows a locked state to everyone except
+// the sender and recipient, who see a Decrypt button. On successful
+// decryption the plaintext is shown in place of the locked view.
+const SecretTwistCardComponent = {
+  name: "SecretTwistCardComponent",
+  props: {
+    post:        { type: Object,  required: true },
+    username:    { type: String,  default: "" },
+    hasKeychain: { type: Boolean, default: false }
+  },
+  data() {
+    return {
+      decrypted:    null,   // plaintext after successful decrypt
+      isDecrypting: false,
+      decryptError: ""
+    };
+  },
+  computed: {
+    meta() {
+      try { return JSON.parse(this.post.json_metadata || "{}"); }
+      catch { return {}; }
+    },
+    recipient() { return this.meta.to || ""; },
+    payload()   { return this.meta.payload || ""; },
+    isSender()    { return this.username === this.post.author; },
+    isRecipient() { return this.username === this.recipient; },
+    canDecrypt()  { return (this.isSender || this.isRecipient) && this.hasKeychain && !!this.payload; },
+    avatarUrl()   { return `https://steemitimages.com/u/${this.post.author}/avatar/small`; },
+    relativeTime() {
+      const diff = Date.now() - steemDate(this.post.created).getTime();
+      const s = Math.floor(diff / 1000);
+      if (s < 60)  return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60)  return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24)  return `${h}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    }
+  },
+  methods: {
+    decrypt() {
+      if (!this.canDecrypt || this.isDecrypting) return;
+      this.isDecrypting = true;
+      this.decryptError = "";
+      // Sender decrypts as recipient; recipient decrypts as sender
+      const other = this.isSender ? this.recipient : this.post.author;
+      decryptSecretTwist(this.username, other, this.payload, (res) => {
+        this.isDecrypting = false;
+        if (res.success) {
+          // Strip leading # that Keychain prepends
+          this.decrypted = (res.result || "").replace(/^#/, "");
+        } else {
+          this.decryptError = res.error || res.message || "Decryption failed.";
+        }
+      });
+    }
+  },
+  template: `
+    <div style="
+      background:#1a1030;border:1px solid #3b1f5e;border-radius:12px;
+      padding:14px 16px;margin:10px auto;max-width:600px;text-align:left;
+    ">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <a :href="'#/@' + post.author">
+          <img
+            :src="avatarUrl"
+            style="width:40px;height:40px;border-radius:50%;border:2px solid #3b1f5e;"
+            @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
+          />
+        </a>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <a :href="'#/@' + post.author"
+               style="font-weight:bold;color:#c084fc;text-decoration:none;font-size:14px;">
+              @{{ post.author }}
+            </a>
+            <span style="font-size:13px;color:#9b8db0;">→</span>
+            <a :href="'#/@' + recipient"
+               style="font-weight:bold;color:#c084fc;text-decoration:none;font-size:14px;">
+              @{{ recipient }}
+            </a>
+          </div>
+          <div style="font-size:12px;color:#5a4e70;margin-top:2px;">{{ relativeTime }}</div>
+        </div>
+        <span style="font-size:20px;">🔒</span>
+      </div>
+
+      <!-- Body: decrypted or locked -->
+      <div v-if="decrypted !== null" style="
+        background:#0f0a1e;border-radius:8px;padding:12px;
+        font-size:15px;color:#e8e0f0;line-height:1.6;
+        border:1px solid #3b1f5e;margin-bottom:10px;
+        white-space:pre-wrap;word-break:break-word;
+      ">
+        {{ decrypted }}
+      </div>
+
+      <div v-else style="
+        display:flex;align-items:center;gap:10px;
+        background:#0f0a1e;border-radius:8px;padding:12px;
+        border:1px solid #3b1f5e;margin-bottom:10px;
+      ">
+        <span style="font-size:22px;">🔒</span>
+        <span v-if="canDecrypt" style="font-size:14px;color:#9b8db0;">
+          {{ isSender ? 'You sent this Secret Twist.' : 'You received a Secret Twist.' }}
+        </span>
+        <span v-else style="font-size:14px;color:#5a4e70;font-style:italic;">
+          Secret Twist — only visible to sender and recipient.
+        </span>
+      </div>
+
+      <!-- Decrypt button -->
+      <div v-if="canDecrypt && decrypted === null" style="margin-bottom:8px;">
+        <button
+          @click="decrypt"
+          :disabled="isDecrypting"
+          style="
+            background:linear-gradient(135deg,#6d28d9,#a21caf);
+            padding:6px 16px;font-size:13px;margin:0;
+          "
+        >{{ isDecrypting ? "Decrypting…" : "🔓 Decrypt" }}</button>
+      </div>
+
+      <!-- Decrypt error -->
+      <div v-if="decryptError" style="
+        padding:8px 10px;border-radius:8px;font-size:13px;
+        background:#2d0a0a;border:1px solid #7f1d1d;color:#fca5a5;
+        display:flex;justify-content:space-between;align-items:center;
+      ">
+        <span>⚠️ {{ decryptError }}</span>
+        <button
+          @click="decryptError = ''"
+          style="background:none;border:none;cursor:pointer;font-size:15px;
+                 padding:0;color:#fca5a5;line-height:1;margin:0;"
+        >✕</button>
+      </div>
+    </div>
   `
 };

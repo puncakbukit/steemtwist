@@ -930,6 +930,148 @@ const SocialView = {
   `
 };
 
+
+// ---- SecretTwistView ----
+// Private inbox: shows all Secret Twists sent to or from the logged-in user.
+// Fetched via account history scan for "st-" permlinks.
+const SecretTwistView = {
+  name: "SecretTwistView",
+  inject: ["username", "hasKeychain", "notify"],
+  components: { LoadingSpinnerComponent, SecretTwistComposerComponent, SecretTwistCardComponent },
+
+  data() {
+    return {
+      posts:     [],
+      loading:   true,
+      isSending: false,
+      tab:       "inbox"   // "inbox" | "sent" | "compose"
+    };
+  },
+
+  computed: {
+    inbox() {
+      return this.posts.filter(p => {
+        try { return JSON.parse(p.json_metadata || "{}").to === this.username; }
+        catch { return false; }
+      });
+    },
+    sent() {
+      return this.posts.filter(p => p.author === this.username);
+    }
+  },
+
+  async created() {
+    if (!this.username) { this.loading = false; return; }
+    try {
+      this.posts = await fetchSecretTwists(this.username);
+    } catch {
+      this.notify("Could not load Secret Twists.", "error");
+    }
+    this.loading = false;
+  },
+
+  methods: {
+    async handleSend({ recipient, message }) {
+      this.isSending = true;
+      sendSecretTwist(this.username, recipient, message, (res) => {
+        this.isSending = false;
+        if (res.success) {
+          this.notify("Secret Twist sent! 🔒", "success");
+          // Reload to show the new sent item
+          this.loading = true;
+          fetchSecretTwists(this.username).then(posts => {
+            this.posts   = posts;
+            this.loading = false;
+            this.tab     = "sent";
+          }).catch(() => { this.loading = false; });
+        } else {
+          this.notify(res.error || res.message || "Failed to send Secret Twist.", "error");
+        }
+      });
+    }
+  },
+
+  template: `
+    <div style="max-width:600px;margin:20px auto 0;">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <h2 style="margin:0;color:#e8e0f0;font-size:18px;">🔒 Secret Twists</h2>
+        <span style="font-size:13px;color:#5a4e70;">Private Signals</span>
+      </div>
+
+      <!-- Not logged in -->
+      <div v-if="!username" style="
+        background:#1a1030;border:1px solid #3b1f5e;border-radius:12px;
+        padding:40px;text-align:center;color:#5a4e70;font-size:15px;
+      ">
+        Sign in to send and receive Secret Twists.
+      </div>
+
+      <template v-else>
+        <!-- Tab bar -->
+        <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+          <button
+            v-for="t in [{key:'inbox',label:'📥 Inbox'},{key:'sent',label:'📤 Sent'},{key:'compose',label:'✏️ Compose'}]"
+            :key="t.key"
+            @click="tab = t.key"
+            :style="{
+              borderRadius:'20px', padding:'4px 14px', fontSize:'13px',
+              fontWeight: tab === t.key ? '700' : '400', border:'1px solid', margin:0,
+              background:  tab === t.key ? 'linear-gradient(135deg,#6d28d9,#a21caf)' : '#1a1030',
+              color:       tab === t.key ? '#fff' : '#9b8db0',
+              borderColor: tab === t.key ? '#a855f7' : '#3b1f5e'
+            }"
+          >{{ t.label }}{{ t.key === 'inbox' && inbox.length > 0 ? ' (' + inbox.length + ')' : '' }}</button>
+        </div>
+
+        <!-- Compose tab -->
+        <secret-twist-composer-component
+          v-if="tab === 'compose'"
+          :username="username"
+          :has-keychain="hasKeychain"
+          :is-sending="isSending"
+          @send="handleSend"
+        ></secret-twist-composer-component>
+
+        <!-- Loading -->
+        <loading-spinner-component v-else-if="loading" message="Loading Secret Twists…"></loading-spinner-component>
+
+        <!-- Inbox / Sent lists -->
+        <template v-else>
+          <div v-if="(tab === 'inbox' ? inbox : sent).length === 0" style="
+            background:#1a1030;border:1px solid #3b1f5e;border-radius:12px;
+            padding:40px;text-align:center;color:#5a4e70;font-size:15px;
+          ">
+            {{ tab === 'inbox' ? 'No Secret Twists received yet.' : 'No Secret Twists sent yet.' }}
+          </div>
+
+          <secret-twist-card-component
+            v-for="post in (tab === 'inbox' ? inbox : sent)"
+            :key="post.permlink"
+            :post="post"
+            :username="username"
+            :has-keychain="hasKeychain"
+          ></secret-twist-card-component>
+        </template>
+
+        <!-- Privacy notice -->
+        <div style="
+          max-width:600px;margin:20px auto 0;padding:12px 14px;
+          background:#0f0a1e;border:1px solid #2e2050;border-radius:10px;
+          font-size:12px;color:#5a4e70;line-height:1.6;
+        ">
+          ⚠️ Secret Twists are encrypted with Steem's memo key scheme. Only the sender and
+          recipient can decrypt them. However, the sender, recipient, and timing are visible
+          on the public blockchain. This provides <strong style="color:#9b8db0;">content privacy</strong>,
+          not communication anonymity.
+        </div>
+      </template>
+
+    </div>
+  `
+};
+
 // ============================================================
 // ROUTER
 // ============================================================
@@ -937,6 +1079,7 @@ const SocialView = {
 const routes = [
   { path: "/",               component: HomeView    },
   { path: "/signals",        component: SignalsView },
+  { path: "/secret-twists",  component: SecretTwistView },
   { path: "/about",          component: AboutView   },
   { path: "/@:user/social",    component: SocialView  },
   { path: "/@:user/:permlink", component: TwistView  },
@@ -1157,6 +1300,13 @@ const App = {
             >{{ unreadSignals > 99 ? '99+' : unreadSignals }}</span>
           </router-link>
 
+          <router-link
+            v-if="username"
+            to="/secret-twists"
+            exact-active-class="nav-active"
+            style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
+          >🔒 Private</router-link>
+
           <router-link to="/about" exact-active-class="nav-active"
             style="color:#e0d0ff;text-decoration:none;padding:5px 10px;border-radius:20px;font-size:14px;"
           >About</router-link>
@@ -1268,7 +1418,9 @@ const vueApp = createApp(App);
 
 vueApp.component("AppNotificationComponent", AppNotificationComponent);
 vueApp.component("SignalItemComponent",       SignalItemComponent);
-vueApp.component("UserRowComponent",          UserRowComponent);
+vueApp.component("UserRowComponent",             UserRowComponent);
+vueApp.component("SecretTwistComposerComponent", SecretTwistComposerComponent);
+vueApp.component("SecretTwistCardComponent",     SecretTwistCardComponent);
 vueApp.component("AuthComponent",            AuthComponent);
 vueApp.component("UserProfileComponent",     UserProfileComponent);
 vueApp.component("LoadingSpinnerComponent",  LoadingSpinnerComponent);

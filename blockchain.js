@@ -788,13 +788,17 @@ function classifySignalEntry(seqNum, item, username) {
 
     // Mention without being the direct parent (e.g. replying in a thread)
     if (mentioned) {
+      // Check for Secret Twist — upgrade signal type if metadata matches
+      let meta = {};
+      try { meta = JSON.parse(data.json_metadata || "{}"); } catch {}
+      const isSecret = meta.type === "secret_twist" && meta.to === username;
       return {
         id: String(seqNum),
-        type: "mention",
+        type: isSecret ? "secret_twist" : "mention",
         actor: data.author,
-        postAuthor: data.author,   // link to the actor's comment
+        postAuthor: data.author,
         permlink: data.permlink,
-        body: stripSignalBody(data.body),
+        body: isSecret ? "" : stripSignalBody(data.body),
         ts
       };
     }
@@ -938,4 +942,174 @@ function fetchFollowing(username) {
   }
 
   return page("").then(() => collected);
+}
+
+// ============================================================
+// STEEMTWIST — Secret Twist (encrypted private messages)
+// ============================================================
+
+// Secret Twists are rootless Steem posts whose encrypted payload lives
+// entirely in json_metadata. The body contains only "@recipient 🔒" so
+// the mention triggers the recipient's Signals feed. The payload is
+// encrypted with Steem's native memo-key scheme via Keychain.
+//
+// json_metadata shape:
+//   { type: "secret_twist", to: "bob", version: 1, payload: "#<encoded>" }
+//
+// Permlink prefix: "st-" (distinct from regular "tw-" twists)
+
+const SECRET_TWIST_PREFIX  = "st-";
+const SECRET_TWIST_VERSION = 1;
+
+// Returns a deterministic permlink for a new Secret Twist.
+// Format: st-YYYYMMDD-HHMMSS-username
+function generateSecretTwistPermlink(username) {
+  const d = new Date();
+  const ts =
+    d.getUTCFullYear() +
+    String(d.getUTCMonth() + 1).padStart(2, "0") +
+    String(d.getUTCDate()).padStart(2, "0") + "-" +
+    String(d.getUTCHours()).padStart(2, "0") +
+    String(d.getUTCMinutes()).padStart(2, "0") +
+    String(d.getUTCSeconds()).padStart(2, "0");
+  return `${SECRET_TWIST_PREFIX}${ts}-${username}`;
+}
+
+// Send a Secret Twist.
+// Steps (all done client-side via Keychain):
+//   1. Encrypt `message` with sender's memo key + recipient's memo public key.
+//   2. Broadcast a rootless post with body "@recipient 🔒" and encrypted
+//      payload in json_metadata.
+//
+// callback: (response) => { response.success, response.error }
+function sendSecretTwist(sender, recipient, message, callback) {
+  // Step 1: Encrypt
+  steem_keychain.requestEncodeMessage(
+    sender,
+    recipient,
+    "#" + message,   // Keychain expects message to start with #
+    "Memo",
+    (encRes) => {
+      if (!encRes.success) return callback(encRes);
+
+      const payload  = encRes.result;   // already starts with #
+      const permlink = generateSecretTwistPermlink(sender);
+
+      // Step 2: Broadcast rootless post
+      // body: mention triggers Signal; nothing else readable
+      // parent_author = "" → rootless (not tied to monthly feed)
+      // parent_permlink = TWIST_CONFIG.TAG → used as Steem category
+      const meta = JSON.stringify({
+        type:    "secret_twist",
+        to:      recipient,
+        version: SECRET_TWIST_VERSION,
+        payload
+      });
+
+      const ops = [
+        ["comment", {
+          parent_author:  "",
+          parent_permlink: TWIST_CONFIG.TAG,
+          author:          sender,
+          permlink,
+          title:           "",
+          body:            `@${recipient} 🔒`,
+          json_metadata:   meta
+        }],
+        ["comment_options", {
+          author:               sender,
+          permlink,
+          max_accepted_payout:  "0.000 SBD",
+          percent_steem_dollars: 10000,
+          allow_votes:          false,
+          allow_curation_rewards: false,
+          extensions:           []
+        }]
+      ];
+
+      steem_keychain.requestBroadcast(sender, ops, "Posting", callback);
+    }
+  );
+}
+
+// Decrypt a Secret Twist payload via Keychain.
+// `sender` is the post author; `encodedPayload` starts with "#".
+// callback: (response) => { response.success, response.result (plaintext) }
+function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
+  steem_keychain.requestDecodeMessage(
+    recipient,
+    sender,
+    encodedPayload,
+    "Memo",
+    callback
+  );
+}
+
+// Fetch Secret Twists for a user: both sent (author === username) and
+// received (to === username in json_metadata). Scans account history
+// backwards looking for comment ops with permlink starting with "st-".
+// Returns Promise<post[]> sorted newest-first.
+function fetchSecretTwists(username) {
+  const BATCH = 100;
+  const MAX_SCAN = 500;
+  let scanned = 0;
+  const collected = [];
+
+  function page(from) {
+    return new Promise((resolve) => {
+      steem.api.getAccountHistory(username, from, BATCH, (err, history) => {
+        if (err || !history || history.length === 0) return resolve();
+
+        for (let i = history.length - 1; i >= 0; i--) {
+          const [, item] = history[i];
+          const [type, data] = item.op;
+          scanned++;
+
+          if (type === "comment") {
+            // Sent: user authored a Secret Twist
+            if (
+              data.author === username &&
+              data.permlink.startsWith(SECRET_TWIST_PREFIX)
+            ) {
+              if (!collected.some(c => c.permlink === data.permlink)) {
+                collected.push({ author: data.author, permlink: data.permlink });
+              }
+            }
+
+            // Received: another user's Secret Twist mentioning this user
+            if (
+              data.author !== username &&
+              data.permlink.startsWith(SECRET_TWIST_PREFIX)
+            ) {
+              let meta;
+              try { meta = JSON.parse(data.json_metadata || "{}"); } catch { meta = {}; }
+              if (meta.type === "secret_twist" && meta.to === username) {
+                if (!collected.some(c => c.permlink === data.permlink)) {
+                  collected.push({ author: data.author, permlink: data.permlink });
+                }
+              }
+            }
+          }
+
+          if (scanned >= MAX_SCAN) return resolve();
+        }
+
+        const lowestSeq = history[0][0];
+        if (lowestSeq <= 0 || scanned >= MAX_SCAN) return resolve();
+        page(lowestSeq - 1).then(resolve);
+      });
+    });
+  }
+
+  return page(-1).then(async () => {
+    if (collected.length === 0) return [];
+    const enriched = await Promise.all(
+      collected.map(({ author, permlink }) =>
+        fetchPost(author, permlink).catch(() => null)
+      )
+    );
+    return enriched
+      .filter(p => p && p.author)
+      .sort((a, b) => steemDate(b.created) - steemDate(a.created));
+  });
 }
