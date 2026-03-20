@@ -369,6 +369,16 @@ const ProfileView = {
         ></user-profile-component>
 
         <div style="margin-top:20px;">
+          <!-- Social links row -->
+          <div style="max-width:600px;margin:0 auto 10px;display:flex;gap:8px;flex-wrap:wrap;">
+            <a
+              :href="'#/@' + $route.params.user + '/social'"
+              style="font-size:13px;color:#a855f7;text-decoration:none;
+                     background:#1e1535;border:1px solid #2e2050;border-radius:20px;
+                     padding:3px 12px;"
+            >👥 Followers / Following / Friends</a>
+          </div>
+
           <div style="
             max-width:600px;margin:0 auto 12px;
             display:flex;align-items:center;justify-content:space-between;
@@ -708,6 +718,157 @@ const SignalsView = {
   `
 };
 
+
+// ---- SocialView ----
+// Shows Followers, Following, and Friends for any user at /@:user/social.
+// All three lists are fetched in parallel on load; the Friends list is
+// computed client-side as the intersection of followers and following.
+// Each user row is enriched with fetchAccount in batches for display names.
+const SocialView = {
+  name: "SocialView",
+  inject: ["username", "notify"],
+  components: { LoadingSpinnerComponent, UserRowComponent },
+
+  data() {
+    return {
+      tab:        "followers",  // "followers" | "following" | "friends"
+      followers:  [],
+      following:  [],
+      profiles:   {},           // username -> profileData cache
+      loading:    true
+    };
+  },
+
+  computed: {
+    viewUser() {
+      return this.$route.params.user;
+    },
+    friends() {
+      const followingSet = new Set(this.following);
+      return this.followers.filter(u => followingSet.has(u));
+    },
+    activeList() {
+      if (this.tab === "following") return this.following;
+      if (this.tab === "friends")   return this.friends;
+      return this.followers;
+    },
+    tabs() {
+      return [
+        { key: "followers", label: "Followers", count: this.followers.length },
+        { key: "following", label: "Following",  count: this.following.length },
+        { key: "friends",   label: "Friends",    count: this.friends.length   }
+      ];
+    }
+  },
+
+  async created() {
+    await this.load();
+  },
+
+  watch: {
+    "$route.params.user"() { this.load(); },
+    // Enrich profiles whenever the active list changes
+    activeList(list) { this.enrichProfiles(list); }
+  },
+
+  methods: {
+    async load() {
+      this.loading   = true;
+      this.followers = [];
+      this.following = [];
+      this.profiles  = {};
+      try {
+        const [followers, following] = await Promise.all([
+          fetchFollowers(this.viewUser),
+          fetchFollowing(this.viewUser)
+        ]);
+        this.followers = followers;
+        this.following = following;
+        // Enrich the initially visible list
+        await this.enrichProfiles(this.activeList);
+      } catch {
+        this.notify("Could not load social data.", "error");
+      }
+      this.loading = false;
+    },
+
+    // Fetch account profiles for users not yet in the cache.
+    // Batches of 50 to avoid hammering the node.
+    async enrichProfiles(usernames) {
+      const needed = usernames.filter(u => !this.profiles[u]);
+      if (needed.length === 0) return;
+      const BATCH = 50;
+      for (let i = 0; i < needed.length; i += BATCH) {
+        const batch = needed.slice(i, i + BATCH);
+        await Promise.all(
+          batch.map(u =>
+            fetchAccount(u)
+              .then(p => { if (p) this.profiles[u] = p; })
+              .catch(() => {})
+          )
+        );
+      }
+    }
+  },
+
+  template: `
+    <div style="max-width:600px;margin:20px auto 0;">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <a
+          :href="'#/@' + viewUser"
+          style="color:#a855f7;text-decoration:none;font-size:14px;font-weight:600;"
+        >← @{{ viewUser }}</a>
+        <h2 style="margin:0;color:#e8e0f0;font-size:18px;">👤 Social</h2>
+      </div>
+
+      <!-- Tab bar -->
+      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+        <button
+          v-for="t in tabs"
+          :key="t.key"
+          @click="tab = t.key; enrichProfiles(activeList)"
+          :style="{
+            borderRadius:'20px', padding:'4px 14px', fontSize:'13px',
+            fontWeight: tab === t.key ? '700' : '400', border:'1px solid',
+            background:  tab === t.key ? 'linear-gradient(135deg,#8b2fc9,#e0187a)' : '#1e1535',
+            color:       tab === t.key ? '#fff' : '#9b8db0',
+            borderColor: tab === t.key ? '#a855f7' : '#2e2050',
+            margin: 0
+          }"
+        >{{ t.label }} <span style="opacity:0.7;font-weight:400;">({{ t.count }})</span></button>
+      </div>
+
+      <!-- Loading -->
+      <loading-spinner-component v-if="loading" message="Loading…"></loading-spinner-component>
+
+      <!-- Empty -->
+      <div v-else-if="activeList.length === 0" style="
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;
+        padding:40px;text-align:center;color:#5a4e70;font-size:15px;
+      ">
+        {{ tab === 'followers' ? 'No followers yet.' :
+           tab === 'following' ? 'Not following anyone yet.' :
+           'No mutual follows yet.' }}
+      </div>
+
+      <!-- User list -->
+      <div v-else style="
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;overflow:hidden;
+      ">
+        <user-row-component
+          v-for="user in activeList"
+          :key="user"
+          :username="user"
+          :profile-data="profiles[user] || null"
+        ></user-row-component>
+      </div>
+
+    </div>
+  `
+};
+
 // ============================================================
 // ROUTER
 // ============================================================
@@ -716,6 +877,7 @@ const routes = [
   { path: "/",               component: HomeView    },
   { path: "/signals",        component: SignalsView },
   { path: "/about",          component: AboutView   },
+  { path: "/@:user/social",    component: SocialView  },
   { path: "/@:user/:permlink", component: TwistView  },
   { path: "/@:user",         component: ProfileView }
 ];
@@ -1034,6 +1196,7 @@ const vueApp = createApp(App);
 
 vueApp.component("AppNotificationComponent", AppNotificationComponent);
 vueApp.component("SignalItemComponent",       SignalItemComponent);
+vueApp.component("UserRowComponent",          UserRowComponent);
 vueApp.component("AuthComponent",            AuthComponent);
 vueApp.component("UserProfileComponent",     UserProfileComponent);
 vueApp.component("LoadingSpinnerComponent",  LoadingSpinnerComponent);

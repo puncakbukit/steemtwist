@@ -892,3 +892,50 @@ function fetchSignals(username) {
     collected.sort((a, b) => b.ts - a.ts)
   );
 }
+
+// ============================================================
+// STEEMTWIST — Follow helpers
+// ============================================================
+
+// Fetch ALL followers of a user by paging through getFollowers.
+// Steem allows up to 1000 per call; we keep fetching until we get
+// fewer than the limit, signalling the last page.
+// Returns Promise<string[]> — array of follower usernames.
+function fetchFollowers(username) {
+  const LIMIT = 1000;
+  const collected = [];
+
+  function page(startFrom) {
+    return new Promise((resolve) => {
+      steem.api.getFollowers(username, startFrom, "blog", LIMIT, (err, result) => {
+        if (err || !result || result.length === 0) return resolve();
+        for (const row of result) collected.push(row.follower);
+        if (result.length < LIMIT) return resolve();
+        // Last entry is the cursor for the next page
+        page(result[result.length - 1].follower).then(resolve);
+      });
+    });
+  }
+
+  return page("").then(() => collected);
+}
+
+// Fetch ALL accounts that a user is following.
+// Returns Promise<string[]> — array of following usernames.
+function fetchFollowing(username) {
+  const LIMIT = 1000;
+  const collected = [];
+
+  function page(startFrom) {
+    return new Promise((resolve) => {
+      steem.api.getFollowing(username, startFrom, "blog", LIMIT, (err, result) => {
+        if (err || !result || result.length === 0) return resolve();
+        for (const row of result) collected.push(row.following);
+        if (result.length < LIMIT) return resolve();
+        page(result[result.length - 1].following).then(resolve);
+      });
+    });
+  }
+
+  return page("").then(() => collected);
+}

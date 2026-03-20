@@ -1011,3 +1011,64 @@ const SignalItemComponent = {
     </div>
   `
 };
+
+// ---- UserRowComponent ----
+// A compact user row: avatar, display name, @username, profile link.
+// Used in Followers, Following, and Friends lists.
+// Pass just `username` for a minimal row; pass `profileData` (from fetchAccount)
+// for a richer row with display name and bio.
+const UserRowComponent = {
+  name: "UserRowComponent",
+  props: {
+    username:    { type: String,  required: true },
+    profileData: { type: Object,  default: null  }   // optional enriched data
+  },
+  computed: {
+    displayName() {
+      return this.profileData?.displayName || this.username;
+    },
+    about() {
+      return this.profileData?.about || "";
+    },
+    profileUrl() {
+      return `#/@${this.username}`;
+    }
+  },
+  template: `
+    <a
+      :href="profileUrl"
+      style="
+        display:flex;align-items:center;gap:12px;
+        padding:10px 14px;
+        text-decoration:none;
+        border-bottom:1px solid #2e2050;
+        transition:background 0.15s;
+      "
+      @mouseenter="$event.currentTarget.style.background='#16102a'"
+      @mouseleave="$event.currentTarget.style.background=''"
+    >
+      <!-- Avatar -->
+      <img
+        :src="'https://steemitimages.com/u/' + username + '/avatar/small'"
+        style="width:40px;height:40px;border-radius:50%;border:2px solid #2e2050;flex-shrink:0;"
+        @error="$event.target.src='https://steemitimages.com/u/guest/avatar/small'"
+      />
+
+      <!-- Name + username + bio -->
+      <div style="min-width:0;flex:1;">
+        <div style="font-weight:600;color:#e8e0f0;font-size:14px;
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          {{ displayName }}
+        </div>
+        <div style="font-size:12px;color:#a855f7;">@{{ username }}</div>
+        <div v-if="about" style="
+          font-size:12px;color:#9b8db0;margin-top:2px;
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        ">{{ about }}</div>
+      </div>
+
+      <!-- Arrow -->
+      <span style="color:#2e2050;font-size:16px;flex-shrink:0;">›</span>
+    </a>
+  `
+};
