@@ -1055,9 +1055,21 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
   );
 }
 
-// Fetch Secret Twists for a user: both sent (author === username) and
-// received (to === username in json_metadata). Scans account history
-// backwards looking for comment ops with permlink starting with "st-".
+// Fetch Secret Twists for a user.
+//
+// Sent:     scan the user's own history for comment ops they authored
+//           with a "st-" permlink.
+//
+// Received: getAccountHistory does NOT include comment ops written by
+//           other users — those never appear in the recipient's history.
+//           Discovery relies on the mention signal instead: when sender
+//           posts "@recipient [encrypted]", a comment op appears in the
+//           recipient's history as a *mention* (because they were @-tagged).
+//           We look for comment ops where parent_author = "" (rootless post)
+//           and json_metadata.type === "secret_twist" and meta.to === username.
+//           Those ops DO appear in the recipient's history via the mention
+//           notification system.
+//
 // Returns Promise<post[]> sorted newest-first.
 function fetchSecretTwists(username) {
   const BATCH = 100;
@@ -1076,7 +1088,7 @@ function fetchSecretTwists(username) {
           scanned++;
 
           if (type === "comment") {
-            // Sent: user authored a Secret Twist
+            // ── Sent: user authored a Secret Twist ──────────────────────
             if (
               data.author === username &&
               data.permlink.startsWith(SECRET_TWIST_PREFIX)
@@ -1086,9 +1098,12 @@ function fetchSecretTwists(username) {
               }
             }
 
-            // Received: another user's Secret Twist mentioning this user
+            // ── Received: a Secret Twist addressed to this user ─────────
+            // Appears in recipient's history because body contains @username
+            // (mention). Check metadata to confirm it's a secret_twist.
             if (
               data.author !== username &&
+              data.parent_author === "" &&   // rootless = top-level post
               data.permlink.startsWith(SECRET_TWIST_PREFIX)
             ) {
               let meta;

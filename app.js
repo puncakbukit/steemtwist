@@ -973,16 +973,18 @@ const SecretTwistView = {
   methods: {
     async handleSend({ recipient, message }) {
       this.isSending = true;
-      sendSecretTwist(this.username, recipient, message, (res) => {
+      sendSecretTwist(this.username, recipient, message, async (res) => {
         this.isSending = false;
         if (res.success) {
           this.notify("Secret Twist sent! 🔒", "success");
-          // Reload to show the new sent item
+          this.tab = "sent";
+          // Wait for the node to index the new post, then reload.
+          // 3 s is enough for most nodes; fetchSecretTwists will find it.
+          await new Promise(r => setTimeout(r, 3000));
           this.loading = true;
           fetchSecretTwists(this.username).then(posts => {
             this.posts   = posts;
             this.loading = false;
-            this.tab     = "sent";
           }).catch(() => { this.loading = false; });
         } else {
           this.notify(res.error || res.message || "Failed to send Secret Twist.", "error");
