@@ -1074,90 +1074,43 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
   );
 }
 
-// Fetch Secret Twists for a user.
+// Fetch Secret Twists for a user (both sent and received).
 //
-// Sent:     scan the user's own history for comment ops they authored
-//           with a "st-" permlink.
+// Strategy: call getContentReplies on @steemtwist/secret-YYYY-MM to get
+// all Secret Twists for this month, then enrich each with fetchPost
+// (same pattern as fetchTwistFeed). The caller filters by author (sent)
+// or meta.to (inbox).
 //
-// Received: getAccountHistory does NOT include comment ops written by
-//           other users — those never appear in the recipient's history.
-//           Discovery relies on the mention signal instead: when sender
-//           posts "@recipient [encrypted]", a comment op appears in the
-//           recipient's history as a *mention* (because they were @-tagged).
-//           We look for comment ops where parent_author = ROOT_ACCOUNT
-//           (reply to secret monthly root) and meta.to === username.
-//           Those ops DO appear in the recipient's history via the mention
-//           notification system.
+// Why not scan account history?
+//   getAccountHistory only contains ops the user *performed* or ops that
+//   directly affected their account (votes on their posts, replies to their
+//   posts). A comment by someone else mentioning @user in its body does NOT
+//   create a history entry for the mentioned user — Steem has no server-side
+//   mention indexing. Only the sender's own history contains the comment op.
 //
 // Returns Promise<post[]> sorted newest-first.
 function fetchSecretTwists(username) {
-  const BATCH = 100;
-  const MAX_SCAN = 500;
-  let scanned = 0;
-  const collected = [];
-
-  function page(from) {
-    return new Promise((resolve) => {
-      steem.api.getAccountHistory(username, from, BATCH, (err, history) => {
-        if (err || !history || history.length === 0) return resolve();
-
-        for (let i = history.length - 1; i >= 0; i--) {
-          const [, item] = history[i];
-          const [type, data] = item.op;
-          scanned++;
-
-          if (type === "comment") {
-            // ── Sent: user authored a Secret Twist ──────────────────────
-            if (
-              data.author === username &&
-              data.permlink.startsWith(SECRET_TWIST_PREFIX)
-            ) {
-              if (!collected.some(c => c.permlink === data.permlink)) {
-                collected.push({ author: data.author, permlink: data.permlink });
-              }
-            }
-
-            // ── Received: a Secret Twist addressed to this user ─────────
-            // Appears in recipient's history because body contains @username
-            // (mention). Check metadata to confirm it's a secret_twist.
-            if (
-              data.author !== username &&
-              data.parent_author === TWIST_CONFIG.ROOT_ACCOUNT &&
-              data.permlink.startsWith(SECRET_TWIST_PREFIX)
-            ) {
-              let meta;
-              try {
-                const raw = data.json_metadata;
-                meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
-              } catch { meta = {}; }
-              if (meta.type === "secret_twist" &&
-                  (meta.to || "").toLowerCase() === username.toLowerCase()) {
-                if (!collected.some(c => c.permlink === data.permlink)) {
-                  collected.push({ author: data.author, permlink: data.permlink });
-                }
-              }
-            }
-          }
-
-          if (scanned >= MAX_SCAN) return resolve();
-        }
-
-        const lowestSeq = history[0][0];
-        if (lowestSeq <= 0 || scanned >= MAX_SCAN) return resolve();
-        page(lowestSeq - 1).then(resolve);
-      });
-    });
-  }
-
-  return page(-1).then(async () => {
-    if (collected.length === 0) return [];
-    const enriched = await Promise.all(
-      collected.map(({ author, permlink }) =>
-        fetchPost(author, permlink).catch(() => null)
+  const secretRoot = getSecretMonthlyRoot();
+  return fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, secretRoot)
+    .then(replies =>
+      // Enrich in parallel to get populated json_metadata and active_votes
+      Promise.all(
+        replies.map(r => fetchPost(r.author, r.permlink).catch(() => r))
       )
+    )
+    .then(enriched =>
+      enriched
+        .filter(p => {
+          if (!p || !p.author) return false;
+          // Keep only genuine Secret Twists
+          try {
+            const raw = p.json_metadata;
+            const meta = raw
+              ? (typeof raw === "string" ? JSON.parse(raw) : raw)
+              : {};
+            return meta.type === "secret_twist";
+          } catch { return false; }
+        })
+        .sort((a, b) => steemDate(b.created) - steemDate(a.created))
     );
-    return enriched
-      .filter(p => p && p.author)
-      .sort((a, b) => steemDate(b.created) - steemDate(a.created));
-  });
 }
