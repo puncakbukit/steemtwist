@@ -387,21 +387,13 @@ const ProfileView = {
       <template v-else>
         <!-- Show profile header only when viewing someone else's profile.
              The logged-in user's own header is already in the global banner. -->
+        <!-- Profile card — always shown (own profile or other) -->
         <user-profile-component
-          v-if="$route.params.user !== username"
           :profile-data="profileData"
+          :twist-count="userTwists.length"
         ></user-profile-component>
 
-        <div style="margin-top:20px;">
-          <!-- Social links row -->
-          <div style="max-width:600px;margin:0 auto 10px;display:flex;gap:8px;flex-wrap:wrap;">
-            <a
-              :href="'#/@' + $route.params.user + '/social'"
-              style="font-size:13px;color:#a855f7;text-decoration:none;
-                     background:#1e1535;border:1px solid #2e2050;border-radius:20px;
-                     padding:3px 12px;"
-            >👥 Followers / Following / Friends</a>
-          </div>
+        <div style="margin-top:12px;">
 
           <div style="
             max-width:600px;margin:0 auto 12px;

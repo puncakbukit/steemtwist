@@ -119,42 +119,156 @@ const AuthComponent = {
 };
 
 // ---- UserProfileComponent ----
-// Displays a Steem account's cover image, avatar, display name, and bio.
-// Pass a pre-fetched `profileData` object (from fetchAccount) as a prop.
+// Rich profile card: cover, avatar, display name, reputation, bio,
+// stats row (followers, following, posts), location, website, join date.
+// Receives the enriched profileData object from fetchAccount.
 const UserProfileComponent = {
   name: "UserProfileComponent",
   props: {
-    profileData: Object   // { username, profileImage, displayName, about, coverImage }
+    profileData: Object,
+    // Optional: pass twist count from the parent view
+    twistCount:  { type: Number, default: null }
+  },
+  computed: {
+    joinDate() {
+      if (!this.profileData?.created) return "";
+      const d = new Date(this.profileData.created + "Z");
+      return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    },
+    safeWebsite() {
+      const url = this.profileData?.website || "";
+      try {
+        const u = new URL(url.startsWith("http") ? url : "https://" + url);
+        return u.protocol === "https:" || u.protocol === "http:" ? u.href : "";
+      } catch { return ""; }
+    },
+    websiteLabel() {
+      try {
+        return new URL(this.safeWebsite).hostname.replace(/^www\./, "");
+      } catch { return this.profileData?.website || ""; }
+    },
+    socialUrl() {
+      return `#/@${this.profileData?.username}/social`;
+    }
   },
   methods: {
-    safeUrl(url) {
+    safeAvatarUrl(username) {
+      return `https://steemitimages.com/u/${username}/avatar`;
+    },
+    safeCoverStyle() {
+      const url = this.profileData?.coverImage || "";
       try {
         const u = new URL(url);
-        return u.protocol === "https:" ? url : "";
-      } catch { return ""; }
+        if (u.protocol === "https:") {
+          return `url(${url})`;
+        }
+      } catch {}
+      return "linear-gradient(135deg,#1a3af5 0%,#8b2fc9 55%,#e0187a 100%)";
     }
   },
   template: `
-    <div v-if="profileData">
-      <!-- Cover image — falls back to @steemtwist gradient cover -->
+    <div v-if="profileData" style="max-width:600px;margin:0 auto 16px;">
+
+      <!-- Cover image -->
       <div :style="{
-        backgroundImage: safeUrl(profileData.coverImage)
-          ? 'url(' + safeUrl(profileData.coverImage) + ')'
-          : 'linear-gradient(135deg,#1a3af5 0%,#8b2fc9 55%,#e0187a 100%)',
+        backgroundImage: safeCoverStyle(),
         backgroundSize: 'cover', backgroundPosition: 'center',
-        height: '150px', borderRadius: '10px'
+        height: '140px', borderRadius: '12px 12px 0 0'
       }"></div>
-      <!-- Avatar + info -->
-      <div style="display:flex;align-items:center;margin-top:-40px;padding:10px;">
-        <img
-          :src="safeUrl(profileData.profileImage) || 'https://steemitimages.com/u/steemtwist/avatar'"
-          style="width:80px;height:80px;border-radius:50%;border:3px solid #1a1030;background:#1a1030;"
-        />
-        <div style="margin-left:15px;">
-          <h2 style="margin:0;color:#e8e0f0;">{{ profileData.displayName }}</h2>
-          <small style="color:#9b8db0;">@{{ profileData.username }}</small>
-          <p style="margin:5px 0;color:#9b8db0;">{{ profileData.about }}</p>
+
+      <!-- Card body -->
+      <div style="
+        background:#1e1535;border:1px solid #2e2050;border-top:none;
+        border-radius:0 0 12px 12px;padding:0 16px 16px;
+      ">
+        <!-- Avatar row -->
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:-36px;margin-bottom:12px;">
+          <img
+            :src="safeAvatarUrl(profileData.username)"
+            style="width:72px;height:72px;border-radius:50%;border:3px solid #1e1535;background:#1e1535;flex-shrink:0;"
+            @error="$event.target.src='https://steemitimages.com/u/guest/avatar'"
+          />
+          <!-- Reputation badge -->
+          <div style="
+            background:linear-gradient(135deg,#8b2fc9,#e0187a);
+            color:#fff;font-size:12px;font-weight:700;
+            padding:3px 10px;border-radius:20px;margin-bottom:4px;
+          " title="Steem reputation score">
+            ⭐ {{ profileData.reputation }}
+          </div>
         </div>
+
+        <!-- Name + username -->
+        <div style="margin-bottom:8px;">
+          <div style="font-size:18px;font-weight:700;color:#e8e0f0;">{{ profileData.displayName }}</div>
+          <div style="font-size:13px;color:#a855f7;">@{{ profileData.username }}</div>
+        </div>
+
+        <!-- Bio -->
+        <div v-if="profileData.about" style="
+          font-size:14px;color:#c0b0e0;line-height:1.5;margin-bottom:12px;
+        ">{{ profileData.about }}</div>
+
+        <!-- Meta row: location, website, joined -->
+        <div style="display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:#9b8db0;margin-bottom:14px;">
+          <span v-if="profileData.location">
+            📍 {{ profileData.location }}
+          </span>
+          <a
+            v-if="safeWebsite"
+            :href="safeWebsite"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="color:#22d3ee;text-decoration:none;"
+          >🔗 {{ websiteLabel }}</a>
+          <span v-if="joinDate">
+            📅 Joined {{ joinDate }}
+          </span>
+        </div>
+
+        <!-- Stats row -->
+        <div style="
+          display:flex;gap:0;border:1px solid #2e2050;border-radius:10px;
+          overflow:hidden;text-align:center;
+        ">
+          <a
+            :href="socialUrl + '?tab=followers'"
+            style="flex:1;padding:10px 4px;text-decoration:none;border-right:1px solid #2e2050;
+                   transition:background 0.15s;"
+            @mouseenter="$event.currentTarget.style.background='#2e2050'"
+            @mouseleave="$event.currentTarget.style.background=''"
+          >
+            <div style="font-size:16px;font-weight:700;color:#e8e0f0;">
+              {{ profileData.followerCount !== null ? profileData.followerCount.toLocaleString() : '—' }}
+            </div>
+            <div style="font-size:11px;color:#9b8db0;margin-top:2px;">Followers</div>
+          </a>
+          <a
+            :href="socialUrl + '?tab=following'"
+            style="flex:1;padding:10px 4px;text-decoration:none;border-right:1px solid #2e2050;
+                   transition:background 0.15s;"
+            @mouseenter="$event.currentTarget.style.background='#2e2050'"
+            @mouseleave="$event.currentTarget.style.background=''"
+          >
+            <div style="font-size:16px;font-weight:700;color:#e8e0f0;">
+              {{ profileData.followingCount !== null ? profileData.followingCount.toLocaleString() : '—' }}
+            </div>
+            <div style="font-size:11px;color:#9b8db0;margin-top:2px;">Following</div>
+          </a>
+          <div style="flex:1;padding:10px 4px;">
+            <div style="font-size:16px;font-weight:700;color:#e8e0f0;">
+              {{ profileData.postCount.toLocaleString() }}
+            </div>
+            <div style="font-size:11px;color:#9b8db0;margin-top:2px;">Posts</div>
+          </div>
+          <div v-if="twistCount !== null" style="flex:1;padding:10px 4px;border-left:1px solid #2e2050;">
+            <div style="font-size:16px;font-weight:700;color:#e8e0f0;">
+              {{ twistCount.toLocaleString() }}
+            </div>
+            <div style="font-size:11px;color:#9b8db0;margin-top:2px;">Twists</div>
+          </div>
+        </div>
+
       </div>
     </div>
   `

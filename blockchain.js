@@ -61,12 +61,35 @@ function fetchAccount(username) {
           account.posting_json_metadata || account.json_metadata
         ).profile || {};
       } catch {}
-      resolve({
-        username: account.name,
-        profileImage: profile.profile_image || "",
-        displayName: profile.name || account.name,
-        about: profile.about || "",
-        coverImage: profile.cover_image || ""
+
+      // Steem reputation is a raw int — convert to the familiar 1-100 scale
+      // using the same formula Steemit uses.
+      function calcReputation(raw) {
+        if (!raw || raw === 0) return 25;
+        const neg = raw < 0;
+        let r = Math.log10(Math.abs(raw));
+        r = Math.max(r - 9, 0);
+        r = (neg ? -1 : 1) * r;
+        r = r * 9 + 25;
+        return Math.floor(r);
+      }
+
+      // Fetch follower/following counts in parallel with account data
+      steem.api.getFollowCount(account.name, (fcErr, fc) => {
+        resolve({
+          username:       account.name,
+          profileImage:   profile.profile_image || "",
+          displayName:    profile.name || account.name,
+          about:          profile.about || "",
+          coverImage:     profile.cover_image || "",
+          location:       profile.location || "",
+          website:        profile.website || "",
+          reputation:     calcReputation(parseInt(account.reputation || 0)),
+          postCount:      account.post_count || 0,
+          followerCount:  (fc && !fcErr) ? (fc.follower_count  || 0) : null,
+          followingCount: (fc && !fcErr) ? (fc.following_count || 0) : null,
+          created:        account.created || ""
+        });
       });
     });
   });
