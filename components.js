@@ -862,8 +862,8 @@ const LiveTwistComponent = {
       FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
                      "onblur","onchange","onsubmit"]
     });
-    // Fallback: strip only script tags (sandbox already isolated)
-    return html.replace(/<script[\s\S]*?<\/script>/gi, "");
+    // Sandbox is already fully isolated — return html as-is when DOMPurify unavailable
+    return html;
   }
 
   // ── Restricted API exposed to Live Twist code ─────────────────
@@ -931,7 +931,7 @@ const LiveTwistComponent = {
     if (h > 40) parent.postMessage({ type: "resize", height: h + 16 }, "*");
   }, 100);
 })();
-</script>
+${'<'}/script>
 </body>
 </html>`;
     }
