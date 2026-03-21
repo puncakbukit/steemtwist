@@ -15,23 +15,22 @@ Just as a Hive user is a *Hiver* and a YouTube creator is a *YouTuber*, every pe
 
 ## Vocabulary
 
-SteemTwist uses its own vocabulary. The blockchain object names are never shown in the UI.
+SteemTwist uses its own vocabulary. The underlying blockchain object names are never shown in the UI.
 
 | Concept | SteemTwist term | Icon |
 |---|---|---|
 | SteemTwist user | **Twister** | 🌀 |
-| Root monthly post | Feed root | — |
+| Monthly root post | Feed root / Secret root | — |
 | Comment reply | **Twist** | 🌀 |
-| Reply to twist | **Thread Reply** | 💬 |
+| Reply to a twist | **Thread Reply** | 💬 |
 | Comment tree | Thread | — |
 | Upvote | **Twist Love** | ❤️ |
 | Resteem | **Retwist** | 🔁 |
-| Timeline | **Twist Stream** | — |
+| Personalised timeline | **Home** | 🏠 |
+| Global timeline | **Explore** | 🔭 |
 | Notifications | **Signals** | 🔔 |
 | Encrypted private message | **Secret Twist** | 🔒 |
 | Private inbox | **Private Signals** | 🔒 |
-| Mention | Mention | 📣 |
-| Follow | Follow | 👤 |
 
 ---
 
@@ -49,95 +48,154 @@ Every twist is a Steem blockchain **comment** posted as a reply under a shared m
 
 @steemtwist/secret-2026-03             ← monthly secret root
 ├── @alice/st-20260315-091530-alice     ← Secret Twist to @bob
+│   └── @bob/st-20260315-110000-bob    ← encrypted reply
 └── @bob/st-20260315-102244-bob        ← Secret Twist to @alice
-    └── @alice/st-20260315-150012-alice ← encrypted reply
 ```
 
-**Twist permlink format:** `tw-YYYYMMDD-HHMMSS-username` (UTC)
-
-**Secret Twist permlink format:** `st-YYYYMMDD-HHMMSS-username` (UTC)
-
-**Monthly feed root format:** `feed-YYYY-MM`
-
-**Monthly secret root format:** `secret-YYYY-MM`
+**Twist permlink:** `tw-YYYYMMDD-HHMMSS-username`
+**Secret Twist permlink:** `st-YYYYMMDD-HHMMSS-username`
+**Monthly feed root:** `feed-YYYY-MM`
+**Monthly secret root:** `secret-YYYY-MM`
 
 ---
 
 ## Features
 
-- 📝 Post twists up to 280 characters
-- 💬 Thread replies — reply to any twist inline; reply to replies recursively; auto-expanded two levels deep
-- ❤️ Twist Love — upvote any twist or reply
-- 🔁 Retwist — resteem any other Twister's twist
-- 📌 Pin — pin one of your own twists to the top of your profile and the home feed
-- 🔀 Sort feed by **New**, **Hot** (time-decayed votes), or **Top** (pure vote weight)
-- 🔥 Firehose — streams live twists and votes in real time without polling
-- 📖 Thread expansion — long twists and busy threads collapse to a 280-char preview; click to expand
-- 🧵 Twist page — dedicated permalink page for every twist, with a quoted parent snippet when it is a reply
-- 👤 Profile pages — cover image, avatar, bio, and monthly twist history per Twister
-- 👥 Social pages — Followers, Following, and Friends (mutual follows) for any Twister
-- 🔔 Signals — notification feed showing Twist Love, Thread Replies, Mentions, Follows, and Retwists; read/unread tracking; All / Unread filter tabs
-- 🔒 Secret Twists — end-to-end encrypted private messages between Twisters; unlimited length; nested encrypted replies; uses Steem's native memo-key scheme via Keychain
-- 🌊 Understream — toggle between **Twist Stream** (SteemTwist-only data) and **Understream** (full Steem data) on Home, Profile, and Signals pages
-- 🔄 RPC fallback across four nodes
-- 🔒 Read-only mode when Steem Keychain is not installed
-- ⚠️ Blockchain error messages surfaced on failed transactions
+- 🏠 **Home feed** — personalised stream of twists from Twisters you follow; Understream and Firehose supported
+- 🔭 **Explore feed** — global Twist Stream of all twists this month; sort by New / Hot / Top; Firehose live stream; Understream toggle
+- 📝 **Post twists** up to 280 characters
+- 💬 **Thread replies** — reply to any twist inline; reply to replies recursively; auto-expanded two levels deep
+- ✏️ **Edit** — re-broadcast a twist or reply with updated body; reflected immediately without reload
+- 🗑️ **Delete** — true `delete_comment` for posts with no votes/replies; body-blank fallback otherwise; card removed from feed instantly
+- ❤️ **Twist Love** — upvote any twist or reply
+- 🔁 **Retwist** — resteem any other Twister's twist
+- 👤 **Follow / Unfollow** — follow or unfollow any Twister directly from the Social page
+- 📌 **Pin** — pin one of your own twists to the top of your profile
+- 🔀 **Sort** — New (chronological) / Hot (time-decayed votes) / Top (pure vote weight)
+- 🔥 **Firehose** — streams live twists and votes in real time without polling; Home Firehose filtered to followed Twisters only
+- 🌊 **Understream** — toggle between Twist Stream and full Steem data on Home, Explore, Profile, and Signals
+- 👤 **Rich profile pages** — cover image (shown globally in header), avatar, reputation score, bio, location, website, join date, stats (followers, following, posts, twists this month)
+- 👥 **Social pages** — paginated Followers / Following / Friends tabs; Follow button on each row; Friends computed on demand
+- 🔔 **Signals** — notifications for Twist Love, Thread Replies, Mentions, Follows, Retwists, and Secret Twists; read/unread tracking; All / Unread tabs
+- 🔒 **Secret Twists** — end-to-end encrypted private messages; unlimited length; nested encrypted replies; only recipient can reply (not sender); uses Steem memo-key scheme via Keychain
+- 🔄 **RPC fallback** across four nodes
+- 🔒 **Read-only mode** when Steem Keychain is not installed
 
 ---
 
-## Twist Stream vs Understream
+## Twist Stream vs Understream 🌊
 
-SteemTwist has two data modes, switchable via the 🌊 toggle. The preference is persisted in `localStorage`.
+A global toggle (persisted in `localStorage`) switches between two data modes.
 
 | Page | Twist Stream (OFF) | Understream (ON) |
 |---|---|---|
-| **Home** | `getContentReplies` on monthly root — SteemTwist twists only | `getDiscussionsByCreated` for tag `steemtwist` — any Steem post using the tag |
-| **Profile** | Account history scan for `tw-` permlinks this month | `getDiscussionsByBlog` — full Steem blog (all post types) |
-| **Signals** | Only signals where `permlink` starts with `tw-` (plus follows) | All Steem activity — votes, replies, mentions on any post |
+| **Home** | `fetchTwistsByUser` per followed Twister (tw- permlinks this month) | `fetchPostsByUser` per followed Twister (full Steem blog) |
+| **Explore** | `fetchTwistFeed` on monthly root | `fetchRecentPosts` — all recent Steem posts regardless of tag |
+| **Profile** | `fetchTwistsByUser` (tw- this month) | `fetchPostsByUser` (full blog, 50 posts) |
+| **Signals** | Only signals where permlink starts with `tw-` (plus follows) | All Steem account history ops |
+
+---
+
+## Home vs Explore
+
+| | Home 🏠 | Explore 🔭 |
+|---|---|---|
+| **Route** | `/` | `/explore` |
+| **Content** | Twists from followed Twisters only | All twists from all Twisters this month |
+| **Firehose** | ✅ filtered to followed Twisters | ✅ all Twisters |
+| **Understream** | ✅ full blogs of followed Twisters | ✅ all recent Steem posts |
+| **Pinned twist** | — | — |
+| **Composer** | ✅ | ✅ |
+| **Logged-out** | Welcome card + link to Explore | Full feed visible |
 
 ---
 
 ## Secret Twists
 
-Secret Twists are end-to-end encrypted private messages between Twisters. They use Steem's native memo-key encryption scheme via Keychain — no servers, no key exchange, no coordination required.
+End-to-end encrypted private messages between two Twisters using Steem's native memo-key scheme via Keychain.
 
 ### Architecture
 
 ```
-Twister A composes a secret message
+Sender composes message
    ↓
-requestEncodeMessage (Keychain) — encrypts with A's memo key + B's memo public key
+requestEncodeMessage (Keychain) — encrypts with sender memo key + recipient memo public key
    ↓
 Broadcast: reply to @steemtwist/secret-YYYY-MM
-   body: "@bob [encrypted]"   ← mention triggers Signals 🔔
-   json_metadata: { type: "secret_twist", to: "bob", payload: "#<encoded>" }
+   body: "@recipient [encrypted]"  ← triggers Signals 🔔
+   json_metadata: { type:"secret_twist", to:"recipient", payload:"#<encoded>" }
    ↓
-Twister B sees 🔒 signal in Signals feed
+Recipient sees 🔒 signal in Signals feed
    ↓
-requestVerifyKey (Keychain) — decrypts with B's memo key
+requestVerifyKey (Keychain) — decrypts with recipient memo key
    ↓
-🔒 Secret message revealed
+Message revealed
 ```
 
-### Key design properties
+### Key properties
 
-- **Rootless structure** — Secret Twists reply to `@steemtwist/secret-YYYY-MM`, keeping them off Steemit's regular post view and out of the public feed
-- **Discovery** — the mention `@recipient [encrypted]` in the post body surfaces in the recipient's Signals feed
-- **Unlimited length** — no artificial character limit; the blockchain's ~65 KB post size is the only cap
-- **Nested encrypted replies** — replies to Secret Twists are themselves Secret Twists, using Steem's native comment nesting; each reply is individually encrypted and decrypted on demand
-- **Reply direction** — only the recipient (non-author) of a Secret Twist can reply; you cannot reply to your own message
-
-### Important tradeoffs
-
-Secret Twists provide **content privacy**, not communication anonymity:
-
-- The sender, recipient, and timestamp are visible on the public blockchain
-- The message body is encrypted and unreadable without the memo key
-- Keychain handles encryption/decryption — the private key never leaves the browser extension
+- **Anchored to secret monthly root** — replies to `@steemtwist/secret-YYYY-MM`, not visible in the regular feed or on Steemit's post view
+- **Unlimited length** — no character cap; blockchain ~65 KB limit applies
+- **Nested encrypted replies** — replies are themselves Secret Twists under the parent comment; each decrypted individually on demand
+- **One-way reply rule** — only the recipient (non-author) of a Secret Twist can reply; prevents replying to your own message
+- **Content private, metadata public** — sender, recipient, and timestamp are visible on-chain; body is unreadable without the memo key
 
 ### Monthly secret root
 
-`@steemtwist` must publish a new `secret-YYYY-MM` root post at the start of each month before Secret Twists can be sent. See Setup section below.
+`@steemtwist` must publish a new `secret-YYYY-MM` root post at the start of each month.
+
+---
+
+## Edit and Delete
+
+Both twists and thread replies support editing and deletion for the author.
+
+**Edit (✏️):** Re-broadcasts the `comment` op with updated body and the same permlink. The chain overwrites the post. The card re-renders immediately from local state without a feed reload.
+
+**Delete (🗑️):** Two paths depending on post activity:
+- **True delete** — `delete_comment` op if `net_votes === 0` and `children === 0`. Permanently removes the post from the chain.
+- **Body-blank fallback** — if the post has votes or replies, overwrites body with `<deleted>` (the Steemit UX convention). The post still exists on-chain.
+
+In both cases the card is removed from the feed immediately via the `@deleted` event.
+
+---
+
+## Follow / Unfollow
+
+Twisters can follow or unfollow directly from the Social page (Followers, Following, and Friends tabs). The Follow button shows the current state and updates optimistically on click using Steem's `follow` plugin `custom_json` operation.
+
+---
+
+## Profile page
+
+Each Twister's profile shows a rich card:
+
+| Field | Source |
+|---|---|
+| Avatar | Steemit CDN |
+| Display name | `posting_json_metadata.profile.name` |
+| @username | `account.name` |
+| ⭐ Reputation | `account.reputation` (converted to 1–100 scale) |
+| Bio | `profile.about` |
+| 📍 Location | `profile.location` |
+| 🔗 Website | `profile.website` (sanitised, opens in new tab) |
+| 📅 Joined | `account.created` |
+| Followers | `getFollowCount` |
+| Following | `getFollowCount` |
+| Posts | `account.post_count` |
+| Twists | Count of loaded twists (this month or full blog) |
+
+The cover image is displayed globally in the site header and is not repeated on the profile card.
+
+---
+
+## Social page — pagination
+
+Followers and Following lists load **50 users at a time** for instant rendering. A "Load more" button appends the next page. Profile enrichment (display name, bio) is fetched per page in batches of 50.
+
+**Friends tab** is computed lazily — clicking it fetches the full followers and following lists and computes the intersection client-side. Result is cached for the session.
+
+**Tab counts** show e.g. `Followers (50+)` while more pages remain, and exact counts once fully loaded.
 
 ---
 
@@ -163,197 +221,167 @@ steemtwist/
 ├── index.html       # HTML shell — loads CDN scripts and mounts #app
 ├── blockchain.js    # All Steem API and Keychain helpers (no Vue)
 ├── components.js    # Reusable Vue 3 components
-└── app.js           # Vue app entry point — views, router, root App
+└── app.js           # Vue app — views, router, root App
 ```
 
 ---
 
-### `blockchain.js`
+## `blockchain.js`
 
-Pure async helpers with no Vue or DOM dependencies.
+### RPC & fallback
+- `setRPC(index)` — switch active node
+- `callWithFallback / callWithFallbackAsync` — retry across node list
 
-**RPC & fallback**
-- `setRPC(index)` — switch active RPC node
-- `callWithFallback(...)` — retries across the node list on error
-- `callWithFallbackAsync(...)` — Promise wrapper for the above
+### Account
+- `fetchAccount(username)` — returns full profile object including reputation (1–100 scale), follower/following counts, location, website, join date
 
-**Account**
-- `fetchAccount(username)` — returns `{ username, profileImage, displayName, about, coverImage }`
+### Posts
+- `fetchPost(author, permlink)` — single post; always returns populated `active_votes`
+- `fetchReplies(author, permlink)` — direct replies; `active_votes` always empty — enrich with `fetchPost`
+- `fetchRecentPosts(limit)` — all recent Steem posts via `getDiscussionsByCreated` with no tag filter; used by Explore Understream
+- `fetchPostsByTag(tag, limit)` — recent posts by tag
+- `fetchPostsByUser(username, limit)` — recent posts from a Twister's blog; used by Profile/Home Understream
 
-**Posts**
-- `fetchPost(author, permlink)` — single post via `getContent`; always returns populated `active_votes`
-- `fetchReplies(author, permlink)` — direct replies via `getContentReplies`; `active_votes` is always empty — callers must enrich with `fetchPost` per reply for correct vote counts
-- `fetchPostsByTag(tag, limit)` — recent posts by tag via `getDiscussionsByCreated`; used by HomeView Understream mode
-- `fetchPostsByUser(username, limit)` — recent posts from a Twister's blog via `getDiscussionsByBlog`; used by ProfileView Understream mode
+### SteemTwist feed
+- `TWIST_CONFIG` — `ROOT_ACCOUNT`, `ROOT_PREFIX`, `SECRET_ROOT_PREFIX`, `TAG`, `POST_PREFIX`, `TAGS`, `DAPP_URL`
+- `getMonthlyRoot()` → `feed-YYYY-MM`
+- `getSecretMonthlyRoot()` → `secret-YYYY-MM`
+- `generateTwistPermlink(username)` → `tw-YYYYMMDD-HHMMSS-username`
+- `generateSecretTwistPermlink(username)` → `st-YYYYMMDD-HHMMSS-username`
+- `fetchTwistFeed(monthlyRoot)` — all twists via `getContentReplies` + parallel `fetchPost` enrichment
+- `fetchTwistsByUser(username, monthlyRoot)` — account history scan; stops at month boundary
+- `buildZeroPayoutOps(...)` — builds `[comment, comment_options]` with payouts disabled
+- `postTwist(username, message, callback)` — post new twist
+- `postTwistReply(username, message, parentAuthor, parentPermlink, callback)` — post thread reply
+- `voteTwist(voter, author, permlink, weight, callback)` — upvote
+- `retwistPost(username, author, permlink, callback)` — resteem via `custom_json`
+- `followUser(follower, following, callback)` — follow via `custom_json` follow plugin (`what: ["blog"]`)
+- `unfollowUser(follower, following, callback)` — unfollow (`what: []`)
+- `editTwist(username, post, newBody, callback)` — re-broadcast `comment` op with updated body
+- `deleteTwist(username, post, callback)` — `delete_comment` if no activity; body-blank fallback otherwise; `res._deleted` indicates which path was taken
 
-**SteemTwist feed**
-- `TWIST_CONFIG` — central config: `ROOT_ACCOUNT`, `ROOT_PREFIX`, `SECRET_ROOT_PREFIX`, `TAG`, `POST_PREFIX`, `TAGS`, `DAPP_URL`
-- `getMonthlyRoot()` → e.g. `feed-2026-03` (UTC)
-- `getSecretMonthlyRoot()` → e.g. `secret-2026-03` (UTC)
-- `generateTwistPermlink(username)` → e.g. `tw-20260315-091530-alice`
-- `generateSecretTwistPermlink(username)` → e.g. `st-20260315-091530-alice`
-- `fetchTwistFeed(monthlyRoot)` — fetches the month's twists via `getContentReplies` on the monthly root; enriches each in parallel with `fetchPost` (required: `getContentReplies` always returns empty `active_votes`)
-- `fetchTwistsByUser(username, monthlyRoot)` — scans account history backwards in batches of 100; keeps only `comment` ops where `author === username` and `permlink` starts with `tw-`; stops at the month boundary
-- `buildZeroPayoutOps(...)` — builds a `[comment, comment_options]` pair with `max_accepted_payout = "0.000 SBD"` and `allow_votes = true`; appends a `Posted via SteemTwist` back-link to the body
-- `postTwist(username, message, callback)` — broadcasts comment + comment_options atomically
-- `postTwistReply(username, message, parentAuthor, parentPermlink, callback)` — same, for thread replies
-- `voteTwist(voter, author, permlink, weight, callback)` — upvote via Keychain
-- `retwistPost(username, author, permlink, callback)` — resteem via `custom_json` under the `follow` plugin
+### Sorting & ranking
+- `sortTwists(posts, mode)` — new / hot (Hacker News gravity) / top
 
-**Sorting**
-- `sortTwists(posts, mode)` — new (chronological) / hot (Hacker News gravity) / top (pure vote weight)
+### Firehose
+- `startFirehose(monthlyRoot, onTwist, onVote)` — live stream; returns `{ stop() }`
 
-**Firehose**
-- `startFirehose(monthlyRoot, onTwist, onVote)` — streams live blockchain ops; returns `{ stop() }`
+### Pin
+- `pinTwist / unpinTwist` — `custom_json` pin ops
+- `fetchPinnedTwist(username)` — scans history (max 500); localStorage cache (5-min TTL)
+- `setPinCache / clearPinCache / getPinCache`
 
-**Pin / Unpin**
-- `pinTwist(username, author, permlink, callback)` — broadcasts `{ action: "pin" }` as `custom_json`
-- `unpinTwist(username, callback)` — broadcasts `{ action: "unpin" }`
-- `fetchPinnedTwist(username)` — scans account history (max 500 entries); checks localStorage cache first (TTL 5 min)
-- `setPinCache / clearPinCache / getPinCache` — localStorage bridge for broadcast-to-indexing delay
+### Signals
+- `classifySignalEntry(seqNum, item, username)` → `love | reply | mention | follow | retwist | secret_twist`
+- `fetchSignals(username)` — latest 500 history entries
+- `stripSignalBody(body)` — one-line preview
 
-**Signals**
-- `classifySignalEntry(seqNum, item, username)` — classifies one history entry into a signal type:
-  `love` / `reply` / `mention` / `follow` / `retwist` / `secret_twist`
-- `fetchSignals(username)` — scans latest 500 history entries; returns signals sorted newest-first
-- `stripSignalBody(body)` — strips back-links, HTML, and markdown for one-line previews
+### Follow lists
+- `fetchFollowersPage(username, startFrom, limit)` → `{ users, nextCursor, hasMore }` — single page
+- `fetchFollowingPage(username, startFrom, limit)` → `{ users, nextCursor, hasMore }` — single page
+- `fetchFollowers(username)` → `string[]` — full list (used for Friends and myFollowing)
+- `fetchFollowing(username)` → `string[]` — full list
 
-**Follow**
-- `fetchFollowers(username)` — all followers via `getFollowers` (cursor-based, up to 1000 per page)
-- `fetchFollowing(username)` — all following via `getFollowing`
-
-**Secret Twists**
-- `sendSecretTwist(sender, recipient, message, callback)` — encrypts via `requestEncodeMessage("Memo")`, then broadcasts as a reply to `@steemtwist/secret-YYYY-MM` with `json_metadata: { type: "secret_twist", to, version, payload }`
-- `replySecretTwist(sender, recipient, message, parentAuthor, parentPermlink, callback)` — same encryption flow, broadcast as a nested Steem comment under the parent Secret Twist
-- `decryptSecretTwist(recipient, sender, encodedPayload, callback)` — decrypts via `requestVerifyKey("Memo")`
-- `fetchSecretTwists(username)` — fetches all replies to `@steemtwist/secret-YYYY-MM` via `getContentReplies`, enriches with `fetchPost`, filters to `meta.type === "secret_twist"`; does NOT use account history (mentions by other Twisters do not appear in the recipient's history)
-
-**Keychain**
-- `keychainLogin(username, callback)` — sign-buffer login flow
-
-**Utilities**
-- `steemDate(ts)` — appends `Z` for correct UTC parsing
-- `stripBackLink(text)` — removes `Posted via SteemTwist` footer before rendering
+### Secret Twists
+- `sendSecretTwist(sender, recipient, message, callback)` — encrypt + broadcast to secret monthly root
+- `replySecretTwist(sender, recipient, message, parentAuthor, parentPermlink, callback)` — encrypted nested reply
+- `decryptSecretTwist(recipient, sender, encodedPayload, callback)` — `requestVerifyKey("Memo")`
+- `fetchSecretTwists(username)` — `getContentReplies` on secret monthly root, filtered to `meta.type === "secret_twist"`
 
 ---
 
-## Data source architecture
+## `components.js`
 
-| Context | API | Note |
-|---|---|---|
-| Home — Twist Stream | `getContentReplies` on monthly root + `fetchPost` per twist | Enrichment required: `getContentReplies` always returns empty `active_votes` |
-| Home — Understream | `getDiscussionsByCreated` for tag `steemtwist` | Any Steem post tagged `steemtwist` |
-| Profile — Twist Stream | `getAccountHistory` + author/permlink filter + `fetchPost` | Stops at month boundary |
-| Profile — Understream | `getDiscussionsByBlog` | Full blog; up to 50 most recent posts |
-| Reply threads | `getContentReplies` + `fetchPost` per reply | Same `active_votes` enrichment needed |
-| Pinned twist | `getAccountHistory` (max 500) + localStorage cache | Cache bridges broadcast delay (5-min TTL) |
-| Signals — Twist Stream | `getAccountHistory` filtered to `tw-` permlinks | vote / comment / follow / reblog ops |
-| Signals — Understream | `getAccountHistory` unfiltered | All Steem activity |
-| Followers / Following | `getFollowers` / `getFollowing` | Cursor-based; pages until < 1000 returned |
-| Friends | client-side `followers ∩ following` | No extra API call |
-| Secret Twists | `getContentReplies` on secret monthly root + `fetchPost` | Filtered to `meta.type === "secret_twist"` |
-| Real-time | `streamOperations` (firehose) | New block every ~3 s |
+- `AppNotificationComponent` — toast; auto-dismiss 3.5 s for non-errors
+- `AuthComponent` — Keychain login / logout
+- `UserProfileComponent` — profile card: avatar, reputation badge, display name, bio, meta row (location, website, joined), stats grid (Followers / Following / Posts / Twists); no cover image (shown in global header)
+- `LoadingSpinnerComponent` — animated spinner
+- `ReplyCardComponent` — single reply: Love / Retwist / Reply / ✏️ Edit / 🗑️ Delete (own replies only); auto-expands children at depth 0–1; inline edit box; inline delete confirmation
+- `ThreadComponent` — lazy-loads replies; enriches `active_votes` via `fetchPost`
+- `TwistCardComponent` — full twist card: action bar (Love / Retwist / Reply / 🔗 / 📌 / ✏️ Edit / 🗑️ Delete); edit and delete own posts only; inline edit box; inline delete confirmation; emits `deleted` for parent list removal; `editedBody` local override after edit
+- `TwistComposerComponent` — 280-char composer
+- `SignalItemComponent` — signal row: icon, label, body preview, timestamp, view link
+- `UserRowComponent` — compact Twister row with optional Follow / Following button (shown when `loggedInUser` is set and differs from the row's user)
+- `SecretTwistComposerComponent` — unlimited textarea, recipient field, `Send 🔒`
+- `SecretTwistCardComponent` — locked card; Decrypt via `requestVerifyKey`; Reply button shown only after decrypt and only to non-author; recursive nested replies via self-referencing `SecretTwistCardComponent`
 
 ---
 
-### `components.js`
+## `app.js`
 
-Reusable Vue 3 components.
-
-- `AppNotificationComponent` — toast bar; auto-dismisses non-errors after 3.5 s
-- `AuthComponent` — Keychain login input and logout button
-- `UserProfileComponent` — cover image, avatar, display name, and bio
-- `LoadingSpinnerComponent` — animated spinner with message
-- `ReplyCardComponent` — single reply with Love, Retwist, and Reply actions; auto-expands children at depth 0 and 1
-- `ThreadComponent` — lazy-loads direct replies; enriches `active_votes` via parallel `fetchPost`; renders as `ReplyCardComponent`; used recursively
-- `TwistCardComponent` — renders one twist; action bar (Love / Retwist / Reply / Pin / Permalink) always sits below the body; 📌 pin button for own posts only; Secret Twists surfaced in the feed are redacted to `🔒 Secret Twist — view in Private Signals`
-- `TwistComposerComponent` — 280-char textarea with counter and post button (Ctrl+Enter)
-- `SignalItemComponent` — signal row: actor avatar, type icon (`❤️ 💬 📣 👤 🔁 🔒`), label, body preview, timestamp, "View →" link; unread dot on left border
-- `UserRowComponent` — compact Twister row: avatar, display name, `@username`, bio; full row is a link to `#/@username`
-- `SecretTwistComposerComponent` — Secret Twist composer: recipient `@` field, unlimited textarea (no character cap), `Send 🔒` button (Ctrl+Enter)
-- `SecretTwistCardComponent` — Secret Twist card; shows locked state to non-participants; Decrypt button via `requestVerifyKey`; Reply button shown only after decrypt and only to the non-author (recipient) to prevent replying to your own message; nested encrypted replies rendered recursively via self-referencing `SecretTwistCardComponent` instances
-
-**Thread expansion constants**
-
-| Constant | Default | Meaning |
-|---|---|---|
-| `PREVIEW_LENGTH` | `280` | Twist body chars before collapse triggers |
-| `THREAD_REPLY_THRESHOLD` | `3` | Reply count before collapse triggers |
-
----
-
-### `app.js`
-
-Vue Router views and root App shell.
-
-**Routes**
+### Routes
 
 | Route | View | Description |
 |---|---|---|
-| `/` | `HomeView` | Feed + composer; sort tabs; firehose; pinned twist; 🌊 toggle |
-| `/signals` | `SignalsView` | Signals feed; All / Unread tabs; 🌊 toggle; marks all read on open |
-| `/secret-twists` | `SecretTwistView` | Private inbox: Inbox / Sent / Compose tabs |
-| `/about` | `AboutView` | Renders `README.md` via marked.js |
-| `/@:user/social` | `SocialView` | Followers / Following / Friends tabs |
-| `/@:user/:permlink` | `TwistView` | Single twist permalink; parent context for replies |
-| `/@:user` | `ProfileView` | Profile; social link; pinned twist; post list; 🌊 toggle |
+| `/` | `HomeView` | Personalised feed — followed Twisters only |
+| `/explore` | `ExploreView` | Global Twist Stream — all Twisters |
+| `/signals` | `SignalsView` | Signals feed; marks read on open |
+| `/secret-twists` | `SecretTwistView` | Private inbox: Inbox / Sent / Compose |
+| `/about` | `AboutView` | Renders README.md via marked.js |
+| `/@:user/social` | `SocialView` | Paginated Followers / Following / Friends |
+| `/@:user/:permlink` | `TwistView` | Single twist permalink |
+| `/@:user` | `ProfileView` | Profile card + twists |
 
 `/@:user/social` is declared before `/@:user/:permlink` so Vue Router does not treat `"social"` as a permlink.
 
-**Global provided state**
+### Global provided state
 
 | Key | Type | Description |
 |---|---|---|
-| `username` | `ref<string>` | Logged-in Twister's username; `""` when not logged in |
-| `hasKeychain` | `ref<boolean>` | Steem Keychain detected |
-| `notify` | `function(msg, type)` | Show a global toast |
-| `unreadSignals` | `ref<number>` | Unread signal count; shown as badge on 🔔 nav link |
-| `refreshUnreadSignals` | `function(user)` | Recomputes the unread count |
-| `understreamOn` | `ref<boolean>` | Current Understream mode; persisted in `localStorage` |
-| `toggleUnderstream` | `function()` | Flips `understreamOn` and persists |
+| `username` | `ref<string>` | Logged-in Twister; `""` when not logged in |
+| `hasKeychain` | `ref<boolean>` | Keychain detected |
+| `notify` | `function(msg, type)` | Global toast |
+| `unreadSignals` | `ref<number>` | Badge count on 🔔 |
+| `refreshUnreadSignals` | `function(user)` | Recomputes unread count |
+| `understreamOn` | `ref<boolean>` | Persisted in `localStorage` |
+| `toggleUnderstream` | `function()` | Flips and persists |
 
-**SecretTwistView**
+### HomeView (`/`)
 
-Three tabs: Inbox / Sent / Compose.
+Personalised feed. On load: fetches `following` list, then fires `fetchTwistsByUser` (or `fetchPostsByUser` in Understream mode) for each followed user in parallel, capped at 10 posts per user. Results are merged, deduplicated by permlink, and sorted by the selected mode.
 
-- **Inbox** — Secret Twists where `meta.to === username` (case-insensitive)
-- **Sent** — Secret Twists where `post.author === username`
-- **Compose** — `SecretTwistComposerComponent`; after send, waits 3 s for node indexing then reloads
+Firehose filters live posts to `followingSet` (a `Set` built during `loadFeed`). Stops on unmount and on username change.
 
-The `username` watcher re-fetches when the logged-in Twister changes (login / logout / account switch), clearing stale data from the previous session.
+Logged-out visitors see a welcome card with a link to Explore. Empty following list shows a prompt to discover Twisters.
 
-**SocialView** (`/@:user/social`)
+### ExploreView (`/explore`)
 
-Followers and following fetched in parallel. Friends = client-side intersection. Twister profiles enriched lazily in batches of 50.
+Global Twist Stream. Same as the previous Home: all twists from the monthly root, full Firehose, Understream toggle, sort tabs, composer.
 
-**TwistView** (`/@:user/:permlink`)
+### SocialView (`/@:user/social`)
 
-Parent context shown when `parent_permlink` does not start with `feed-` (the monthly root prefix).
+Paginated 50 per page. Followers and Following load first page on mount. "Load more" button fetches the next page and enriches profiles. Friends tab fetches full lists on demand and computes intersection client-side. `myFollowing` (logged-in user's following list) loaded concurrently for Follow button state.
 
-**Pinned twist**
+### SecretTwistView (`/secret-twists`)
 
-Shown above feed/profile with 📌 label; deduplicated from the regular list; updated immediately in memory; localStorage cache bridges the 5-minute broadcast-to-indexing window.
+Inbox / Sent / Compose tabs. `username` watcher re-fetches on account switch. Inbox filters `meta.to === username`; Sent filters `post.author === username` (both normalised to lowercase). After send, waits 3 s for node indexing then reloads.
+
+### ProfileView (`/@:user`)
+
+Always shows `UserProfileComponent` (own profile or others). Passes `twistCount = userTwists.length` to the card.
+
+### TwistView (`/@:user/:permlink`)
+
+Shows parent context when `parent_permlink` does not start with `feed-`.
 
 ---
 
 ## No payouts by design
 
-SteemTwist deliberately disables monetary rewards on all twists and replies. Enforced at the **protocol level** by broadcasting `comment_options` atomically with every `comment`:
-
+All twists and replies are broadcast with:
 ```
 max_accepted_payout    = "0.000 SBD"
-allow_votes            = true    ← Twist Love still works as appreciation
+allow_votes            = true    ← Twist Love still works
 allow_curation_rewards = false
 ```
 
-Twist Love remains enabled — the heart expresses appreciation without moving money.
+Twist Love remains — the heart expresses appreciation without moving money.
 
 ---
 
 ## RPC nodes
 
-Requests fall back automatically across this list if a node fails:
-
+Auto-fallback order:
 1. `https://api.steemit.com`
 2. `https://api.justyy.com`
 3. `https://steemd.steemworld.org`
@@ -364,33 +392,31 @@ Requests fall back automatically across this list if a node fails:
 ## Hosting on GitHub Pages
 
 1. Push the four files to a GitHub repository.
-2. Go to **Settings → Pages** and set the source to the `main` branch root.
-3. Your dApp will be live at `https://<your-username>.github.io/<repo-name>/`.
+2. Go to **Settings → Pages**, set source to the `main` branch root.
+3. Live at `https://<your-username>.github.io/<repo-name>/`.
 
-The `#`-based hash router (`createWebHashHistory`) ensures all routes work without server-side configuration.
+The hash router (`createWebHashHistory`) means all routes work without server configuration.
 
 ---
 
-## Setup for `@steemtwist`
+## Monthly setup for `@steemtwist`
 
-At the start of each month, `@steemtwist` must create two root posts before Twisters can post:
+At the start of each month, publish two root posts before Twisters can post:
 
-**Monthly feed root:**
+**Feed root:**
 ```
-author:         steemtwist
-permlink:       feed-2026-03
-parentPermlink: steemtwist
-title:          (empty)
-body:           SteemTwist feed — March 2026
+author:          steemtwist
+permlink:        feed-2026-04
+parent_permlink: steemtwist
+body:            SteemTwist feed — April 2026
 ```
 
-**Monthly secret root:**
+**Secret root:**
 ```
-author:         steemtwist
-permlink:       secret-2026-03
-parentPermlink: steemtwist
-title:          (empty)
-body:           SteemTwist secret feed — March 2026
+author:          steemtwist
+permlink:        secret-2026-04
+parent_permlink: steemtwist
+body:            SteemTwist secret feed — April 2026
 ```
 
 ---
