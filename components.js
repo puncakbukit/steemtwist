@@ -862,8 +862,8 @@ const LiveTwistComponent = {
       FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
                      "onblur","onchange","onsubmit"]
     });
-    // Fallback: strip all tags
-    return html.replace(/<[^>]*>/g, "");
+    // Fallback: strip only script tags (sandbox already isolated)
+    return html.replace(/<script[\s\S]*?<\/script>/gi, "");
   }
 
   // ── Restricted API exposed to Live Twist code ─────────────────
@@ -1086,6 +1086,7 @@ const TwistCardComponent = {
       editText:        "",
       editCode:        "",      // live twist code being edited
       editTitle:       "",      // live twist card label being edited
+      editBody:        "",      // live twist body being edited
       isEditing:       false,
       showDeleteConfirm: false,
       isDeleting:      false,
@@ -1252,6 +1253,7 @@ const TwistCardComponent = {
         const meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
         this.editCode      = this.editedCode !== null ? this.editedCode : (meta.code || "");
         this.editTitle     = meta.title || "";
+        this.editBody      = stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
         this.isLiveEditBox = true;
       } else {
         this.editText    = stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
@@ -1287,7 +1289,8 @@ const TwistCardComponent = {
       const fakePost = Object.assign({}, this.post, {
         json_metadata: JSON.stringify(newMeta)
       });
-      editTwist(this.username, fakePost, stripBackLink(this.post.body) || "⚡ Live Twist", (res) => {
+      const bodyText = this.editBody.trim() || "⚡ Live Twist — view on SteemTwist";
+      editTwist(this.username, fakePost, bodyText, (res) => {
         this.isEditing = false;
         if (res.success) {
           this.editedCode    = c;
@@ -1484,6 +1487,11 @@ const TwistCardComponent = {
         <div style="margin-bottom:6px;">
           <label style="font-size:11px;color:#9b8db0;display:block;margin-bottom:2px;">Card label</label>
           <input v-model="editTitle" type="text" placeholder="Live Twist" maxlength="80"
+            style="width:100%;box-sizing:border-box;padding:5px 8px;border-radius:6px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:13px;" />
+        </div>
+        <div style="margin-bottom:6px;">
+          <label style="font-size:11px;color:#9b8db0;display:block;margin-bottom:2px;">Body <span style="color:#5a4e70;">(shown on Steemit)</span></label>
+          <input v-model="editBody" type="text" placeholder="Live Twist — view on SteemTwist" maxlength="280"
             style="width:100%;box-sizing:border-box;padding:5px 8px;border-radius:6px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:13px;" />
         </div>
         <div style="margin-bottom:6px;">
