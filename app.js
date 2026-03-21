@@ -306,21 +306,25 @@ const ExploreView = {
 
 // ---- HomeView ----
 // Personalised feed: twists from users the logged-in Twister follows.
-// Fetches the most recent posts for each followed user in parallel then
-// merges and sorts. Logged-out visitors see the Explore feed instead.
+// Supports Understream (full blog instead of tw- only) and Firehose
+// (live stream filtered to followed users).
+// Logged-out visitors see a welcome prompt.
 // Route: /
 const HomeView = {
   name: "HomeView",
-  inject: ["username", "hasKeychain", "notify"],
+  inject: ["username", "hasKeychain", "notify", "understreamOn", "toggleUnderstream"],
   components: { TwistComposerComponent, TwistCardComponent, LoadingSpinnerComponent },
 
   data() {
     return {
-      twists:      [],
-      loading:     true,
-      isPosting:   false,
-      sortMode:    "new",   // "new" | "hot" | "top"
-      emptyFeed:   false    // true when following list is empty
+      twists:         [],
+      loading:        true,
+      isPosting:      false,
+      sortMode:       "new",
+      emptyFeed:      false,
+      followingSet:   new Set(),   // kept for firehose filtering
+      firehoseOn:     false,
+      firehoseStream: null
     };
   },
 
@@ -332,9 +336,15 @@ const HomeView = {
     await this.loadFeed();
   },
 
+  unmounted() {
+    this.stopFirehose();
+  },
+
   watch: {
-    // Reload when the user logs in or out
-    username() { this.loadFeed(); }
+    username() {
+      this.stopFirehose();
+      this.loadFeed();
+    }
   },
 
   methods: {
@@ -342,42 +352,37 @@ const HomeView = {
       this.loading   = true;
       this.emptyFeed = false;
       this.twists    = [];
+      this.followingSet = new Set();
 
-      if (!this.username) {
-        // Logged-out: redirect feel to Explore
-        this.loading = false;
-        return;
-      }
+      if (!this.username) { this.loading = false; return; }
 
       try {
-        // 1. Get the list of followed accounts
         const following = await fetchFollowing(this.username);
         if (following.length === 0) {
           this.emptyFeed = true;
           this.loading   = false;
           return;
         }
+        this.followingSet = new Set(following);
 
-        // 2. Fetch recent twists for each followed user in parallel.
-        //    Cap at 10 posts per user to keep it snappy; merge and sort.
+        // Twist Stream: tw- permlinks this month per followed user
+        // Understream:  full blog (all Steem posts) per followed user
         const PER_USER = 10;
+        const monthlyRoot = getMonthlyRoot();
         const results = await Promise.all(
           following.map(u =>
-            fetchTwistsByUser(u, getMonthlyRoot())
-              .then(posts => posts.slice(0, PER_USER))
-              .catch(() => [])
+            (this.understreamOn
+              ? fetchPostsByUser(u, PER_USER)
+              : fetchTwistsByUser(u, monthlyRoot).then(p => p.slice(0, PER_USER))
+            ).catch(() => [])
           )
         );
 
-        // Flatten, deduplicate by permlink, sort newest-first
         const seen = new Set();
         const merged = [];
         for (const posts of results) {
           for (const p of posts) {
-            if (!seen.has(p.permlink)) {
-              seen.add(p.permlink);
-              merged.push(p);
-            }
+            if (!seen.has(p.permlink)) { seen.add(p.permlink); merged.push(p); }
           }
         }
         this.twists = merged;
@@ -385,10 +390,6 @@ const HomeView = {
         this.notify("Could not load home feed.", "error");
       }
       this.loading = false;
-    },
-
-    handlePin(post) {
-      // Pin handled globally; no pinned twist shown on Home feed
     },
 
     async handlePost(message) {
@@ -404,6 +405,46 @@ const HomeView = {
           this.notify(res.error || res.message || "Failed to post twist.", "error");
         }
       });
+    },
+
+    toggleFirehose() {
+      this.firehoseOn ? this.stopFirehose() : this.startFirehose();
+    },
+
+    startFirehose() {
+      this.firehoseOn    = true;
+      this.firehoseStream = startFirehose(
+        getMonthlyRoot(),
+        (post, isUpdate) => {
+          // Filter: only show posts from followed users
+          if (!this.followingSet.has(post.author)) return;
+          if (isUpdate) {
+            const idx = this.twists.findIndex(p => p.permlink === post.permlink);
+            if (idx !== -1) this.twists.splice(idx, 1, post);
+            return;
+          }
+          if (this.twists.some(p => p.permlink === post.permlink)) return;
+          this.twists.push(post);
+          setTimeout(() => {
+            const p = this.twists.find(t => t.permlink === post.permlink);
+            if (p) p._firehose = false;
+          }, 2600);
+        },
+        (author, permlink, voter, weight) => {
+          const post = this.twists.find(p => p.author === author && p.permlink === permlink);
+          if (!post) return;
+          const votes = post.active_votes || [];
+          const existing = votes.findIndex(v => v.voter === voter);
+          if (existing !== -1) votes.splice(existing, 1, { voter, percent: weight });
+          else votes.push({ voter, percent: weight });
+          post.active_votes = [...votes];
+        }
+      );
+    },
+
+    stopFirehose() {
+      if (this.firehoseStream) { this.firehoseStream.stop(); this.firehoseStream = null; }
+      this.firehoseOn = false;
     }
   },
 
@@ -424,7 +465,42 @@ const HomeView = {
                  border-radius:12px;padding:2px 10px;font-size:12px;margin:0;"
         >⟳ Refresh</button>
 
-        <!-- Sort mode tabs — right-aligned -->
+        <!-- Understream toggle -->
+        <button
+          @click="toggleUnderstream(); loadFeed()"
+          :style="{
+            borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
+            fontWeight:'600', border:'1px solid', margin:0,
+            background:  understreamOn ? '#0e1a2d' : '#1e1535',
+            color:       understreamOn ? '#22d3ee'  : '#9b8db0',
+            borderColor: understreamOn ? '#22d3ee'  : '#2e2050'
+          }"
+          :title="understreamOn ? 'Understream ON — showing full blogs of followed Twisters' : 'Understream OFF — showing Twist Stream only'"
+        >🌊 Understream {{ understreamOn ? 'ON' : 'OFF' }}</button>
+
+        <!-- Firehose toggle -->
+        <button
+          @click="toggleFirehose"
+          :style="{
+            borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
+            fontWeight:'600', border:'1px solid', margin:0,
+            background:  firehoseOn ? '#2d1a00' : '#1e1535',
+            color:       firehoseOn ? '#fb923c' : '#9b8db0',
+            borderColor: firehoseOn ? '#f97316' : '#2e2050'
+          }"
+          :title="firehoseOn ? 'Stop live stream' : 'Start live stream (followed Twisters only)'"
+        >{{ firehoseOn ? '🔥 Firehose ON' : '🔥 Firehose OFF' }}</button>
+
+        <!-- Live pulse -->
+        <span v-if="firehoseOn" style="display:flex;align-items:center;gap:5px;color:#fb923c;font-size:12px;">
+          <span style="
+            display:inline-block;width:8px;height:8px;border-radius:50%;
+            background:#fb923c;animation:twistFlash 1s ease-in-out infinite alternate;
+          "></span>
+          Live
+        </span>
+
+        <!-- Sort tabs — right-aligned -->
         <div style="margin-left:auto;display:flex;gap:4px;">
           <button
             v-for="mode in [{key:'new',label:'🕒 New'},{key:'hot',label:'🔥 Hot'},{key:'top',label:'⬆ Top'}]"
@@ -452,7 +528,7 @@ const HomeView = {
         @post="handlePost"
       ></twist-composer-component>
 
-      <!-- Logged-out: prompt to sign in or explore -->
+      <!-- Logged-out -->
       <div v-if="!username" style="
         background:#1e1535;border:1px solid #2e2050;border-radius:12px;
         padding:32px 20px;text-align:center;max-width:600px;margin:0 auto 20px;
@@ -464,8 +540,7 @@ const HomeView = {
         <div style="color:#9b8db0;font-size:14px;margin-bottom:16px;">
           Sign in with Steem Keychain to see twists from Twisters you follow.
         </div>
-        <a href="#/explore"
-           style="color:#a855f7;font-size:14px;text-decoration:none;">
+        <a href="#/explore" style="color:#a855f7;font-size:14px;text-decoration:none;">
           Browse the Explore feed instead →
         </a>
       </div>
@@ -476,14 +551,11 @@ const HomeView = {
         padding:32px 20px;text-align:center;max-width:600px;margin:0 auto;
       ">
         <div style="font-size:32px;margin-bottom:10px;">👤</div>
-        <div style="color:#e8e0f0;font-size:15px;font-weight:600;margin-bottom:8px;">
-          Your feed is empty
-        </div>
+        <div style="color:#e8e0f0;font-size:15px;font-weight:600;margin-bottom:8px;">Your feed is empty</div>
         <div style="color:#9b8db0;font-size:14px;margin-bottom:14px;">
           Follow some Twisters to see their twists here.
         </div>
-        <a href="#/explore"
-           style="color:#a855f7;font-size:14px;text-decoration:none;">
+        <a href="#/explore" style="color:#a855f7;font-size:14px;text-decoration:none;">
           Discover Twisters on Explore →
         </a>
       </div>
@@ -504,6 +576,7 @@ const HomeView = {
           :username="username"
           :has-keychain="hasKeychain"
           :pinned="false"
+          :class="post._firehose ? 'twist-flash' : ''"
           @voted="loadFeed()"
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
