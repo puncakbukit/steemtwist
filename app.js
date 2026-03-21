@@ -425,6 +425,21 @@ const HomeView = {
       });
     },
 
+    async handlePostLive({ title, body, code }) {
+      if (!code) return;
+      this.isPosting = true;
+      postLiveTwist(this.username, title, body, code, async (res) => {
+        this.isPosting = false;
+        if (res.success) {
+          this.notify("Live Twist published! ⚡", "success");
+          await new Promise(r => setTimeout(r, 2000));
+          await this.loadFeed();
+        } else {
+          this.notify(res.error || res.message || "Failed to publish Live Twist.", "error");
+        }
+      });
+    },
+
     toggleFirehose() {
       this.firehoseOn ? this.stopFirehose() : this.startFirehose();
     },

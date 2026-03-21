@@ -1082,11 +1082,15 @@ const TwistCardComponent = {
       threadExpanded:  false,
       isPinning:       false,
       showEditBox:     false,
+      isLiveEditBox:   false,   // true when editing a Live Twist
       editText:        "",
+      editCode:        "",      // live twist code being edited
+      editTitle:       "",      // live twist card label being edited
       isEditing:       false,
       showDeleteConfirm: false,
       isDeleting:      false,
-      editedBody:      null    // local override after successful edit
+      editedBody:      null,    // local override after successful edit
+      editedCode:      null     // local code override after live twist edit
     };
   },
   computed: {
@@ -1243,9 +1247,16 @@ const TwistCardComponent = {
     },
 
     openEdit() {
-      // Pre-fill with the current body (strip back-link and whitespace)
-      this.editText    = stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
-      this.showEditBox = true;
+      if (this.isLiveTwist) {
+        const raw = this.post.json_metadata;
+        const meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+        this.editCode      = this.editedCode !== null ? this.editedCode : (meta.code || "");
+        this.editTitle     = meta.title || "";
+        this.isLiveEditBox = true;
+      } else {
+        this.editText    = stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
+        this.showEditBox = true;
+      }
     },
     saveEdit() {
       const text = this.editText.trim();
@@ -1256,6 +1267,33 @@ const TwistCardComponent = {
         if (res.success) {
           this.editedBody  = text;   // update locally without refetch
           this.showEditBox = false;
+        } else {
+          this.lastError = res.error || res.message || "Edit failed.";
+        }
+      });
+    },
+    saveLiveEdit() {
+      const c = this.editCode.trim();
+      if (!c || this.isEditing) return;
+      this.isEditing = true;
+      // Re-broadcast with updated json_metadata containing the new code
+      const raw = this.post.json_metadata;
+      const meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+      const newMeta = Object.assign({}, meta, {
+        title: this.editTitle.trim() || "Live Twist",
+        code:  c
+      });
+      // Use editTwist which re-broadcasts the comment op — body stays the same
+      const fakePost = Object.assign({}, this.post, {
+        json_metadata: JSON.stringify(newMeta)
+      });
+      editTwist(this.username, fakePost, stripBackLink(this.post.body) || "⚡ Live Twist", (res) => {
+        this.isEditing = false;
+        if (res.success) {
+          this.editedCode    = c;
+          this.isLiveEditBox = false;
+          // Force LiveTwistComponent to re-read updated json_metadata
+          this.post.json_metadata = JSON.stringify(newMeta);
         } else {
           this.lastError = res.error || res.message || "Edit failed.";
         }
@@ -1415,7 +1453,7 @@ const TwistCardComponent = {
 
       </div>
 
-      <!-- Inline edit box -->
+      <!-- Inline edit box — regular twist -->
       <div v-if="showEditBox" style="margin-top:12px;">
         <textarea
           v-model="editText"
@@ -1427,16 +1465,41 @@ const TwistCardComponent = {
           @keydown.ctrl.enter="saveEdit"
         ></textarea>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:4px;">
-          <button
-            @click="showEditBox = false"
+          <button @click="showEditBox = false"
             style="background:#1e1535;border:1px solid #2e2050;color:#9b8db0;
                    border-radius:20px;padding:4px 12px;font-size:12px;margin:0;"
           >Cancel</button>
-          <button
-            @click="saveEdit"
-            :disabled="!editText.trim() || isEditing"
+          <button @click="saveEdit" :disabled="!editText.trim() || isEditing"
             style="padding:4px 14px;font-size:12px;margin:0;"
           >{{ isEditing ? "Saving…" : "Save" }}</button>
+        </div>
+      </div>
+
+      <!-- Inline edit box — Live Twist -->
+      <div v-if="isLiveEditBox" style="margin-top:12px;background:#0a0616;border:1px solid #2e2050;border-radius:8px;padding:10px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+          <span style="font-size:13px;">&#9889;</span>
+          <span style="font-size:12px;font-weight:600;color:#fb923c;">Edit Live Twist</span>
+        </div>
+        <div style="margin-bottom:6px;">
+          <label style="font-size:11px;color:#9b8db0;display:block;margin-bottom:2px;">Card label</label>
+          <input v-model="editTitle" type="text" placeholder="Live Twist" maxlength="80"
+            style="width:100%;box-sizing:border-box;padding:5px 8px;border-radius:6px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:13px;" />
+        </div>
+        <div style="margin-bottom:6px;">
+          <label style="font-size:11px;color:#9b8db0;display:block;margin-bottom:2px;">Code</label>
+          <textarea v-model="editCode" spellcheck="false"
+            style="width:100%;box-sizing:border-box;padding:7px;border-radius:6px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:12px;font-family:monospace;resize:vertical;min-height:120px;line-height:1.5;"
+            @keydown.ctrl.enter="saveLiveEdit"
+          ></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:6px;">
+          <button @click="isLiveEditBox = false"
+            style="background:#1e1535;border:1px solid #2e2050;color:#9b8db0;border-radius:20px;padding:4px 12px;font-size:12px;margin:0;"
+          >Cancel</button>
+          <button @click="saveLiveEdit" :disabled="!editCode.trim() || isEditing"
+            style="padding:4px 14px;font-size:12px;margin:0;background:linear-gradient(135deg,#c2410c,#ea580c);"
+          >{{ isEditing ? "Saving…" : "Save &#9889;" }}</button>
         </div>
       </div>
 
@@ -1593,7 +1656,7 @@ const LiveTwistComposerComponent = {
         "window.WebSocket=function(){throw new Error('Network blocked');};" +
         "window.open=()=>null;" +
         "var purify=null;" +
-        "function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,{FORBID_TAGS:['script','iframe'],FORBID_ATTR:['onclick','onerror','onload']});return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}" +
+        "function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,{FORBID_TAGS:['script','iframe','object','embed'],FORBID_ATTR:['onclick','onerror','onload','onmouseover','onfocus'],ALLOW_DATA_ATTR:false,FORCE_BODY:true});return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}" +
         "var _log=document.getElementById('_log');" +
         "var _root=document.getElementById('_root');" +
         "var app={" +
