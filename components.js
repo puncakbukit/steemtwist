@@ -1557,313 +1557,150 @@ const LiveTwistComposerComponent = {
       title:       "",
       body:        "",
       code:        "",
-      activeTab:   "code",    // "code" | "preview"
-      previewKey:  0,         // increment to re-run preview
-      error:       ""
+      activeTab:   "code",
+      previewKey:  0,
+      iframeHeight: 200
     };
   },
   computed: {
-    codeSize()  { return new TextEncoder().encode(this.code).length; },
-    tooBig()    { return this.codeSize > 10240; },
-    sizeLabel() {
-      const kb = (this.codeSize / 1024).toFixed(1);
-      return `${kb} / 10 KB`;
-    },
+    codeBytes() { return new TextEncoder().encode(this.code).length; },
+    tooBig()    { return this.codeBytes > 10240; },
+    sizeLabel() { return (this.codeBytes / 1024).toFixed(1) + " / 10 KB"; },
     canPost() {
       return !!this.username && this.hasKeychain &&
-             this.code.trim().length > 0 &&
-             !this.tooBig && !this.isPosting;
-    },
-    // Reuse the same sandboxDoc template from LiveTwistComponent
-    sandboxDoc() {
-      const escapedCode = JSON.stringify(this.code);
-      return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  body { margin:0; padding:8px; font-family:system-ui,sans-serif;
-         font-size:14px; background:#0f0a1e; color:#e8e0f0;
-         box-sizing:border-box; word-break:break-word; }
-  * { box-sizing:border-box; }
-  button { cursor:pointer; padding:5px 12px; border-radius:6px;
-           background:#6d28d9; color:#fff; border:none; font-size:13px; }
-  input,textarea { background:#1a1030; color:#e8e0f0; border:1px solid #3b1f5e;
-                   border-radius:6px; padding:5px 8px; font-size:13px; width:100%; }
-  #_console { margin-top:8px; padding:6px; background:#0a0616;
-              border-radius:6px; font-family:monospace; font-size:12px;
-              color:#9b8db0; max-height:80px; overflow-y:auto;
-              border:1px solid #2e1060; display:none; }
-</style>
-</head>
-<body>
-<div id="_root"></div>
-<div id="_console"></div>
-<script>
-(function() {
-  window.fetch = () => Promise.reject(new Error("Network blocked"));
-  window.XMLHttpRequest = function() { throw new Error("Network blocked"); };
-  window.WebSocket = function() { throw new Error("Network blocked"); };
-  window.open = () => null;
-  let purify = null;
-  function sanitize(html) {
-    if (typeof html !== "string") return "";
-    if (purify) return purify.sanitize(html, {
-      ALLOWED_TAGS: ["div","span","p","br","b","i","strong","em","u","s",
-                     "h1","h2","h3","h4","ul","ol","li","pre","code",
-                     "table","thead","tbody","tr","th","td","button",
-                     "input","textarea","label","select","option",
-                     "hr","blockquote","a","img"],
-      ALLOWED_ATTR: ["id","class","style","type","value","placeholder",
-                     "checked","disabled","readonly","href","src","alt",
-                     "width","height","rows","cols","for","name","max",
-                     "min","step","multiple"],
-      FORBID_TAGS:  ["script","iframe","object","embed","form","frame"],
-      FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
-                     "onblur","onchange","onsubmit"]
-    });
-    return html.replace(/<[^>]*>/g, "");
-  }
-  const _cons = document.getElementById("_console");
-  const _root = document.getElementById("_root");
-  const app = {
-    render(html) { _root.innerHTML = sanitize(String(html)); },
-    text(str)    { _root.textContent = String(str).slice(0, 2000); },
-    resize(h) {
-      const height = Math.min(Math.max(parseInt(h)||200,40),600);
-      parent.postMessage({ type:"resize", height }, "*");
-    },
-    log(...args) {
-      _cons.style.display = "block";
-      const line = document.createElement("div");
-      line.textContent = args.map(a =>
-        typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
-      _cons.appendChild(line);
-      _cons.scrollTop = _cons.scrollHeight;
-    }
-  };
-  window.addEventListener("message", function(e) {
-    if (e.data && e.data.type === "kill") {
-      _root.innerHTML = "<em style='color:#fca5a5'>Execution timed out.</em>";
-    }
-  });
-  const userCode = ${escapedCode};
-  try {
-    const fn = new Function("app", userCode);
-    const result = fn(app);
-    if (result && typeof result.catch === "function") {
-      result.catch(err => {
-        _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
-          String(err).replace(/</g,"&lt;") + "</em>";
-      });
-    }
-    parent.postMessage({ type:"running" }, "*");
-  } catch(err) {
-    _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
-      String(err).replace(/</g,"&lt;") + "</em>";
-  }
-  setTimeout(() => {
-    const h = document.body.scrollHeight;
-    if (h > 40) parent.postMessage({ type:"resize", height: h + 16 }, "*");
-  }, 100);
-})();
-</script>
-</body>
-</html>`;
+             this.code.trim().length > 0 && !this.tooBig && !this.isPosting;
     }
   },
   methods: {
+    buildSandboxDoc(userCode) {
+      const escaped = JSON.stringify(userCode);
+      return "<!DOCTYPE html><html><head><meta charset='utf-8'><style>" +
+        "body{margin:0;padding:8px;font-family:system-ui,sans-serif;font-size:14px;" +
+        "background:#0f0a1e;color:#e8e0f0;box-sizing:border-box;word-break:break-word}" +
+        "*{box-sizing:border-box}" +
+        "button{cursor:pointer;padding:5px 12px;border-radius:6px;background:#6d28d9;" +
+        "color:#fff;border:none;font-size:13px}" +
+        "input,textarea{background:#1a1030;color:#e8e0f0;border:1px solid #3b1f5e;" +
+        "border-radius:6px;padding:5px 8px;font-size:13px;width:100%}" +
+        "#_log{margin-top:8px;padding:6px;background:#0a0616;border-radius:6px;" +
+        "font-family:monospace;font-size:12px;color:#9b8db0;max-height:80px;" +
+        "overflow-y:auto;border:1px solid #2e1060;display:none}" +
+        "</style></head><body>" +
+        "<div id='_root'></div><div id='_log'></div>" +
+        "<script>(function(){" +
+        "window.fetch=()=>Promise.reject(new Error('Network blocked'));" +
+        "window.XMLHttpRequest=function(){throw new Error('Network blocked');};" +
+        "window.WebSocket=function(){throw new Error('Network blocked');};" +
+        "window.open=()=>null;" +
+        "var purify=null;" +
+        "function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,{FORBID_TAGS:['script','iframe'],FORBID_ATTR:['onclick','onerror','onload']});return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}" +
+        "var _log=document.getElementById('_log');" +
+        "var _root=document.getElementById('_root');" +
+        "var app={" +
+        "render:function(h){_root.innerHTML=sanitize(String(h));}," +
+        "text:function(s){_root.textContent=String(s).slice(0,2000);}," +
+        "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},'*');}," +
+        "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}" +
+        "};" +
+        "var userCode=" + escaped + ";" +
+        "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},'*');}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
+        "setTimeout(function(){var h=document.body.scrollHeight;if(h>40)parent.postMessage({type:'resize',height:h+16},'*');},150);" +
+        "})();<\/script></body></html>";
+    },
     runPreview() {
       this.activeTab = "preview";
       this.previewKey++;
     },
     onMessage(e) {
       if (e.origin !== "null") return;
-      const { type, height } = e.data || {};
-      if (type === "resize" && height) {
-        const iframe = this.$refs.preview;
-        if (iframe) iframe.style.height = Math.min(height, 480) + "px";
+      if (e.data && e.data.type === "resize") {
+        this.iframeHeight = Math.min(e.data.height || 200, 480);
       }
     },
     submit() {
       if (!this.canPost) return;
-      this.error = "";
       this.$emit("post", {
         title: this.title.trim() || "Live Twist",
-        body:  this.body.trim()  || "⚡ Live Twist — view on SteemTwist",
+        body:  this.body.trim()  || "Live Twist — view on SteemTwist",
         code:  this.code.trim()
       });
     },
     reset() {
-      this.title     = "";
-      this.body      = "";
-      this.code      = "";
-      this.activeTab = "code";
-      this.previewKey++;
+      this.title = ""; this.body = ""; this.code = "";
+      this.activeTab = "code"; this.previewKey++;
     }
   },
   mounted()   { window.addEventListener("message", this.onMessage); },
   unmounted() { window.removeEventListener("message", this.onMessage); },
   template: `
-    <div style="
-      background:#1e1535;border:1px solid #2e2050;border-radius:12px;
-      padding:16px;margin:0 auto 20px;max-width:600px;text-align:left;
-    ">
+    <div style="background:#1e1535;border:1px solid #2e2050;border-radius:0 8px 8px 8px;padding:16px;text-align:left;">
+
       <!-- Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div style="display:flex;align-items:center;gap:6px;">
-          <span style="font-size:16px;">⚡</span>
+          <span style="font-size:16px;">&#9889;</span>
           <span style="color:#fb923c;font-weight:700;font-size:14px;">Live Twist Editor</span>
         </div>
-        <button
-          @click="$emit('cancel')"
-          style="background:none;border:none;color:#5a4e70;font-size:18px;
-                 padding:0;margin:0;cursor:pointer;line-height:1;"
-        >✕</button>
+        <button @click="$emit('cancel')"
+          style="background:none;border:none;color:#5a4e70;font-size:18px;padding:0;margin:0;cursor:pointer;line-height:1;">&#10005;</button>
       </div>
 
-      <!-- Title field -->
-      <div style="margin-bottom:10px;">
-        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:4px;">
-          Title <span style="color:#5a4e70;">(shown in the card header)</span>
-        </label>
-        <input
-          v-model="title"
-          type="text"
-          placeholder="My Live Twist"
-          maxlength="80"
-          style="
-            width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;
-            border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;
-          "
-        />
+      <!-- Title -->
+      <div style="margin-bottom:8px;">
+        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">Title</label>
+        <input v-model="title" type="text" placeholder="My Live Twist" maxlength="80"
+          style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;" />
       </div>
 
-      <!-- Body field (shown on non-SteemTwist clients) -->
+      <!-- Description -->
       <div style="margin-bottom:10px;">
-        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:4px;">
-          Description <span style="color:#5a4e70;">(shown on Steemit and other clients)</span>
-        </label>
-        <input
-          v-model="body"
-          type="text"
-          placeholder="⚡ Live Twist — view on SteemTwist"
-          maxlength="200"
-          style="
-            width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;
-            border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;
-          "
-        />
+        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">Description <span style="color:#5a4e70;">(shown on Steemit)</span></label>
+        <input v-model="body" type="text" placeholder="Live Twist — view on SteemTwist" maxlength="200"
+          style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;" />
       </div>
 
       <!-- Code / Preview tabs -->
       <div style="display:flex;gap:4px;margin-bottom:0;">
-        <button
-          @click="activeTab = 'code'"
-          :style="{
-            background: activeTab === 'code' ? '#2e2050' : 'none',
-            color:      activeTab === 'code' ? '#e8e0f0' : '#9b8db0',
-            border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
-            padding:'4px 14px', fontSize:'12px', margin:0, cursor:'pointer'
-          }"
-        >Code</button>
-        <button
-          @click="runPreview"
-          :style="{
-            background: activeTab === 'preview' ? '#2e2050' : 'none',
-            color:      activeTab === 'preview' ? '#fb923c' : '#9b8db0',
-            border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
-            padding:'4px 14px', fontSize:'12px', margin:0, cursor:'pointer'
-          }"
-        >▶ Preview</button>
+        <button @click="activeTab = 'code'"
+          :style="{ background: activeTab==='code' ? '#2e2050' : 'none', color: activeTab==='code' ? '#e8e0f0' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'4px 14px', fontSize:'12px', margin:0, cursor:'pointer' }">Code</button>
+        <button @click="runPreview"
+          :style="{ background: activeTab==='preview' ? '#2e2050' : 'none', color: activeTab==='preview' ? '#fb923c' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'4px 14px', fontSize:'12px', margin:0, cursor:'pointer' }">&#9654; Preview</button>
       </div>
 
       <!-- Code editor -->
-      <textarea
-        v-show="activeTab === 'code'"
-        v-model="code"
-        placeholder="// Write your Live Twist code here.
-// You receive a single argument: app
-//
-// app.render(html)  — render sanitised HTML
-// app.text(str)     — render plain text
-// app.resize(px)    — resize the iframe height
-// app.log(...args)  — write to the console panel
-//
-// Example:
-// let n = 0;
-// function draw() {
-//   app.render('<button id=\\"b\\">Clicks: ' + n + '</button>');
-//   document.getElementById('b').onclick = () => { n++; draw(); };
-// }
-// draw();"
+      <textarea v-show="activeTab === 'code'" v-model="code"
+        placeholder="// app.render(html) — render HTML&#10;// app.text(str)  — render plain text&#10;// app.resize(px) — resize iframe&#10;// app.log(...)   — console output&#10;&#10;// Example: click counter&#10;// let n=0;&#10;// function draw(){&#10;//   app.render('&lt;button id=b&gt;Clicks: '+n+'&lt;/button&gt;');&#10;//   document.getElementById('b').onclick=()=>{n++;draw();}&#10;// }&#10;// draw();"
         spellcheck="false"
-        style="
-          width:100%;box-sizing:border-box;
-          padding:10px;border-radius:0 8px 8px 8px;
-          border:1px solid #2e2050;background:#0a0616;
-          color:#e8e0f0;font-size:13px;font-family:monospace;
-          resize:vertical;min-height:180px;line-height:1.5;
-        "
-      ></textarea>
+        style="width:100%;box-sizing:border-box;padding:10px;border-radius:0 8px 8px 8px;border:1px solid #2e2050;background:#0a0616;color:#e8e0f0;font-size:13px;font-family:monospace;resize:vertical;min-height:160px;line-height:1.5;"></textarea>
 
-      <!-- Sandbox preview -->
-      <div
-        v-show="activeTab === 'preview'"
-        style="border-radius:0 8px 8px 8px;border:1px solid #2e2050;overflow:hidden;"
-      >
-        <iframe
-          v-if="activeTab === 'preview'"
-          :key="previewKey"
-          ref="preview"
-          sandbox="allow-scripts"
-          :srcdoc="sandboxDoc"
-          style="width:100%;border:none;display:block;min-height:60px;height:200px;background:#0f0a1e;"
-          scrolling="no"
-        ></iframe>
+      <!-- Preview iframe -->
+      <div v-if="activeTab === 'preview'" style="border-radius:0 8px 8px 8px;border:1px solid #2e2050;overflow:hidden;">
+        <iframe :key="previewKey" sandbox="allow-scripts"
+          :srcdoc="buildSandboxDoc(code)"
+          :style="{ width:'100%', border:'none', display:'block', height: iframeHeight + 'px', background:'#0f0a1e' }"
+          scrolling="no"></iframe>
       </div>
 
-      <!-- Footer: size + actions -->
+      <!-- Footer -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap;gap:6px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span :style="{ fontSize:'12px', color: tooBig ? '#fca5a5' : '#5a4e70' }">
-            {{ sizeLabel }}
-          </span>
-          <span v-if="tooBig" style="font-size:12px;color:#fca5a5;">⚠ Exceeds 10 KB limit</span>
-        </div>
+        <span :style="{ fontSize:'12px', color: tooBig ? '#fca5a5' : '#5a4e70' }">{{ sizeLabel }}{{ tooBig ? ' — exceeds 10 KB limit' : '' }}</span>
         <div style="display:flex;gap:6px;">
-          <button
-            v-if="activeTab === 'code'"
-            @click="runPreview"
-            :disabled="!code.trim()"
-            style="
-              background:#1e1535;border:1px solid #f97316;color:#fb923c;
-              border-radius:20px;padding:5px 14px;font-size:12px;margin:0;
-            "
-          >▶ Preview</button>
-          <button
-            @click="submit"
-            :disabled="!canPost"
-            style="padding:6px 20px;margin:0;font-size:13px;"
-          >{{ isPosting ? "Publishing…" : "Publish ⚡" }}</button>
+          <button v-if="activeTab === 'code'" @click="runPreview" :disabled="!code.trim()"
+            style="background:#1e1535;border:1px solid #f97316;color:#fb923c;border-radius:20px;padding:5px 14px;font-size:12px;margin:0;">&#9654; Preview</button>
+          <button @click="submit" :disabled="!canPost"
+            style="padding:6px 20px;margin:0;font-size:13px;">{{ isPosting ? "Publishing..." : "Publish &#9889;" }}</button>
         </div>
       </div>
 
       <!-- Security notice -->
-      <div style="
-        margin-top:10px;padding:8px 10px;border-radius:8px;font-size:11px;
-        color:#5a4e70;background:#0a0616;border:1px solid #1a0a30;line-height:1.5;
-      ">
-        🔒 Live Twists run in an isolated sandbox with no network access, no wallet access,
-        and no access to this page. Code and metadata are stored publicly on the Steem blockchain.
+      <div style="margin-top:10px;padding:8px 10px;border-radius:8px;font-size:11px;color:#5a4e70;background:#0a0616;border:1px solid #1a0a30;line-height:1.5;">
+        &#128274; Runs in isolated sandbox — no network, no wallet, no page access. Code stored publicly on Steem.
       </div>
     </div>
   `
 };
 
-// ---- TwistComposerComponent ----
-// Composer with two modes: regular Twist (markdown) and Live Twist ⚡ (JS sandbox).
-// A top-level tab bar switches between them. Both modes share the isPosting prop.
+
 const TwistComposerComponent = {
   name: "TwistComposerComponent",
   components: { LiveTwistComposerComponent },
