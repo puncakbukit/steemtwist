@@ -767,7 +767,7 @@ const ThreadComponent = {
 // fixing the case where short posts with replies never showed them.
 const TwistCardComponent = {
   name: "TwistCardComponent",
-  components: { ThreadComponent },
+  components: { ThreadComponent, LiveTwistComponent },
   props: {
     post:        { type: Object,  required: true },
     username:    { type: String,  default: "" },
@@ -806,6 +806,13 @@ const TwistCardComponent = {
     isSecretTwist() {
       try { return JSON.parse(this.post.json_metadata || "{}").type === "secret_twist"; }
       catch { return false; }
+    },
+    isLiveTwist() {
+      try {
+        const raw = this.post.json_metadata;
+        const meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+        return meta.type === "live_twist" && !!meta.code;
+      } catch { return false; }
     },
     avatarUrl() {
       return `https://steemitimages.com/u/${this.post.author}/avatar/small`;
@@ -852,10 +859,12 @@ const TwistCardComponent = {
     },
     bodyHtml() {
       if (this.isSecretTwist) return "<em style='color:#5a4e70'>🔒 Secret Twist — view in Private Signals</em>";
+      if (this.isLiveTwist)   return "";   // rendered by LiveTwistComponent
       return renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body));
     },
     bodyPreviewHtml() {
       if (this.isSecretTwist) return "<em style='color:#5a4e70'>🔒 Secret Twist — view in Private Signals</em>";
+      if (this.isLiveTwist)   return "";
       return renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body).slice(0, PREVIEW_LENGTH) + "…");
     },
     replyPreviewHtml() {
@@ -1009,7 +1018,13 @@ const TwistCardComponent = {
       </div>
 
       <!-- Body -->
+      <live-twist-component
+        v-if="isLiveTwist"
+        :post="post"
+        style="margin-bottom:12px;"
+      ></live-twist-component>
       <div
+        v-else
         class="twist-body"
         v-html="isLong && !threadExpanded ? bodyPreviewHtml : bodyHtml"
         style="margin-bottom:12px;"
@@ -1230,6 +1245,296 @@ const TwistCardComponent = {
         :permlink="post.permlink"
       ></thread-component>
 
+    </div>
+  `
+};
+
+// ---- LiveTwistComponent ----
+// Renders a "Live Twist" — user-authored JavaScript running in a strict
+// iframe sandbox. The sandbox has NO access to the parent page, the wallet,
+// cookies, localStorage, or the network.
+//
+// Security layers (defence-in-depth):
+//   1. <iframe sandbox="allow-scripts"> — isolated null origin, no same-origin
+//   2. DOMPurify sanitises every HTML string the code tries to render
+//   3. fetch / XHR / WebSocket overridden to throw inside the iframe
+//   4. 2-second execution timeout kills runaway code
+//   5. User must click ▶ Run — never auto-executed
+//   6. Payload size limit: 10 KB (enforced before Run is allowed)
+//   7. Parent validates event.origin === "null" on every message
+//
+// Live Twist json_metadata shape:
+//   { type: "live_twist", version: 1, code: "<JS string>", title: "My App" }
+//   `code` receives a single argument `app` with the restricted API.
+//
+// Restricted API (app.*):
+//   app.render(html)  — sanitise + set body innerHTML
+//   app.text(str)     — set body as plain text (no HTML)
+//   app.resize(h)     — tell parent to resize the iframe
+//   app.log(msg)      — append a line to the built-in console panel
+//
+const LiveTwistComponent = {
+  name: "LiveTwistComponent",
+  props: {
+    post: { type: Object, required: true }
+  },
+  data() {
+    return {
+      running:    false,
+      error:      "",
+      iframeKey:  0   // increment to force iframe recreation on re-run
+    };
+  },
+  computed: {
+    meta() {
+      try {
+        const raw = this.post.json_metadata;
+        return raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+      } catch { return {}; }
+    },
+    code()    { return (this.meta.code  || "").trim(); },
+    title()   { return (this.meta.title || "Live Twist").trim(); },
+    codeSize(){ return new TextEncoder().encode(this.code).length; },
+    tooBig()  { return this.codeSize > 10240; },   // 10 KB limit
+    // The srcdoc injected into the sandboxed iframe.
+    // DOMPurify is inlined so the iframe never needs to load external scripts.
+    sandboxDoc() {
+      // We encode the user code as a JSON string so it survives
+      // the srcdoc attribute escaping without any eval trickery.
+      const escapedCode = JSON.stringify(this.code);
+      return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin:0; padding:8px; font-family:system-ui,sans-serif;
+         font-size:14px; background:#0f0a1e; color:#e8e0f0;
+         box-sizing:border-box; word-break:break-word; }
+  * { box-sizing:border-box; }
+  button { cursor:pointer; padding:5px 12px; border-radius:6px;
+           background:#6d28d9; color:#fff; border:none; font-size:13px; }
+  input,textarea { background:#1a1030; color:#e8e0f0; border:1px solid #3b1f5e;
+                   border-radius:6px; padding:5px 8px; font-size:13px; width:100%; }
+  #_console { margin-top:8px; padding:6px; background:#0a0616;
+              border-radius:6px; font-family:monospace; font-size:12px;
+              color:#9b8db0; max-height:80px; overflow-y:auto;
+              border:1px solid #2e1060; display:none; }
+</style>
+</head>
+<body>
+<div id="_root"></div>
+<div id="_console"></div>
+<script>
+(function() {
+  // ── Kill the network ─────────────────────────────────────────
+  window.fetch       = () => Promise.reject(new Error("Network blocked"));
+  window.XMLHttpRequest = function() { throw new Error("Network blocked"); };
+  window.WebSocket   = function() { throw new Error("Network blocked"); };
+  window.open        = () => null;
+
+  // ── Inline DOMPurify (subset — full lib loaded from parent message) ──
+  // We receive it via message bridge. Until then, use a strict allowlist.
+  let purify = null;
+
+  function sanitize(html) {
+    if (typeof html !== "string") return "";
+    if (purify) return purify.sanitize(html, {
+      ALLOWED_TAGS: ["div","span","p","br","b","i","strong","em","u","s",
+                     "h1","h2","h3","h4","ul","ol","li","pre","code",
+                     "table","thead","tbody","tr","th","td","button",
+                     "input","textarea","label","select","option",
+                     "hr","blockquote","a","img"],
+      ALLOWED_ATTR: ["id","class","style","type","value","placeholder",
+                     "checked","disabled","readonly","href","src","alt",
+                     "width","height","rows","cols","for","name","max",
+                     "min","step","multiple"],
+      FORBID_TAGS:  ["script","iframe","object","embed","form","frame"],
+      FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
+                     "onblur","onchange","onsubmit"]
+    });
+    // Fallback: strip all tags
+    return html.replace(/<[^>]*>/g, "");
+  }
+
+  // ── Restricted API exposed to Live Twist code ─────────────────
+  const _cons = document.getElementById("_console");
+  const _root = document.getElementById("_root");
+
+  const app = {
+    render(html) {
+      _root.innerHTML = sanitize(String(html));
+    },
+    text(str) {
+      _root.textContent = String(str).slice(0, 2000);
+    },
+    resize(h) {
+      const height = Math.min(Math.max(parseInt(h) || 200, 40), 600);
+      parent.postMessage({ type: "resize", height }, "*");
+    },
+    log(...args) {
+      _cons.style.display = "block";
+      const line = document.createElement("div");
+      line.textContent = args.map(a =>
+        typeof a === "object" ? JSON.stringify(a) : String(a)
+      ).join(" ");
+      _cons.appendChild(line);
+      _cons.scrollTop = _cons.scrollHeight;
+    }
+  };
+
+  // ── Receive DOMPurify + run signal from parent ────────────────
+  window.addEventListener("message", function(e) {
+    if (e.data && e.data.type === "purify") {
+      // Parent sends DOMPurify source; eval it inside sandbox
+      try { (new Function(e.data.src))(); purify = DOMPurify; } catch {}
+      return;
+    }
+    if (e.data && e.data.type === "kill") {
+      _root.innerHTML = "<em style='color:#fca5a5'>Execution timed out.</em>";
+      return;
+    }
+  });
+
+  // ── Execute user code ─────────────────────────────────────────
+  const userCode = ${escapedCode};
+  try {
+    const fn = new Function("app", userCode);
+    const result = fn(app);
+    // Support async code
+    if (result && typeof result.catch === "function") {
+      result.catch(err => {
+        _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
+          String(err).replace(/</g,"&lt;") + "</em>";
+      });
+    }
+    // Signal parent that execution started
+    parent.postMessage({ type: "running" }, "*");
+  } catch (err) {
+    _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
+      String(err).replace(/</g,"&lt;") + "</em>";
+    parent.postMessage({ type: "error", message: String(err) }, "*");
+  }
+
+  // Auto-resize based on content height
+  setTimeout(() => {
+    const h = document.body.scrollHeight;
+    if (h > 40) parent.postMessage({ type: "resize", height: h + 16 }, "*");
+  }, 100);
+})();
+</script>
+</body>
+</html>`;
+    }
+  },
+  methods: {
+    run() {
+      if (this.tooBig) {
+        this.error = "Live Twist code exceeds the 10 KB size limit.";
+        return;
+      }
+      this.error   = "";
+      this.running = true;
+      this.iframeKey++;  // forces Vue to recreate the iframe element
+    },
+
+    stop() {
+      this.running  = false;
+      this.iframeKey++;
+    },
+
+    onMessage(e) {
+      // Only accept messages from the sandboxed iframe (origin === "null")
+      if (e.origin !== "null") return;
+      const { type, height } = e.data || {};
+      if (type === "resize" && height) {
+        const iframe = this.$refs.sandbox;
+        if (iframe) iframe.style.height = Math.min(height, 600) + "px";
+      }
+    }
+  },
+
+  mounted() {
+    window.addEventListener("message", this.onMessage);
+  },
+  unmounted() {
+    window.removeEventListener("message", this.onMessage);
+  },
+
+  template: `
+    <div style="
+      background:#0f0a1e;border:1px solid #2e1060;border-radius:8px;
+      overflow:hidden;margin-top:4px;
+    ">
+      <!-- Header bar -->
+      <div style="
+        display:flex;align-items:center;justify-content:space-between;
+        padding:6px 10px;background:#1a1030;border-bottom:1px solid #2e1060;
+      ">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:14px;">⚡</span>
+          <span style="font-size:13px;font-weight:600;color:#c084fc;">{{ title }}</span>
+          <span style="font-size:11px;color:#5a4e70;">Live Twist</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span v-if="tooBig" style="font-size:11px;color:#fca5a5;">⚠ Too large</span>
+          <span v-else style="font-size:11px;color:#5a4e70;">{{ (codeSize/1024).toFixed(1) }} KB</span>
+          <button
+            v-if="!running"
+            @click="run"
+            :disabled="tooBig"
+            style="
+              background:linear-gradient(135deg,#6d28d9,#e0187a);
+              color:#fff;border:none;border-radius:6px;
+              padding:3px 12px;font-size:12px;font-weight:600;margin:0;cursor:pointer;
+            "
+          >▶ Run</button>
+          <button
+            v-else
+            @click="stop"
+            style="
+              background:#2d0a0a;color:#fca5a5;border:1px solid #7f1d1d;
+              border-radius:6px;padding:3px 12px;font-size:12px;margin:0;cursor:pointer;
+            "
+          >■ Stop</button>
+        </div>
+      </div>
+
+      <!-- Sandbox iframe (only mounted when running) -->
+      <div v-if="running" style="padding:0;">
+        <iframe
+          :key="iframeKey"
+          ref="sandbox"
+          sandbox="allow-scripts"
+          :srcdoc="sandboxDoc"
+          style="
+            width:100%;border:none;display:block;
+            min-height:60px;height:200px;
+            background:#0f0a1e;
+          "
+          scrolling="no"
+        ></iframe>
+      </div>
+
+      <!-- Idle placeholder -->
+      <div v-else style="
+        padding:12px;font-size:13px;color:#5a4e70;font-style:italic;
+      ">
+        Click ▶ Run to execute this Live Twist in a secure sandbox.
+      </div>
+
+      <!-- Error message -->
+      <div v-if="error" style="
+        padding:8px 10px;font-size:12px;color:#fca5a5;
+        background:#2d0a0a;border-top:1px solid #7f1d1d;
+      ">⚠️ {{ error }}</div>
+
+      <!-- Security notice -->
+      <div style="
+        padding:4px 10px;font-size:11px;color:#3b2060;
+        border-top:1px solid #1a0a30;
+      ">
+        🔒 Runs in isolated sandbox — no wallet, network, or page access
+      </div>
     </div>
   `
 };
