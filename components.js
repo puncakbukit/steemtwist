@@ -1432,31 +1432,30 @@ const UserRowComponent = {
 
 // ---- SecretTwistComposerComponent ----
 // Composer for sending a Secret Twist to a specific recipient.
-// Encrypts the message via Keychain before broadcasting.
+// Supports markdown with a Write / Preview tab toggle.
 const SecretTwistComposerComponent = {
   name: "SecretTwistComposerComponent",
   props: {
     username:    { type: String,  default: "" },
     hasKeychain: { type: Boolean, default: false },
     isSending:   { type: Boolean, default: false },
-    // Pre-fill recipient (e.g. when composing from a profile page)
     toUsername:  { type: String,  default: "" }
   },
   emits: ["send"],
   data() {
     return {
-      recipient: this.toUsername,
-      message:   ""
+      recipient:   this.toUsername,
+      message:     "",
+      previewMode: false
     };
   },
   computed: {
-    charCount() { return this.message.length; },
-    // No hard character limit for Secret Twists — the blockchain (~65 KB)
-    // is the only effective cap. Show count as information only.
+    charCount()   { return this.message.length; },
+    previewHtml() { return renderMarkdown(this.message); },
     canSend() {
       return !!this.username && this.hasKeychain &&
              !!this.recipient.trim() &&
-             this.recipient.trim().replace(/^@/,"") !== this.username &&
+             this.recipient.trim().replace(/^@/, "") !== this.username &&
              this.charCount > 0 && !this.isSending;
     }
   },
@@ -1467,7 +1466,8 @@ const SecretTwistComposerComponent = {
         recipient: this.recipient.trim().replace(/^@/, ""),
         message:   this.message.trim()
       });
-      this.message = "";
+      this.message     = "";
+      this.previewMode = false;
     }
   },
   template: `
@@ -1504,13 +1504,36 @@ const SecretTwistComposerComponent = {
         </div>
       </div>
 
-      <!-- Message field — no character limit; blockchain cap is ~65 KB -->
+      <!-- Write / Preview tabs -->
+      <div style="display:flex;gap:4px;margin-bottom:6px;">
+        <button
+          @click="previewMode = false"
+          :style="{
+            background: !previewMode ? '#3b1f5e' : 'none',
+            color:      !previewMode ? '#e8e0f0' : '#9b8db0',
+            border: '1px solid #3b1f5e', borderRadius:'6px 6px 0 0',
+            padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer'
+          }"
+        >Write</button>
+        <button
+          @click="previewMode = true"
+          :style="{
+            background: previewMode ? '#3b1f5e' : 'none',
+            color:      previewMode ? '#e8e0f0' : '#9b8db0',
+            border: '1px solid #3b1f5e', borderRadius:'6px 6px 0 0',
+            padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer'
+          }"
+        >Preview</button>
+      </div>
+
+      <!-- Write mode -->
       <textarea
+        v-show="!previewMode"
         v-model="message"
-        placeholder="Write your secret message…"
+        placeholder="Write your secret message… (markdown supported)"
         style="
           width:100%;box-sizing:border-box;
-          padding:10px;border-radius:8px;
+          padding:10px;border-radius:0 8px 8px 8px;
           border:1px solid #3b1f5e;background:#0f0a1e;
           color:#e8e0f0;font-size:15px;
           resize:vertical;min-height:80px;
@@ -1518,17 +1541,24 @@ const SecretTwistComposerComponent = {
         @keydown.ctrl.enter="submit"
       ></textarea>
 
+      <!-- Preview mode -->
+      <div
+        v-show="previewMode"
+        class="twist-body"
+        v-html="previewHtml || '<span style=\'color:#5a4e70;font-style:italic;\'>Nothing to preview.</span>'"
+        style="
+          min-height:80px;padding:10px;border-radius:0 8px 8px 8px;
+          border:1px solid #3b1f5e;background:#0f0a1e;
+          font-size:15px;color:#e8e0f0;line-height:1.6;word-break:break-word;
+        "
+      ></div>
+
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-        <span style="font-size:13px;color:#5a4e70;">
-          {{ charCount }} chars
-        </span>
+        <span style="font-size:13px;color:#5a4e70;">{{ charCount }} chars</span>
         <button
           @click="submit"
           :disabled="!canSend"
-          style="
-            padding:7px 20px;margin:0;
-            background:linear-gradient(135deg,#6d28d9,#a21caf);
-          "
+          style="padding:7px 20px;margin:0;background:linear-gradient(135deg,#6d28d9,#a21caf);"
         >{{ isSending ? "Sending…" : "Send 🔒" }}</button>
       </div>
     </div>
@@ -1554,10 +1584,11 @@ const SecretTwistCardComponent = {
       decrypted:      null,    // plaintext after successful decrypt
       isDecrypting:   false,
       decryptError:   "",
-      showReplyBox:   false,
-      replyMessage:   "",
-      isReplying:     false,
-      replyError:     "",
+      showReplyBox:    false,
+      replyMessage:    "",
+      replyPreviewMode: false,
+      isReplying:      false,
+      replyError:      "",
       replies:        [],      // decrypted nested replies
       loadingReplies: false,
       repliesLoaded:  false
@@ -1583,7 +1614,12 @@ const SecretTwistCardComponent = {
     // The other party in the conversation — used for reply encryption
     otherParty()   { return this.isSender ? this.recipient : this.post.author; },
     avatarUrl()    { return `https://steemitimages.com/u/${this.post.author}/avatar/small`; },
-    replyCount()   { return this.post.children || 0; },
+    replyCount()      { return this.post.children || 0; },
+    replyPreviewHtml() { return renderMarkdown(this.replyMessage); },
+    decryptedHtml() {
+      if (this.decrypted === null) return "";
+      return renderMarkdown(this.decrypted);
+    },
     relativeTime() {
       const diff = Date.now() - steemDate(this.post.created).getTime();
       const s = Math.floor(diff / 1000);
@@ -1643,8 +1679,9 @@ const SecretTwistCardComponent = {
         (res) => {
           this.isReplying = false;
           if (res.success) {
-            this.replyMessage  = "";
-            this.showReplyBox  = false;
+            this.replyMessage     = "";
+            this.showReplyBox     = false;
+            this.replyPreviewMode = false;
             // Reload replies after a short delay for indexing
             setTimeout(() => {
               this.repliesLoaded = false;
@@ -1689,14 +1726,16 @@ const SecretTwistCardComponent = {
       </div>
 
       <!-- Body: decrypted or locked -->
-      <div v-if="decrypted !== null" style="
-        background:#0f0a1e;border-radius:8px;padding:12px;
-        font-size:15px;color:#e8e0f0;line-height:1.6;
-        border:1px solid #3b1f5e;margin-bottom:10px;
-        white-space:pre-wrap;word-break:break-word;
-      ">
-        {{ decrypted }}
-      </div>
+      <div v-if="decrypted !== null"
+        class="twist-body"
+        v-html="decryptedHtml"
+        style="
+          background:#0f0a1e;border-radius:8px;padding:12px;
+          font-size:15px;color:#e8e0f0;line-height:1.6;
+          border:1px solid #3b1f5e;margin-bottom:10px;
+          word-break:break-word;
+        "
+      ></div>
 
       <div v-else style="
         display:flex;align-items:center;gap:10px;
@@ -1742,18 +1781,53 @@ const SecretTwistCardComponent = {
           style="background:none;border:none;cursor:pointer;font-size:15px;padding:0;color:#fca5a5;line-height:1;margin:0;">✕</button>
       </div>
 
-      <!-- Inline reply composer -->
+      <!-- Inline reply composer with Write / Preview -->
       <div v-if="showReplyBox && canReply" style="margin-bottom:10px;">
+        <div style="display:flex;gap:4px;margin-bottom:4px;">
+          <button
+            @click="replyPreviewMode = false"
+            :style="{
+              background: !replyPreviewMode ? '#3b1f5e' : 'none',
+              color:      !replyPreviewMode ? '#e8e0f0' : '#9b8db0',
+              border:'1px solid #3b1f5e', borderRadius:'6px 6px 0 0',
+              padding:'2px 10px', fontSize:'11px', margin:0, cursor:'pointer'
+            }"
+          >Write</button>
+          <button
+            @click="replyPreviewMode = true"
+            :style="{
+              background: replyPreviewMode ? '#3b1f5e' : 'none',
+              color:      replyPreviewMode ? '#e8e0f0' : '#9b8db0',
+              border:'1px solid #3b1f5e', borderRadius:'6px 6px 0 0',
+              padding:'2px 10px', fontSize:'11px', margin:0, cursor:'pointer'
+            }"
+          >Preview</button>
+        </div>
+
         <textarea
+          v-show="!replyPreviewMode"
           v-model="replyMessage"
-          placeholder="Write an encrypted reply…"
+          placeholder="Write an encrypted reply… (markdown supported)"
           style="
-            width:100%;box-sizing:border-box;padding:8px;border-radius:8px;
+            width:100%;box-sizing:border-box;padding:8px;
+            border-radius:0 8px 8px 8px;
             border:1px solid #3b1f5e;background:#0f0a1e;
             color:#e8e0f0;font-size:14px;resize:vertical;min-height:60px;
           "
           @keydown.ctrl.enter="sendReply"
         ></textarea>
+
+        <div
+          v-show="replyPreviewMode"
+          class="twist-body"
+          v-html="replyPreviewHtml || '<span style=\'color:#5a4e70;font-style:italic;\'>Nothing to preview.</span>'"
+          style="
+            min-height:60px;padding:8px;border-radius:0 8px 8px 8px;
+            border:1px solid #3b1f5e;background:#0f0a1e;
+            font-size:14px;color:#e8e0f0;line-height:1.6;word-break:break-word;
+          "
+        ></div>
+
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
           <span style="font-size:12px;color:#5a4e70;">{{ replyMessage.length }} chars</span>
           <button
