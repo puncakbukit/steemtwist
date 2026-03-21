@@ -532,6 +532,33 @@ function retwistPost(username, author, permlink, callback) {
   );
 }
 
+// Follow a Steem account via the "follow" plugin custom_json.
+// callback: (response) => { response.success, response.error }
+function followUser(follower, following, callback) {
+  steem_keychain.requestCustomJson(
+    follower,
+    "follow",
+    "Posting",
+    JSON.stringify(["follow", { follower, following, what: ["blog"] }]),
+    "Follow @" + following,
+    callback
+  );
+}
+
+// Unfollow a Steem account via the "follow" plugin custom_json.
+// Passing what: [] clears the follow relationship.
+// callback: (response) => { response.success, response.error }
+function unfollowUser(follower, following, callback) {
+  steem_keychain.requestCustomJson(
+    follower,
+    "follow",
+    "Posting",
+    JSON.stringify(["follow", { follower, following, what: [] }]),
+    "Unfollow @" + following,
+    callback
+  );
+}
+
 // Edit a twist or reply by re-broadcasting the comment op with updated body.
 // The permlink stays the same — the chain overwrites the post body.
 // comment_options cannot be changed after initial post, so only comment is sent.

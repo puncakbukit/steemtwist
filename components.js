@@ -155,44 +155,27 @@ const UserProfileComponent = {
     safeAvatarUrl(username) {
       return `https://steemitimages.com/u/${username}/avatar`;
     },
-    safeCoverStyle() {
-      const url = this.profileData?.coverImage || "";
-      try {
-        const u = new URL(url);
-        if (u.protocol === "https:") {
-          return `url(${url})`;
-        }
-      } catch {}
-      return "linear-gradient(135deg,#1a3af5 0%,#8b2fc9 55%,#e0187a 100%)";
-    }
   },
   template: `
     <div v-if="profileData" style="max-width:600px;margin:0 auto 16px;">
 
-      <!-- Cover image -->
-      <div :style="{
-        backgroundImage: safeCoverStyle(),
-        backgroundSize: 'cover', backgroundPosition: 'center',
-        height: '140px', borderRadius: '12px 12px 0 0'
-      }"></div>
-
-      <!-- Card body -->
+      <!-- Card body — no cover image here (shown globally in header) -->
       <div style="
-        background:#1e1535;border:1px solid #2e2050;border-top:none;
-        border-radius:0 0 12px 12px;padding:0 16px 16px;
+        background:#1e1535;border:1px solid #2e2050;
+        border-radius:12px;padding:16px;
       ">
         <!-- Avatar row -->
-        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:-36px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
           <img
             :src="safeAvatarUrl(profileData.username)"
-            style="width:72px;height:72px;border-radius:50%;border:3px solid #1e1535;background:#1e1535;flex-shrink:0;"
+            style="width:72px;height:72px;border-radius:50%;border:3px solid #2e2050;background:#0f0a1e;flex-shrink:0;"
             @error="$event.target.src='https://steemitimages.com/u/guest/avatar'"
           />
           <!-- Reputation badge -->
           <div style="
             background:linear-gradient(135deg,#8b2fc9,#e0187a);
             color:#fff;font-size:12px;font-weight:700;
-            padding:3px 10px;border-radius:20px;margin-bottom:4px;
+            padding:3px 10px;border-radius:20px;
           " title="Steem reputation score">
             ⭐ {{ profileData.reputation }}
           </div>
@@ -1344,25 +1327,52 @@ const SignalItemComponent = {
 };
 
 // ---- UserRowComponent ----
-// A compact user row: avatar, display name, @username, profile link.
+// A compact user row: avatar, display name, @username, bio, optional Follow button.
 // Used in Followers, Following, and Friends lists.
-// Pass just `username` for a minimal row; pass `profileData` (from fetchAccount)
-// for a richer row with display name and bio.
 const UserRowComponent = {
   name: "UserRowComponent",
   props: {
-    username:    { type: String,  required: true },
-    profileData: { type: Object,  default: null  }   // optional enriched data
+    username:     { type: String,  required: true },
+    profileData:  { type: Object,  default: null },
+    // Follow feature — only shown when loggedInUser is set and not viewing own row
+    loggedInUser: { type: String,  default: "" },
+    hasKeychain:  { type: Boolean, default: false },
+    isFollowing:  { type: Boolean, default: false }  // is loggedInUser following this user?
+  },
+  emits: ["follow", "unfollow"],
+  data() {
+    return {
+      followState:  this.isFollowing,   // local optimistic state
+      isBusy:       false
+    };
+  },
+  watch: {
+    isFollowing(v) { this.followState = v; }
   },
   computed: {
-    displayName() {
-      return this.profileData?.displayName || this.username;
-    },
-    about() {
-      return this.profileData?.about || "";
-    },
-    profileUrl() {
-      return `#/@${this.username}`;
+    displayName() { return this.profileData?.displayName || this.username; },
+    about()       { return this.profileData?.about || ""; },
+    profileUrl()  { return `#/@${this.username}`; },
+    showFollowBtn() {
+      // Show only when logged in, has Keychain, and not viewing your own row
+      return !!this.loggedInUser && this.hasKeychain &&
+             this.loggedInUser !== this.username;
+    }
+  },
+  methods: {
+    toggleFollow(e) {
+      e.preventDefault();   // don't navigate via the parent <a>
+      e.stopPropagation();
+      if (this.isBusy) return;
+      this.isBusy = true;
+      const action = this.followState ? unfollowUser : followUser;
+      action(this.loggedInUser, this.username, (res) => {
+        this.isBusy = false;
+        if (res.success) {
+          this.followState = !this.followState;
+          this.$emit(this.followState ? "follow" : "unfollow", this.username);
+        }
+      });
     }
   },
   template: `
@@ -1398,8 +1408,24 @@ const UserRowComponent = {
         ">{{ about }}</div>
       </div>
 
-      <!-- Arrow -->
-      <span style="color:#2e2050;font-size:16px;flex-shrink:0;">›</span>
+      <!-- Follow / Unfollow button -->
+      <button
+        v-if="showFollowBtn"
+        @click="toggleFollow"
+        :disabled="isBusy"
+        :style="{
+          flexShrink: 0,
+          borderRadius: '20px', padding: '4px 12px', fontSize: '12px',
+          fontWeight: '600', border: '1px solid', margin: 0,
+          background:  followState ? '#0c2d1a' : 'linear-gradient(135deg,#8b2fc9,#e0187a)',
+          color:       followState ? '#4ade80' : '#fff',
+          borderColor: followState ? '#166534' : 'transparent',
+          cursor:      isBusy ? 'default' : 'pointer'
+        }"
+      >{{ isBusy ? '…' : (followState ? 'Following' : 'Follow') }}</button>
+
+      <!-- Arrow (when no follow button) -->
+      <span v-else style="color:#2e2050;font-size:16px;flex-shrink:0;">›</span>
     </a>
   `
 };

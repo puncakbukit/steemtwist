@@ -781,23 +781,24 @@ const SignalsView = {
 // Each user row is enriched with fetchAccount in batches for display names.
 const SocialView = {
   name: "SocialView",
-  inject: ["username", "notify"],
+  inject: ["username", "hasKeychain", "notify"],
   components: { LoadingSpinnerComponent, UserRowComponent },
 
   data() {
     return {
-      tab:        "followers",  // "followers" | "following" | "friends"
-      followers:  [],
-      following:  [],
-      profiles:   {},           // username -> profileData cache
-      loading:    true
+      tab:           "followers",
+      followers:     [],
+      following:     [],    // the viewUser's following list
+      myFollowing:   [],    // the logged-in user's own following list (for follow buttons)
+      profiles:      {},
+      loading:       true
     };
   },
 
   computed: {
-    viewUser() {
-      return this.$route.params.user;
-    },
+    viewUser() { return this.$route.params.user; },
+    // Set of usernames the logged-in Twister is following (for O(1) lookup)
+    myFollowingSet() { return new Set(this.myFollowing); },
     friends() {
       const followingSet = new Set(this.following);
       return this.followers.filter(u => followingSet.has(u));
@@ -822,24 +823,29 @@ const SocialView = {
 
   watch: {
     "$route.params.user"() { this.load(); },
-    // Enrich profiles whenever the active list changes
     activeList(list) { this.enrichProfiles(list); }
   },
 
   methods: {
     async load() {
-      this.loading   = true;
-      this.followers = [];
-      this.following = [];
-      this.profiles  = {};
+      this.loading     = true;
+      this.followers   = [];
+      this.following   = [];
+      this.myFollowing = [];
+      this.profiles    = {};
       try {
-        const [followers, following] = await Promise.all([
+        // Fetch viewUser's social lists + logged-in user's following (for follow buttons)
+        const promises = [
           fetchFollowers(this.viewUser),
           fetchFollowing(this.viewUser)
-        ]);
-        this.followers = followers;
-        this.following = following;
-        // Enrich the initially visible list
+        ];
+        if (this.username && this.username !== this.viewUser) {
+          promises.push(fetchFollowing(this.username));
+        }
+        const [followers, following, myFollowing] = await Promise.all(promises);
+        this.followers   = followers;
+        this.following   = following;
+        this.myFollowing = myFollowing || (this.username === this.viewUser ? following : []);
         await this.enrichProfiles(this.activeList);
       } catch {
         this.notify("Could not load social data.", "error");
@@ -847,8 +853,6 @@ const SocialView = {
       this.loading = false;
     },
 
-    // Fetch account profiles for users not yet in the cache.
-    // Batches of 50 to avoid hammering the node.
     async enrichProfiles(usernames) {
       const needed = usernames.filter(u => !this.profiles[u]);
       if (needed.length === 0) return;
@@ -863,6 +867,14 @@ const SocialView = {
           )
         );
       }
+    },
+
+    // Optimistically update myFollowing when the user follows/unfollows from the list
+    handleFollow(user) {
+      if (!this.myFollowing.includes(user)) this.myFollowing.push(user);
+    },
+    handleUnfollow(user) {
+      this.myFollowing = this.myFollowing.filter(u => u !== user);
     }
   },
 
@@ -917,6 +929,11 @@ const SocialView = {
           :key="user"
           :username="user"
           :profile-data="profiles[user] || null"
+          :logged-in-user="username"
+          :has-keychain="hasKeychain"
+          :is-following="myFollowingSet.has(user)"
+          @follow="handleFollow"
+          @unfollow="handleUnfollow"
         ></user-row-component>
       </div>
 
