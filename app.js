@@ -10,13 +10,12 @@ const { createRouter, createWebHashHistory, useRoute }                = VueRoute
 // ROUTE VIEWS
 // ============================================================
 
-// ---- HomeView ----
-// Main timeline: composer + live feed of this month's twists.
-// Supports three sort modes (New / Hot / Top) computed client-side from
-// blockchain vote data. Firehose mode streams new twists and live votes,
-// triggering instant re-ranking without any server round-trips.
-const HomeView = {
-  name: "HomeView",
+// ---- ExploreView ----
+// Global Twist Stream: all twists this month from everyone.
+// Supports three sort modes (New / Hot / Top) and Firehose live stream.
+// Route: /explore
+const ExploreView = {
+  name: "ExploreView",
   inject: ["username", "hasKeychain", "notify", "understreamOn", "toggleUnderstream"],
   components: { TwistComposerComponent, TwistCardComponent, LoadingSpinnerComponent },
 
@@ -297,6 +296,215 @@ const HomeView = {
           :class="post._firehose ? 'twist-flash' : ''"
           @voted="loadFeed()"
           @pin="handlePin"
+          @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
+        ></twist-card-component>
+      </template>
+
+    </div>
+  `
+};
+
+// ---- HomeView ----
+// Personalised feed: twists from users the logged-in Twister follows.
+// Fetches the most recent posts for each followed user in parallel then
+// merges and sorts. Logged-out visitors see the Explore feed instead.
+// Route: /
+const HomeView = {
+  name: "HomeView",
+  inject: ["username", "hasKeychain", "notify"],
+  components: { TwistComposerComponent, TwistCardComponent, LoadingSpinnerComponent },
+
+  data() {
+    return {
+      twists:      [],
+      loading:     true,
+      isPosting:   false,
+      sortMode:    "new",   // "new" | "hot" | "top"
+      emptyFeed:   false    // true when following list is empty
+    };
+  },
+
+  computed: {
+    sortedTwists() { return sortTwists(this.twists, this.sortMode); }
+  },
+
+  async created() {
+    await this.loadFeed();
+  },
+
+  watch: {
+    // Reload when the user logs in or out
+    username() { this.loadFeed(); }
+  },
+
+  methods: {
+    async loadFeed() {
+      this.loading   = true;
+      this.emptyFeed = false;
+      this.twists    = [];
+
+      if (!this.username) {
+        // Logged-out: redirect feel to Explore
+        this.loading = false;
+        return;
+      }
+
+      try {
+        // 1. Get the list of followed accounts
+        const following = await fetchFollowing(this.username);
+        if (following.length === 0) {
+          this.emptyFeed = true;
+          this.loading   = false;
+          return;
+        }
+
+        // 2. Fetch recent twists for each followed user in parallel.
+        //    Cap at 10 posts per user to keep it snappy; merge and sort.
+        const PER_USER = 10;
+        const results = await Promise.all(
+          following.map(u =>
+            fetchTwistsByUser(u, getMonthlyRoot())
+              .then(posts => posts.slice(0, PER_USER))
+              .catch(() => [])
+          )
+        );
+
+        // Flatten, deduplicate by permlink, sort newest-first
+        const seen = new Set();
+        const merged = [];
+        for (const posts of results) {
+          for (const p of posts) {
+            if (!seen.has(p.permlink)) {
+              seen.add(p.permlink);
+              merged.push(p);
+            }
+          }
+        }
+        this.twists = merged;
+      } catch {
+        this.notify("Could not load home feed.", "error");
+      }
+      this.loading = false;
+    },
+
+    handlePin(post) {
+      // Pin handled globally; no pinned twist shown on Home feed
+    },
+
+    async handlePost(message) {
+      if (!message) return;
+      this.isPosting = true;
+      postTwist(this.username, message, async (res) => {
+        this.isPosting = false;
+        if (res.success) {
+          this.notify("Twist posted! 🌀", "success");
+          await new Promise(r => setTimeout(r, 2000));
+          await this.loadFeed();
+        } else {
+          this.notify(res.error || res.message || "Failed to post twist.", "error");
+        }
+      });
+    }
+  },
+
+  template: `
+    <div style="margin-top:20px;">
+
+      <!-- Top bar -->
+      <div style="
+        display:flex;align-items:center;flex-wrap:wrap;gap:8px;
+        font-size:13px;margin-bottom:14px;
+      ">
+        <span style="color:#e8e0f0;font-weight:600;font-size:15px;">🏠 Home</span>
+        <span style="color:#5a4e70;font-size:12px;">Twists from Twisters you follow</span>
+
+        <button
+          @click="loadFeed"
+          style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                 border-radius:12px;padding:2px 10px;font-size:12px;margin:0;"
+        >⟳ Refresh</button>
+
+        <!-- Sort mode tabs — right-aligned -->
+        <div style="margin-left:auto;display:flex;gap:4px;">
+          <button
+            v-for="mode in [{key:'new',label:'🕒 New'},{key:'hot',label:'🔥 Hot'},{key:'top',label:'⬆ Top'}]"
+            :key="mode.key"
+            @click="sortMode = mode.key"
+            :style="{
+              borderRadius:'20px', padding:'2px 12px', fontSize:'12px',
+              fontWeight: sortMode === mode.key ? '700' : '400',
+              border:'1px solid',
+              background:  sortMode === mode.key ? 'linear-gradient(135deg,#8b2fc9,#e0187a)' : '#1e1535',
+              color:       sortMode === mode.key ? '#fff' : '#9b8db0',
+              borderColor: sortMode === mode.key ? '#a855f7' : '#2e2050',
+              cursor:'pointer', margin:0
+            }"
+          >{{ mode.label }}</button>
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <twist-composer-component
+        v-if="username && hasKeychain"
+        :username="username"
+        :has-keychain="hasKeychain"
+        :is-posting="isPosting"
+        @post="handlePost"
+      ></twist-composer-component>
+
+      <!-- Logged-out: prompt to sign in or explore -->
+      <div v-if="!username" style="
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;
+        padding:32px 20px;text-align:center;max-width:600px;margin:0 auto 20px;
+      ">
+        <div style="font-size:36px;margin-bottom:12px;">🌀</div>
+        <div style="color:#e8e0f0;font-size:16px;font-weight:600;margin-bottom:8px;">
+          Welcome to SteemTwist
+        </div>
+        <div style="color:#9b8db0;font-size:14px;margin-bottom:16px;">
+          Sign in with Steem Keychain to see twists from Twisters you follow.
+        </div>
+        <a href="#/explore"
+           style="color:#a855f7;font-size:14px;text-decoration:none;">
+          Browse the Explore feed instead →
+        </a>
+      </div>
+
+      <!-- Empty following list -->
+      <div v-else-if="emptyFeed && !loading" style="
+        background:#1e1535;border:1px solid #2e2050;border-radius:12px;
+        padding:32px 20px;text-align:center;max-width:600px;margin:0 auto;
+      ">
+        <div style="font-size:32px;margin-bottom:10px;">👤</div>
+        <div style="color:#e8e0f0;font-size:15px;font-weight:600;margin-bottom:8px;">
+          Your feed is empty
+        </div>
+        <div style="color:#9b8db0;font-size:14px;margin-bottom:14px;">
+          Follow some Twisters to see their twists here.
+        </div>
+        <a href="#/explore"
+           style="color:#a855f7;font-size:14px;text-decoration:none;">
+          Discover Twisters on Explore →
+        </a>
+      </div>
+
+      <!-- Feed -->
+      <loading-spinner-component v-else-if="loading" message="Loading your feed…"></loading-spinner-component>
+
+      <template v-else>
+        <div v-if="sortedTwists.length === 0"
+             style="color:#5a4e70;padding:40px 0;font-size:15px;text-align:center;">
+          No twists from followed Twisters this month yet.
+        </div>
+
+        <twist-card-component
+          v-for="post in sortedTwists"
+          :key="post.permlink"
+          :post="post"
+          :username="username"
+          :has-keychain="hasKeychain"
+          :pinned="false"
+          @voted="loadFeed()"
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
       </template>
@@ -1221,6 +1429,7 @@ const SecretTwistView = {
 
 const routes = [
   { path: "/",               component: HomeView    },
+  { path: "/explore",        component: ExploreView  },
   { path: "/signals",        component: SignalsView },
   { path: "/secret-twists",  component: SecretTwistView },
   { path: "/about",          component: AboutView   },
@@ -1426,7 +1635,11 @@ const App = {
         <nav style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
           <router-link to="/" exact-active-class="nav-active"
             style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);"
-          >Home</router-link>
+          >🏠 Home</router-link>
+
+          <router-link to="/explore" exact-active-class="nav-active"
+            style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);"
+          >🔭 Explore</router-link>
 
           <router-link v-if="username" :to="'/@' + username" exact-active-class="nav-active"
             style="color:#fff;text-decoration:none;padding:5px 12px;border-radius:20px;font-size:14px;font-weight:500;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);"
