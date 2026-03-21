@@ -1040,31 +1040,61 @@ function fetchSignals(username) {
 // Steem allows up to 1000 per call; we keep fetching until we get
 // fewer than the limit, signalling the last page.
 // Returns Promise<string[]> — array of follower usernames.
+// Fetch one page of followers.
+// Returns Promise<{ users: string[], nextCursor: string, hasMore: boolean }>
+function fetchFollowersPage(username, startFrom = "", limit = 50) {
+  return new Promise((resolve) => {
+    steem.api.getFollowers(username, startFrom, "blog", limit, (err, result) => {
+      if (err || !result || result.length === 0) {
+        return resolve({ users: [], nextCursor: "", hasMore: false });
+      }
+      const users = result.map(r => r.follower);
+      const hasMore = result.length === limit;
+      const nextCursor = hasMore ? users[users.length - 1] : "";
+      resolve({ users, nextCursor, hasMore });
+    });
+  });
+}
+
+// Fetch one page of following.
+// Returns Promise<{ users: string[], nextCursor: string, hasMore: boolean }>
+function fetchFollowingPage(username, startFrom = "", limit = 50) {
+  return new Promise((resolve) => {
+    steem.api.getFollowing(username, startFrom, "blog", limit, (err, result) => {
+      if (err || !result || result.length === 0) {
+        return resolve({ users: [], nextCursor: "", hasMore: false });
+      }
+      const users = result.map(r => r.following);
+      const hasMore = result.length === limit;
+      const nextCursor = hasMore ? users[users.length - 1] : "";
+      resolve({ users, nextCursor, hasMore });
+    });
+  });
+}
+
+// Fetch ALL followers of a user (used internally for follow-count and Friends).
+// Returns Promise<string[]>
 function fetchFollowers(username) {
   const LIMIT = 1000;
   const collected = [];
-
   function page(startFrom) {
     return new Promise((resolve) => {
       steem.api.getFollowers(username, startFrom, "blog", LIMIT, (err, result) => {
         if (err || !result || result.length === 0) return resolve();
         for (const row of result) collected.push(row.follower);
         if (result.length < LIMIT) return resolve();
-        // Last entry is the cursor for the next page
         page(result[result.length - 1].follower).then(resolve);
       });
     });
   }
-
   return page("").then(() => collected);
 }
 
-// Fetch ALL accounts that a user is following.
-// Returns Promise<string[]> — array of following usernames.
+// Fetch ALL accounts a user is following.
+// Returns Promise<string[]>
 function fetchFollowing(username) {
   const LIMIT = 1000;
   const collected = [];
-
   function page(startFrom) {
     return new Promise((resolve) => {
       steem.api.getFollowing(username, startFrom, "blog", LIMIT, (err, result) => {
@@ -1075,7 +1105,6 @@ function fetchFollowing(username) {
       });
     });
   }
-
   return page("").then(() => collected);
 }
 

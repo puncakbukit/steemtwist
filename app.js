@@ -786,33 +786,61 @@ const SocialView = {
 
   data() {
     return {
-      tab:           "followers",
-      followers:     [],
-      following:     [],    // the viewUser's following list
-      myFollowing:   [],    // the logged-in user's own following list (for follow buttons)
-      profiles:      {},
-      loading:       true
+      tab:             "followers",
+
+      // Paginated display lists — only what's loaded so far
+      followers:       [],
+      following:       [],
+      followersCursor: "",
+      followingCursor: "",
+      followersMore:   false,
+      followingMore:   false,
+      loadingMore:     false,
+
+      // Friends: computed from full lists (fetched lazily when Friends tab is opened)
+      allFollowers:    null,   // null = not yet fetched
+      allFollowing:    null,
+      loadingFriends:  false,
+
+      // The logged-in user's own following list (for Follow buttons)
+      myFollowing:     [],
+
+      profiles:        {},
+      loading:         true
     };
   },
 
   computed: {
-    viewUser() { return this.$route.params.user; },
-    // Set of usernames the logged-in Twister is following (for O(1) lookup)
-    myFollowingSet() { return new Set(this.myFollowing); },
+    viewUser()      { return this.$route.params.user; },
+    myFollowingSet(){ return new Set(this.myFollowing); },
+
     friends() {
-      const followingSet = new Set(this.following);
-      return this.followers.filter(u => followingSet.has(u));
+      if (!this.allFollowers || !this.allFollowing) return [];
+      const followingSet = new Set(this.allFollowing);
+      return this.allFollowers.filter(u => followingSet.has(u));
     },
+
     activeList() {
       if (this.tab === "following") return this.following;
       if (this.tab === "friends")   return this.friends;
       return this.followers;
     },
+
+    hasMore() {
+      if (this.tab === "following") return this.followingMore;
+      if (this.tab === "friends")   return false;
+      return this.followersMore;
+    },
+
     tabs() {
+      const friendsCount = (this.allFollowers && this.allFollowing)
+        ? this.friends.length : "?";
       return [
-        { key: "followers", label: "Followers", count: this.followers.length },
-        { key: "following", label: "Following",  count: this.following.length },
-        { key: "friends",   label: "Friends",    count: this.friends.length   }
+        { key: "followers", label: "Followers",
+          count: this.followers.length + (this.followersMore ? "+" : "") },
+        { key: "following", label: "Following",
+          count: this.following.length + (this.followingMore ? "+" : "") },
+        { key: "friends",   label: "Friends",    count: friendsCount }
       ];
     }
   },
@@ -822,30 +850,47 @@ const SocialView = {
   },
 
   watch: {
-    "$route.params.user"() { this.load(); },
-    activeList(list) { this.enrichProfiles(list); }
+    "$route.params.user"() { this.load(); }
   },
 
   methods: {
     async load() {
-      this.loading     = true;
-      this.followers   = [];
-      this.following   = [];
-      this.myFollowing = [];
-      this.profiles    = {};
+      this.loading         = true;
+      this.followers       = [];
+      this.following       = [];
+      this.followersCursor = "";
+      this.followingCursor = "";
+      this.followersMore   = false;
+      this.followingMore   = false;
+      this.allFollowers    = null;
+      this.allFollowing    = null;
+      this.profiles        = {};
+
       try {
-        // Fetch viewUser's social lists + logged-in user's following (for follow buttons)
-        const promises = [
-          fetchFollowers(this.viewUser),
-          fetchFollowing(this.viewUser)
-        ];
+        // Load first page of followers + following in parallel
+        const [fp, fg] = await Promise.all([
+          fetchFollowersPage(this.viewUser, "", 50),
+          fetchFollowingPage(this.viewUser, "", 50)
+        ]);
+        this.followers       = fp.users;
+        this.followersCursor = fp.nextCursor;
+        this.followersMore   = fp.hasMore;
+        this.following       = fg.users;
+        this.followingCursor = fg.nextCursor;
+        this.followingMore   = fg.hasMore;
+
+        // Load logged-in user's following list for Follow buttons
+        // (only if different from viewUser)
         if (this.username && this.username !== this.viewUser) {
-          promises.push(fetchFollowing(this.username));
+          fetchFollowing(this.username).then(list => { this.myFollowing = list; });
+        } else if (this.username === this.viewUser) {
+          // If viewing own page, myFollowing = full following list
+          fetchFollowing(this.username).then(list => {
+            this.myFollowing  = list;
+            this.allFollowing = list;
+          });
         }
-        const [followers, following, myFollowing] = await Promise.all(promises);
-        this.followers   = followers;
-        this.following   = following;
-        this.myFollowing = myFollowing || (this.username === this.viewUser ? following : []);
+
         await this.enrichProfiles(this.activeList);
       } catch {
         this.notify("Could not load social data.", "error");
@@ -853,14 +898,63 @@ const SocialView = {
       this.loading = false;
     },
 
+    async loadMore() {
+      if (this.loadingMore || !this.hasMore) return;
+      this.loadingMore = true;
+      try {
+        if (this.tab === "followers") {
+          const { users, nextCursor, hasMore } =
+            await fetchFollowersPage(this.viewUser, this.followersCursor, 50);
+          this.followers.push(...users);
+          this.followersCursor = nextCursor;
+          this.followersMore   = hasMore;
+          await this.enrichProfiles(users);
+        } else if (this.tab === "following") {
+          const { users, nextCursor, hasMore } =
+            await fetchFollowingPage(this.viewUser, this.followingCursor, 50);
+          this.following.push(...users);
+          this.followingCursor = nextCursor;
+          this.followingMore   = hasMore;
+          await this.enrichProfiles(users);
+        }
+      } catch {
+        this.notify("Could not load more.", "error");
+      }
+      this.loadingMore = false;
+    },
+
+    // Friends tab: fetch full lists on demand (only once)
+    async loadFriends() {
+      if (this.allFollowers !== null || this.loadingFriends) return;
+      this.loadingFriends = true;
+      try {
+        const [af, ag] = await Promise.all([
+          fetchFollowers(this.viewUser),
+          fetchFollowing(this.viewUser)
+        ]);
+        this.allFollowers = af;
+        this.allFollowing = ag;
+        if (this.username === this.viewUser) this.myFollowing = ag;
+        await this.enrichProfiles(this.friends);
+      } catch {
+        this.notify("Could not load Friends.", "error");
+      }
+      this.loadingFriends = false;
+    },
+
+    switchTab(key) {
+      this.tab = key;
+      if (key === "friends") this.loadFriends();
+      else this.enrichProfiles(this.activeList);
+    },
+
     async enrichProfiles(usernames) {
       const needed = usernames.filter(u => !this.profiles[u]);
       if (needed.length === 0) return;
       const BATCH = 50;
       for (let i = 0; i < needed.length; i += BATCH) {
-        const batch = needed.slice(i, i + BATCH);
         await Promise.all(
-          batch.map(u =>
+          needed.slice(i, i + BATCH).map(u =>
             fetchAccount(u)
               .then(p => { if (p) this.profiles[u] = p; })
               .catch(() => {})
@@ -869,7 +963,6 @@ const SocialView = {
       }
     },
 
-    // Optimistically update myFollowing when the user follows/unfollows from the list
     handleFollow(user) {
       if (!this.myFollowing.includes(user)) this.myFollowing.push(user);
     },
@@ -883,9 +976,8 @@ const SocialView = {
 
       <!-- Header -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-        <a
-          :href="'#/@' + viewUser"
-          style="color:#a855f7;text-decoration:none;font-size:14px;font-weight:600;"
+        <a :href="'#/@' + viewUser"
+           style="color:#a855f7;text-decoration:none;font-size:14px;font-weight:600;"
         >← @{{ viewUser }}</a>
         <h2 style="margin:0;color:#e8e0f0;font-size:18px;">👤 Social</h2>
       </div>
@@ -893,9 +985,8 @@ const SocialView = {
       <!-- Tab bar -->
       <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
         <button
-          v-for="t in tabs"
-          :key="t.key"
-          @click="tab = t.key; enrichProfiles(activeList)"
+          v-for="t in tabs" :key="t.key"
+          @click="switchTab(t.key)"
           :style="{
             borderRadius:'20px', padding:'4px 14px', fontSize:'13px',
             fontWeight: tab === t.key ? '700' : '400', border:'1px solid',
@@ -907,8 +998,12 @@ const SocialView = {
         >{{ t.label }} <span style="opacity:0.7;font-weight:400;">({{ t.count }})</span></button>
       </div>
 
-      <!-- Loading -->
+      <!-- Loading initial -->
       <loading-spinner-component v-if="loading" message="Loading…"></loading-spinner-component>
+
+      <!-- Loading Friends -->
+      <loading-spinner-component v-else-if="tab === 'friends' && loadingFriends"
+        message="Computing friends…"></loading-spinner-component>
 
       <!-- Empty -->
       <div v-else-if="activeList.length === 0" style="
@@ -921,21 +1016,30 @@ const SocialView = {
       </div>
 
       <!-- User list -->
-      <div v-else style="
-        background:#1e1535;border:1px solid #2e2050;border-radius:12px;overflow:hidden;
-      ">
-        <user-row-component
-          v-for="user in activeList"
-          :key="user"
-          :username="user"
-          :profile-data="profiles[user] || null"
-          :logged-in-user="username"
-          :has-keychain="hasKeychain"
-          :is-following="myFollowingSet.has(user)"
-          @follow="handleFollow"
-          @unfollow="handleUnfollow"
-        ></user-row-component>
-      </div>
+      <template v-else>
+        <div style="background:#1e1535;border:1px solid #2e2050;border-radius:12px;overflow:hidden;">
+          <user-row-component
+            v-for="user in activeList" :key="user"
+            :username="user"
+            :profile-data="profiles[user] || null"
+            :logged-in-user="username"
+            :has-keychain="hasKeychain"
+            :is-following="myFollowingSet.has(user)"
+            @follow="handleFollow"
+            @unfollow="handleUnfollow"
+          ></user-row-component>
+        </div>
+
+        <!-- Load more button -->
+        <div v-if="hasMore" style="text-align:center;margin-top:12px;">
+          <button
+            @click="loadMore"
+            :disabled="loadingMore"
+            style="background:#1e1535;border:1px solid #2e2050;color:#a855f7;
+                   border-radius:20px;padding:6px 24px;font-size:13px;margin:0;"
+          >{{ loadingMore ? 'Loading…' : 'Load more' }}</button>
+        </div>
+      </template>
 
     </div>
   `
