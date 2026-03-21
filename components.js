@@ -1451,7 +1451,11 @@ const SecretTwistComposerComponent = {
   },
   computed: {
     charCount()   { return this.message.length; },
-    previewHtml() { return renderMarkdown(this.message); },
+    previewHtml() {
+      return this.message.trim()
+        ? renderMarkdown(this.message)
+        : "<em style='color:#5a4e70'>Nothing to preview.</em>";
+    },
     canSend() {
       return !!this.username && this.hasKeychain &&
              !!this.recipient.trim() &&
@@ -1545,7 +1549,7 @@ const SecretTwistComposerComponent = {
       <div
         v-show="previewMode"
         class="twist-body"
-        v-html="previewHtml || '<span style=\'color:#5a4e70;font-style:italic;\'>Nothing to preview.</span>'"
+        v-html="previewHtml"
         style="
           min-height:80px;padding:10px;border-radius:0 8px 8px 8px;
           border:1px solid #3b1f5e;background:#0f0a1e;
@@ -1615,7 +1619,11 @@ const SecretTwistCardComponent = {
     otherParty()   { return this.isSender ? this.recipient : this.post.author; },
     avatarUrl()    { return `https://steemitimages.com/u/${this.post.author}/avatar/small`; },
     replyCount()      { return this.post.children || 0; },
-    replyPreviewHtml() { return renderMarkdown(this.replyMessage); },
+    replyPreviewHtml() {
+      return this.replyMessage.trim()
+        ? renderMarkdown(this.replyMessage)
+        : "<em style='color:#5a4e70'>Nothing to preview.</em>";
+    },
     decryptedHtml() {
       if (this.decrypted === null) return "";
       return renderMarkdown(this.decrypted);
@@ -1820,7 +1828,7 @@ const SecretTwistCardComponent = {
         <div
           v-show="replyPreviewMode"
           class="twist-body"
-          v-html="replyPreviewHtml || '<span style=\'color:#5a4e70;font-style:italic;\'>Nothing to preview.</span>'"
+          v-html="replyPreviewHtml"
           style="
             min-height:60px;padding:8px;border-radius:0 8px 8px 8px;
             border:1px solid #3b1f5e;background:#0f0a1e;
