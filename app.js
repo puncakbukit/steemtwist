@@ -121,7 +121,7 @@ const ExploreView = {
             return;
           }
           if (this.twists.some(p => p.permlink === post.permlink)) return;
-          this.twists.push(post);   // push, not unshift — sortedTwists handles order
+          this.twists.push(post);
           setTimeout(() => {
             const p = this.twists.find(t => t.permlink === post.permlink);
             if (p) p._firehose = false;
@@ -141,9 +141,11 @@ const ExploreView = {
           } else {
             votes.push({ voter, percent: weight });
           }
-          // Trigger Vue reactivity on the array property
           post.active_votes = [...votes];
-        }
+        },
+
+        // Pass understream flag so the firehose uses the correct filter
+        { understream: this.understreamOn }
       );
     },
 
@@ -174,7 +176,7 @@ const ExploreView = {
 
         <!-- Understream toggle -->
         <button
-          @click="toggleUnderstream(); loadFeed(true)"
+          @click="toggleUnderstream(); loadFeed(true); if(firehoseOn){ stopFirehose(); startFirehose(); }"
           :style="{
             borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
             fontWeight:'600', border:'1px solid',
@@ -416,8 +418,6 @@ const HomeView = {
       this.firehoseStream = startFirehose(
         getMonthlyRoot(),
         (post, isUpdate) => {
-          // Filter: only show posts from followed users
-          if (!this.followingSet.has(post.author)) return;
           if (isUpdate) {
             const idx = this.twists.findIndex(p => p.permlink === post.permlink);
             if (idx !== -1) this.twists.splice(idx, 1, post);
@@ -438,7 +438,9 @@ const HomeView = {
           if (existing !== -1) votes.splice(existing, 1, { voter, percent: weight });
           else votes.push({ voter, percent: weight });
           post.active_votes = [...votes];
-        }
+        },
+        // understream + followingSet filter — both handled inside startFirehose
+        { understream: this.understreamOn, followingSet: this.followingSet }
       );
     },
 
@@ -467,7 +469,7 @@ const HomeView = {
 
         <!-- Understream toggle -->
         <button
-          @click="toggleUnderstream(); loadFeed()"
+          @click="toggleUnderstream(); loadFeed(); if(firehoseOn){ stopFirehose(); startFirehose(); }"
           :style="{
             borderRadius:'12px', padding:'2px 12px', fontSize:'12px',
             fontWeight:'600', border:'1px solid', margin:0,

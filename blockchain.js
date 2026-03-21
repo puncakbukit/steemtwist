@@ -667,7 +667,14 @@ function sortTwists(posts, mode) {
 // any post — HomeView uses this to update active_votes in-memory so the
 // ranking computed property re-sorts without a full reload.
 // Returns a stop() function — call it to cancel the stream.
-function startFirehose(monthlyRoot, onTwist, onVote) {
+// Start the blockchain operation stream.
+// options.understream (bool) — when true, streams new root posts from any
+//   author (parent_author === "") instead of replies to the monthly root.
+//   This matches the Understream data source (fetchRecentPosts).
+// options.followingSet (Set) — when provided, only passes through posts
+//   whose author is in the set (used by HomeView to filter to followed users).
+function startFirehose(monthlyRoot, onTwist, onVote, options = {}) {
+  const { understream = false, followingSet = null } = options;
   let active = true;
 
   steem.api.streamOperations((err, op) => {
@@ -682,26 +689,36 @@ function startFirehose(monthlyRoot, onTwist, onVote) {
       return;
     }
 
-    // ── Comment op: new twist ────────────────────────────────────────
+    // ── Comment op: new post ─────────────────────────────────────────
     if (type !== "comment") return;
-    if (data.parent_author !== TWIST_CONFIG.ROOT_ACCOUNT) return;
-    if (data.parent_permlink !== monthlyRoot) return;
+
+    if (understream) {
+      // Understream mode: only root posts (top-level Steem posts), any author
+      if (data.parent_author !== "") return;
+    } else {
+      // Twist Stream mode: only replies to the SteemTwist monthly root
+      if (data.parent_author !== TWIST_CONFIG.ROOT_ACCOUNT) return;
+      if (data.parent_permlink !== monthlyRoot) return;
+    }
+
+    // Optional per-author filter (HomeView: followed users only)
+    if (followingSet && !followingSet.has(data.author)) return;
 
     // Build a minimal post object so the card renders instantly.
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
     const post = {
-      author: data.author,
-      permlink: data.permlink,
-      body: data.body,
-      parent_author: data.parent_author,
+      author:          data.author,
+      permlink:        data.permlink,
+      body:            data.body,
+      parent_author:   data.parent_author,
       parent_permlink: data.parent_permlink,
-      created: now,
-      net_votes: 0,
-      active_votes: [],
-      children: 0,
+      created:         now,
+      net_votes:       0,
+      active_votes:    [],
+      children:        0,
       pending_payout_value: "0.000 SBD",
-      json_metadata: data.json_metadata || "",
-      _firehose: true
+      json_metadata:   data.json_metadata || "",
+      _firehose:       true
     };
 
     onTwist(post);
@@ -712,15 +729,13 @@ function startFirehose(monthlyRoot, onTwist, onVote) {
       fetchPost(data.author, data.permlink).then(full => {
         if (!active || !full || !full.author) return;
         full._firehose = false;
-        onTwist(full, true /* isUpdate */ );
+        onTwist(full, true /* isUpdate */);
       }).catch(() => {});
     }, 4000);
   });
 
   return {
-    stop() {
-      active = false;
-    }
+    stop() { active = false; }
   };
 }
 
