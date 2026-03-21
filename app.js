@@ -109,6 +109,8 @@ const ExploreView = {
         this.isPosting = false;
         if (res.success) {
           this.notify("Live Twist published! ⚡", "success");
+          // Clear the live composer draft now that it's on-chain
+          try { localStorage.removeItem("st_draft_live_composer"); } catch {}
           await new Promise(r => setTimeout(r, 2000));
           await this.loadFeed();
         } else {
@@ -432,6 +434,8 @@ const HomeView = {
         this.isPosting = false;
         if (res.success) {
           this.notify("Live Twist published! ⚡", "success");
+          // Clear the live composer draft now that it's on-chain
+          try { localStorage.removeItem("st_draft_live_composer"); } catch {}
           await new Promise(r => setTimeout(r, 2000));
           await this.loadFeed();
         } else {

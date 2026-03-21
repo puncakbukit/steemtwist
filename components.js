@@ -4,6 +4,25 @@
 // No app-specific logic — extend freely.
 // ============================================================
 
+// ---- Draft auto-save helpers ----
+// Thin wrappers around localStorage for persisting in-progress composer drafts.
+// Keys are namespaced with "st_draft_" to avoid collisions.
+// All operations are try/caught so storage quota errors never break the UI.
+const draftStorage = {
+  save(key, value) {
+    try { localStorage.setItem("st_draft_" + key, JSON.stringify(value)); } catch {}
+  },
+  load(key, fallback = null) {
+    try {
+      const raw = localStorage.getItem("st_draft_" + key);
+      return raw !== null ? JSON.parse(raw) : fallback;
+    } catch { return fallback; }
+  },
+  clear(key) {
+    try { localStorage.removeItem("st_draft_" + key); } catch {}
+  }
+};
+
 // ---- AppNotificationComponent ----
 // A slim toast bar rendered at the top of the app.
 // Type: "error" | "success" | "info"
@@ -320,9 +339,8 @@ const ReplyCardComponent = {
       showReplyBox:     false,
       replyPreviewMode: false,
       // Auto-expand the first two nesting levels (depth 0 and 1).
-      // Deeper threads stay collapsed to avoid overwhelming the page.
       showChildren:  this.depth < 2,
-      replyText:     "",
+      replyText:     draftStorage.load("reply_" + this.reply.permlink, ""),
       isReplying:    false,
       isVoting:      false,
       hasVoted:      false,
@@ -382,7 +400,10 @@ const ReplyCardComponent = {
   return count + (this.hasVoted ? 1 : 0);
 }
   },
-  methods: {
+  watch: {
+    replyText(v) { draftStorage.save("reply_" + this.reply.permlink, v); }
+  },
+    methods: {
     vote() {
       if (!this.canAct || this.isVoting || this.hasVoted) return;
       this.isVoting = true;
@@ -426,6 +447,7 @@ const ReplyCardComponent = {
           this.replyPreviewMode = false;
           this.showChildren     = true;
           this.replyCount++;
+          draftStorage.clear("reply_" + this.reply.permlink);
         } else {
           this.lastError = res.error || res.message || "Reply failed.";
         }
@@ -1071,7 +1093,7 @@ const TwistCardComponent = {
       replyPreviewMode: false,
       // Auto-expand replies if the post already has some.
       showReplies:     (this.post.children || 0) > 0,
-      replyText:       "",
+      replyText:       draftStorage.load("reply_" + this.post.permlink, ""),
       isReplying:      false,
       isVoting:        false,
       hasVoted:        false,
@@ -1171,6 +1193,13 @@ const TwistCardComponent = {
       return this.threadExpanded || this.showReplies;
     }
   },
+  watch: {
+    replyText(v) { draftStorage.save("reply_" + this.post.permlink, v); },
+    editText(v)  { if (this.showEditBox) draftStorage.save("edit_" + this.post.permlink, { editText: v }); },
+    editCode(v)  { if (this.isLiveEditBox) draftStorage.save("live_edit_" + this.post.permlink, { editCode: v, editTitle: this.editTitle, editBody: this.editBody }); },
+    editTitle(v) { if (this.isLiveEditBox) draftStorage.save("live_edit_" + this.post.permlink, { editCode: this.editCode, editTitle: v, editBody: this.editBody }); },
+    editBody(v)  { if (this.isLiveEditBox) draftStorage.save("live_edit_" + this.post.permlink, { editCode: this.editCode, editTitle: this.editTitle, editBody: v }); }
+  },
   methods: {
     vote() {
       if (!this.canAct || this.isVoting || this.hasVoted) return;
@@ -1240,6 +1269,7 @@ const TwistCardComponent = {
           this.replyPreviewMode = false;
           this.showReplies      = true;
           this.replyCount++;
+          draftStorage.clear("reply_" + this.post.permlink);
           this.$emit("replied", this.post);
         } else {
           this.lastError = res.error || res.message || "Reply failed.";
@@ -1251,12 +1281,14 @@ const TwistCardComponent = {
       if (this.isLiveTwist) {
         const raw = this.post.json_metadata;
         const meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
-        this.editCode      = this.editedCode !== null ? this.editedCode : (meta.code || "");
-        this.editTitle     = meta.title || "";
-        this.editBody      = stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
+        const savedLive = draftStorage.load("live_edit_" + this.post.permlink, {});
+        this.editCode      = savedLive.editCode  !== undefined ? savedLive.editCode  : (this.editedCode !== null ? this.editedCode : (meta.code || ""));
+        this.editTitle     = savedLive.editTitle !== undefined ? savedLive.editTitle : (meta.title || "");
+        this.editBody      = savedLive.editBody  !== undefined ? savedLive.editBody  : stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
         this.isLiveEditBox = true;
       } else {
-        this.editText    = stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
+        const saved = draftStorage.load("edit_" + this.post.permlink, {});
+        this.editText    = saved.editText !== undefined ? saved.editText : stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body);
         this.showEditBox = true;
       }
     },
@@ -1267,8 +1299,9 @@ const TwistCardComponent = {
       editTwist(this.username, this.post, text, (res) => {
         this.isEditing = false;
         if (res.success) {
-          this.editedBody  = text;   // update locally without refetch
+          this.editedBody  = text;
           this.showEditBox = false;
+          draftStorage.clear("edit_" + this.post.permlink);
         } else {
           this.lastError = res.error || res.message || "Edit failed.";
         }
@@ -1295,8 +1328,8 @@ const TwistCardComponent = {
         if (res.success) {
           this.editedCode    = c;
           this.isLiveEditBox = false;
-          // Force LiveTwistComponent to re-read updated json_metadata
           this.post.json_metadata = JSON.stringify(newMeta);
+          draftStorage.clear("live_edit_" + this.post.permlink);
         } else {
           this.lastError = res.error || res.message || "Edit failed.";
         }
@@ -1624,10 +1657,11 @@ const LiveTwistComposerComponent = {
   },
   emits: ["post", "cancel"],
   data() {
+    const draft = draftStorage.load("live_composer", {});
     return {
-      title:       "",
-      body:        "",
-      code:        "",
+      title:        draft.title || "",
+      body:         draft.body  || "",
+      code:         draft.code  || "",
       activeTab:   "code",
       previewKey:  0,
       iframeHeight: 200
@@ -1641,6 +1675,11 @@ const LiveTwistComposerComponent = {
       return !!this.username && this.hasKeychain &&
              this.code.trim().length > 0 && !this.tooBig && !this.isPosting;
     }
+  },
+  watch: {
+    title(v) { draftStorage.save("live_composer", { title: v, body: this.body, code: this.code }); },
+    body(v)  { draftStorage.save("live_composer", { title: this.title, body: v, code: this.code }); },
+    code(v)  { draftStorage.save("live_composer", { title: this.title, body: this.body, code: v }); }
   },
   methods: {
     buildSandboxDoc(userCode) {
@@ -1695,8 +1734,10 @@ const LiveTwistComposerComponent = {
         body:  this.body.trim()  || "Live Twist — view on SteemTwist",
         code:  this.code.trim()
       });
+      // Draft cleared by parent (HomeView/ExploreView) on confirmed success
     },
-    reset() {
+    clearDraft() {
+      draftStorage.clear("live_composer");
       this.title = ""; this.body = ""; this.code = "";
       this.activeTab = "code"; this.previewKey++;
     }
@@ -1786,9 +1827,10 @@ const TwistComposerComponent = {
   },
   emits: ["post", "post-live"],
   data() {
+    const draft = draftStorage.load("twist_composer", {});
     return {
-      composerMode: "twist",   // "twist" | "live"
-      message:      "",
+      composerMode: draft.composerMode || "twist",
+      message:      draft.message      || "",
       previewMode:  false
     };
   },
@@ -1802,15 +1844,21 @@ const TwistComposerComponent = {
         : "<em style='color:#5a4e70'>Nothing to preview.</em>";
     }
   },
+  watch: {
+    message(v)      { draftStorage.save("twist_composer", { composerMode: this.composerMode, message: v }); },
+    composerMode(v) { draftStorage.save("twist_composer", { composerMode: v, message: this.message }); }
+  },
   methods: {
     submit() {
       if (!this.canPost) return;
       this.$emit("post", this.message.trim());
       this.message     = "";
       this.previewMode = false;
+      draftStorage.clear("twist_composer");
     },
     submitLive({ title, body, code }) {
       this.$emit("post-live", { title, body, code });
+      // LiveTwistComposerComponent clears its own draft on emit
     }
   },
   template: `
@@ -2148,9 +2196,10 @@ const SecretTwistComposerComponent = {
   },
   emits: ["send"],
   data() {
+    const draft = draftStorage.load("secret_composer", {});
     return {
-      recipient:   this.toUsername,
-      message:     "",
+      recipient:   this.toUsername || draft.recipient || "",
+      message:     draft.message   || "",
       previewMode: false
     };
   },
@@ -2168,6 +2217,10 @@ const SecretTwistComposerComponent = {
              this.charCount > 0 && !this.isSending;
     }
   },
+  watch: {
+    recipient(v) { draftStorage.save("secret_composer", { recipient: v, message: this.message }); },
+    message(v)   { draftStorage.save("secret_composer", { recipient: this.recipient, message: v }); }
+  },
   methods: {
     submit() {
       if (!this.canSend) return;
@@ -2177,6 +2230,7 @@ const SecretTwistComposerComponent = {
       });
       this.message     = "";
       this.previewMode = false;
+      draftStorage.clear("secret_composer");
     }
   },
   template: `
@@ -2294,7 +2348,7 @@ const SecretTwistCardComponent = {
       isDecrypting:   false,
       decryptError:   "",
       showReplyBox:    false,
-      replyMessage:    "",
+      replyMessage:    draftStorage.load("secret_reply_" + this.post.permlink, ""),
       replyPreviewMode: false,
       isReplying:      false,
       replyError:      "",
@@ -2344,7 +2398,10 @@ const SecretTwistCardComponent = {
       return `${Math.floor(h / 24)}d ago`;
     }
   },
-  methods: {
+  watch: {
+    replyMessage(v) { draftStorage.save("secret_reply_" + this.post.permlink, v); }
+  },
+    methods: {
     decrypt() {
       if (!this.canDecrypt || this.isDecrypting) return;
       this.isDecrypting = true;
@@ -2395,6 +2452,7 @@ const SecretTwistCardComponent = {
             this.replyMessage     = "";
             this.showReplyBox     = false;
             this.replyPreviewMode = false;
+            draftStorage.clear("secret_reply_" + this.post.permlink);
             // Reload replies after a short delay for indexing
             setTimeout(() => {
               this.repliesLoaded = false;
