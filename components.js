@@ -1645,17 +1645,21 @@ const LiveTwistComposerComponent = {
           style="background:none;border:none;color:#5a4e70;font-size:18px;padding:0;margin:0;cursor:pointer;line-height:1;">&#10005;</button>
       </div>
 
-      <!-- Title -->
+      <!-- Card label (stored in json_metadata.title, shown in the ⚡ card header) -->
       <div style="margin-bottom:8px;">
-        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">Title</label>
-        <input v-model="title" type="text" placeholder="My Live Twist" maxlength="80"
+        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">
+          Card label <span style="color:#5a4e70;">(optional — shown next to &#9889; in the card)</span>
+        </label>
+        <input v-model="title" type="text" placeholder="Live Twist" maxlength="80"
           style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;" />
       </div>
 
-      <!-- Description -->
+      <!-- Body — shown on Steemit and other non-SteemTwist clients (max 280 chars) -->
       <div style="margin-bottom:10px;">
-        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">Description <span style="color:#5a4e70;">(shown on Steemit)</span></label>
-        <input v-model="body" type="text" placeholder="Live Twist — view on SteemTwist" maxlength="200"
+        <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">
+          Body <span style="color:#5a4e70;">(shown on Steemit — max 280 chars, like a regular twist)</span>
+        </label>
+        <input v-model="body" type="text" placeholder="&#9889; Live Twist — view on SteemTwist" maxlength="280"
           style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;" />
       </div>
 
