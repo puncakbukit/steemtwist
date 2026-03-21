@@ -484,6 +484,31 @@ function postTwist(username, message, callback) {
   steem_keychain.requestBroadcast(username, ops, "Posting", callback);
 }
 
+// Post a Live Twist — a twist whose json_metadata contains executable JS.
+// The body is a plain text description shown in non-SteemTwist clients.
+// callback: (response) => { response.success, response.error }
+function postLiveTwist(username, title, body, code, callback) {
+  const root     = getMonthlyRoot();
+  const permlink = generateTwistPermlink(username);
+
+  const ops = buildZeroPayoutOps(
+    username,
+    body || "⚡ Live Twist — view on SteemTwist",
+    TWIST_CONFIG.ROOT_ACCOUNT,
+    root,
+    permlink,
+    {
+      app:     "steemtwist/0.1",
+      type:    "live_twist",
+      version: 1,
+      title:   title || "Live Twist",
+      code
+    }
+  );
+
+  steem_keychain.requestBroadcast(username, ops, "Posting", callback);
+}
+
 // Post a reply to an existing twist via Steem Keychain.
 // Also broadcasts with zero payout for consistency.
 function postTwistReply(username, message, parentAuthor, parentPermlink, callback) {

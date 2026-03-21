@@ -102,6 +102,36 @@ const ExploreView = {
       });
     },
 
+    async handlePostLive({ title, body, code }) {
+      if (!code) return;
+      this.isPosting = true;
+      postLiveTwist(this.username, title, body, code, async (res) => {
+        this.isPosting = false;
+        if (res.success) {
+          this.notify("Live Twist published! ⚡", "success");
+          await new Promise(r => setTimeout(r, 2000));
+          await this.loadFeed();
+        } else {
+          this.notify(res.error || res.message || "Failed to publish Live Twist.", "error");
+        }
+      });
+    },
+
+    async handlePostLive({ title, body, code }) {
+      if (!code) return;
+      this.isPosting = true;
+      postLiveTwist(this.username, title, body, code, async (res) => {
+        this.isPosting = false;
+        if (res.success) {
+          this.notify("Live Twist published! ⚡", "success");
+          await new Promise(r => setTimeout(r, 2000));
+          await this.loadFeed();
+        } else {
+          this.notify(res.error || res.message || "Failed to publish Live Twist.", "error");
+        }
+      });
+    },
+
     toggleFirehose() {
       this.firehoseOn ? this.stopFirehose() : this.startFirehose();
     },
@@ -237,6 +267,7 @@ const ExploreView = {
         :has-keychain="hasKeychain"
         :is-posting="isPosting"
         @post="handlePost"
+        @post-live="handlePostLive"
       ></twist-composer-component>
 
       <!-- CTA for guests — shows @steemtwist cover + avatar as fallback -->
@@ -528,6 +559,7 @@ const HomeView = {
         :has-keychain="hasKeychain"
         :is-posting="isPosting"
         @post="handlePost"
+        @post-live="handlePostLive"
       ></twist-composer-component>
 
       <!-- Logged-out -->
