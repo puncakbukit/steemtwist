@@ -1938,7 +1938,6 @@ const TwistComposerComponent = {
           padding:16px;text-align:left;
         "
       >
-        <!-- Write / Preview tabs -->
         <div style="display:flex;gap:4px;margin-bottom:6px;">
           <button
             @click="previewMode = false"
@@ -1991,12 +1990,12 @@ const TwistComposerComponent = {
             {{ charCount }} / 280
           </span>
           <button @click="submit" :disabled="!canPost" style="padding:7px 20px;margin:0;">
-            {{ isPosting ? "Posting…" : "Twist 🌀" }}
+            {{ isPosting ? "Posting..." : "Twist 🌀" }}
           </button>
         </div>
       </div>
 
-      <!-- Live Twist editor (rendered inside the same card boundary) -->
+      <!-- Live Twist editor -->
       <live-twist-composer-component
         v-show="composerMode === 'live'"
         :username="username"
@@ -2011,11 +2010,7 @@ const TwistComposerComponent = {
   `
 };
 
-// ---- SignalItemComponent ----
-// Renders a single signal (notification) row.
-// Props:
-//   signal  — signal object from fetchSignals
-//   read    — boolean, whether this signal has been seen
+
 const SignalItemComponent = {
   name: "SignalItemComponent",
   props: {
