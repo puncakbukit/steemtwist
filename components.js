@@ -1995,9 +1995,9 @@ const TwistComposerComponent = {
         </div>
       </div>
 
-      <!-- Live Twist editor -->
+      <!-- Live Twist editor — v-if so it only mounts when the tab is active -->
       <live-twist-composer-component
-        v-show="composerMode === 'live'"
+        v-if="composerMode === 'live'"
         :username="username"
         :has-keychain="hasKeychain"
         :is-posting="isPosting"
