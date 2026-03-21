@@ -317,7 +317,8 @@ const ReplyCardComponent = {
   },
   data() {
     return {
-      showReplyBox:  false,
+      showReplyBox:     false,
+      replyPreviewMode: false,
       // Auto-expand the first two nesting levels (depth 0 and 1).
       // Deeper threads stay collapsed to avoid overwhelming the page.
       showChildren:  this.depth < 2,
@@ -363,6 +364,11 @@ const ReplyCardComponent = {
       return `#/@${this.reply.author}/${this.reply.permlink}`;
     },
     bodyHtml() { return renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.reply.body)); },
+    replyPreviewHtml() {
+      return this.replyText.trim()
+        ? renderMarkdown(this.replyText)
+        : "<em style='color:#5a4e70'>Nothing to preview.</em>";
+    },
     canAct()   { return !!this.username && this.hasKeychain; },
     indent()   { return Math.min(this.depth, 4) * 16; },
     
@@ -416,8 +422,9 @@ const ReplyCardComponent = {
       postTwistReply(this.username, text, this.reply.author, this.reply.permlink, (res) => {
         this.isReplying = false;
         if (res.success) {
-          this.replyText    = "";
-          this.showChildren = true;
+          this.replyText        = "";
+          this.replyPreviewMode = false;
+          this.showChildren     = true;
           this.replyCount++;
         } else {
           this.lastError = res.error || res.message || "Reply failed.";
@@ -609,16 +616,47 @@ const ReplyCardComponent = {
 
           <!-- Compose box -->
           <div v-if="showReplyBox && canAct" style="margin-top:8px;">
+            <div style="display:flex;gap:4px;margin-bottom:4px;">
+              <button
+                @click="replyPreviewMode = false"
+                :style="{
+                  background: !replyPreviewMode ? '#2e2050' : 'none',
+                  color:      !replyPreviewMode ? '#e8e0f0' : '#9b8db0',
+                  border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
+                  padding:'2px 8px', fontSize:'11px', margin:0, cursor:'pointer'
+                }"
+              >Write</button>
+              <button
+                @click="replyPreviewMode = true"
+                :style="{
+                  background: replyPreviewMode ? '#2e2050' : 'none',
+                  color:      replyPreviewMode ? '#e8e0f0' : '#9b8db0',
+                  border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
+                  padding:'2px 8px', fontSize:'11px', margin:0, cursor:'pointer'
+                }"
+              >Preview</button>
+            </div>
             <textarea
+              v-show="!replyPreviewMode"
               v-model="replyText"
-              placeholder="Write a reply…"
+              placeholder="Write a reply… (markdown supported)"
               maxlength="1000"
               style="
                 width:100%;box-sizing:border-box;
-                padding:7px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;
+                padding:7px;border-radius:0 8px 8px 8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;
                 font-size:13px;resize:vertical;min-height:52px;
               "
             ></textarea>
+            <div
+              v-show="replyPreviewMode"
+              class="twist-body"
+              v-html="replyPreviewHtml"
+              style="
+                min-height:52px;padding:7px;border-radius:0 8px 8px 8px;
+                border:1px solid #2e2050;background:#0f0a1e;
+                font-size:13px;color:#e8e0f0;line-height:1.6;word-break:break-word;
+              "
+            ></div>
             <div style="text-align:right;margin-top:4px;">
               <button
                 @click="submitReply"
@@ -739,7 +777,8 @@ const TwistCardComponent = {
   emits: ["voted", "replied", "pin", "unpin", "deleted"],
   data() {
     return {
-      showReplyBox:    false,
+      showReplyBox:     false,
+      replyPreviewMode: false,
       // Auto-expand replies if the post already has some.
       showReplies:     (this.post.children || 0) > 0,
       replyText:       "",
@@ -819,6 +858,11 @@ const TwistCardComponent = {
       if (this.isSecretTwist) return "<em style='color:#5a4e70'>🔒 Secret Twist — view in Private Signals</em>";
       return renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.post.body).slice(0, PREVIEW_LENGTH) + "…");
     },
+    replyPreviewHtml() {
+      return this.replyText.trim()
+        ? renderMarkdown(this.replyText)
+        : "<em style='color:#5a4e70'>Nothing to preview.</em>";
+    },
     showThread() {
       return this.threadExpanded || this.showReplies;
     }
@@ -888,8 +932,9 @@ const TwistCardComponent = {
       postTwistReply(this.username, text, this.post.author, this.post.permlink, (res) => {
         this.isReplying = false;
         if (res.success) {
-          this.replyText    = "";
-          this.showReplies  = true;
+          this.replyText        = "";
+          this.replyPreviewMode = false;
+          this.showReplies      = true;
           this.replyCount++;
           this.$emit("replied", this.post);
         } else {
@@ -1113,17 +1158,48 @@ const TwistCardComponent = {
 
       <!-- Inline reply compose box -->
       <div v-if="showReplyBox && canAct" style="margin-top:12px;">
+        <div style="display:flex;gap:4px;margin-bottom:4px;">
+          <button
+            @click="replyPreviewMode = false"
+            :style="{
+              background: !replyPreviewMode ? '#2e2050' : 'none',
+              color:      !replyPreviewMode ? '#e8e0f0' : '#9b8db0',
+              border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
+              padding:'3px 10px', fontSize:'12px', margin:0, cursor:'pointer'
+            }"
+          >Write</button>
+          <button
+            @click="replyPreviewMode = true"
+            :style="{
+              background: replyPreviewMode ? '#2e2050' : 'none',
+              color:      replyPreviewMode ? '#e8e0f0' : '#9b8db0',
+              border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
+              padding:'3px 10px', fontSize:'12px', margin:0, cursor:'pointer'
+            }"
+          >Preview</button>
+        </div>
         <textarea
+          v-show="!replyPreviewMode"
           v-model="replyText"
-          placeholder="Write a reply…"
+          placeholder="Write a reply… (markdown supported)"
           maxlength="1000"
           style="
             width:100%;box-sizing:border-box;
-            padding:8px;border-radius:8px;
+            padding:8px;border-radius:0 8px 8px 8px;
             border:1px solid #2e2050;background:#0f0a1e;
             color:#e8e0f0;font-size:14px;resize:vertical;min-height:60px;
           "
         ></textarea>
+        <div
+          v-show="replyPreviewMode"
+          class="twist-body"
+          v-html="replyPreviewHtml"
+          style="
+            min-height:60px;padding:8px;border-radius:0 8px 8px 8px;
+            border:1px solid #2e2050;background:#0f0a1e;
+            font-size:14px;color:#e8e0f0;line-height:1.6;word-break:break-word;
+          "
+        ></div>
         <div style="text-align:right;margin-top:4px;">
           <button
             @click="submitReply"
@@ -1169,18 +1245,24 @@ const TwistComposerComponent = {
   },
   emits: ["post"],
   data() {
-    return { message: "" };
+    return { message: "", previewMode: false };
   },
   computed: {
-    charCount()  { return this.message.length; },
-    overLimit()  { return this.charCount > 280; },
-    canPost()    { return !!this.username && this.hasKeychain && this.charCount > 0 && !this.overLimit && !this.isPosting; }
+    charCount()   { return this.message.length; },
+    overLimit()   { return this.charCount > 280; },
+    canPost()     { return !!this.username && this.hasKeychain && this.charCount > 0 && !this.overLimit && !this.isPosting; },
+    previewHtml() {
+      return this.message.trim()
+        ? renderMarkdown(this.message)
+        : "<em style='color:#5a4e70'>Nothing to preview.</em>";
+    }
   },
   methods: {
     submit() {
       if (!this.canPost) return;
       this.$emit("post", this.message.trim());
-      this.message = "";
+      this.message     = "";
+      this.previewMode = false;
     }
   },
   template: `
@@ -1188,19 +1270,54 @@ const TwistComposerComponent = {
       background:#1e1535;border:1px solid #2e2050;border-radius:12px;
       padding:16px;margin:0 auto 20px;max-width:600px;text-align:left;
     ">
+      <!-- Write / Preview tabs -->
+      <div style="display:flex;gap:4px;margin-bottom:6px;">
+        <button
+          @click="previewMode = false"
+          :style="{
+            background: !previewMode ? '#2e2050' : 'none',
+            color:      !previewMode ? '#e8e0f0' : '#9b8db0',
+            border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
+            padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer'
+          }"
+        >Write</button>
+        <button
+          @click="previewMode = true"
+          :style="{
+            background: previewMode ? '#2e2050' : 'none',
+            color:      previewMode ? '#e8e0f0' : '#9b8db0',
+            border:'1px solid #2e2050', borderRadius:'6px 6px 0 0',
+            padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer'
+          }"
+        >Preview</button>
+      </div>
+
       <textarea
+        v-show="!previewMode"
         v-model="message"
-        placeholder="What's your twist?"
+        placeholder="What's your twist? (markdown supported)"
         maxlength="500"
         style="
           width:100%;box-sizing:border-box;
-          padding:10px;border-radius:8px;
+          padding:10px;border-radius:0 8px 8px 8px;
           border:1px solid #2e2050;background:#0f0a1e;
           color:#e8e0f0;font-size:15px;
           resize:none;height:80px;
         "
         @keydown.ctrl.enter="submit"
       ></textarea>
+
+      <div
+        v-show="previewMode"
+        class="twist-body"
+        v-html="previewHtml"
+        style="
+          min-height:80px;padding:10px;border-radius:0 8px 8px 8px;
+          border:1px solid #2e2050;background:#0f0a1e;
+          font-size:15px;color:#e8e0f0;line-height:1.6;word-break:break-word;
+        "
+      ></div>
+
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
         <span :style="{ fontSize:'13px', color: overLimit ? '#fca5a5' : '#5a4e70' }">
           {{ charCount }} / 280
