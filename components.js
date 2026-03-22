@@ -1033,6 +1033,10 @@ ${'<'}/script>
         voteTwist(this.username, params.permlink, params.author, params.weight, function(response) {
           console.log(response);
         });
+      } else if (action === "post") {
+        keychainPost(this.username, params.title, params.body, params.parentPermlink, params.parentAuthor, params.jsonMetadata, params.permlink, params.tags, function(response) {
+          console.log(response);
+        });
       } else if (action === "retwist") {
         retwistPost(this.username, params.author, params.permlink, function(response) {
           console.log(response);
