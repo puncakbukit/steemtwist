@@ -834,6 +834,7 @@ const LiveTwistComponent = {
   props: {
     post: { type: Object, required: true }
   },
+  inject: ["username", "hasKeychain", "notify", "voteTwist", "postTwistReply", "retwistPost", "followUser", "unfollowUser"],
   data() {
     return {
       running:    false,
@@ -1075,7 +1076,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "transfer") {
-        steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo || "", params.currency || "STEEM", function(res) {
+        window.steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo || "", params.currency || "STEEM", function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
