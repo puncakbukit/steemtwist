@@ -1033,8 +1033,12 @@ ${'<'}/script>
         voteTwist(this.username, params.permlink, params.author, params.weight, function(response) {
           console.log(response);
         });
+      } else if (action === "retwist") {
+        retwistPost(this.username, params.author, params.permlink, function(response) {
+          console.log(response);
+        });
       } else if (action === "transfer") {
-        steem_keychain.requestTransfer(account_name, params.to, params.amount, params.memo, params.currency, function(response) {
+        steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo, params.currency, function(response) {
           console.log(response);
         },enforce);
       }
