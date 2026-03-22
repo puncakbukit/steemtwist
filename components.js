@@ -1030,7 +1030,7 @@ ${'<'}/script>
       // 2. Map actions to actual Steem logic
       if (action === "vote") {
         // We can use inject/provide or a global call here
-        steem_keychain.requestVote(account_name, params.permlink, params.author, params.weight, function(response) {
+        voteTwist(this.username, params.permlink, params.author, params.weight, function(response) {
           console.log(response);
         });
       } else if (action === "transfer") {
