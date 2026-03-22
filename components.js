@@ -1014,6 +1014,10 @@ ${'<'}/script>
         const iframe = this.$refs.sandbox;
         if (iframe) iframe.style.height = Math.min(height, 600) + "px";
       }
+      // --- HANDLE ACTIONS to access blockchain ---
+      if (type === "LIVE_TWIST_ACTION") {
+        this.handleActionRequest(actionType, params);
+      }
     }
   },
 
