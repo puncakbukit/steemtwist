@@ -1030,7 +1030,7 @@ ${'<'}/script>
       // 2. Map actions to actual Steem logic
       if (action === "vote") {
         // We can use inject/provide or a global call here
-        voteTwist(this.username, params.permlink, params.author, params.weight, function(res) {
+        this.voteTwist(this.username, params.permlink, params.author, params.weight || 10000, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1039,7 +1039,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "reply") {
-        postTwistReply(this.username, params.message, params.parentAuthor, params.parentPermlink, function(res) {
+        this.postTwistReply(this.username, params.message, params.parentAuthor, params.parentPermlink, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1048,7 +1048,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "retwist") {
-        retwistPost(this.username, params.author, params.permlink, function(res) {
+        this.retwistPost(this.username, params.author, params.permlink, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1057,7 +1057,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "follow") {
-        followUser(this.username, params.following, function(res) {
+        this.followUser(this.username, params.following, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1066,7 +1066,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "unfollow") {
-        unfollowUser(this.username, params.following, function(res) {
+        this.unfollowUser(this.username, params.following, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1075,7 +1075,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "transfer") {
-        steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo, params.currency, function(res) {
+        steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo || "", params.currency || "STEEM", function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
