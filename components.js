@@ -1030,10 +1030,10 @@ ${'<'}/script>
       // 2. Map actions to actual Steem logic
       if (action === "vote") {
         // We can use inject/provide or a global call here
-        // Example: steem_keychain.requestVote(...)
-        console.log("Broadcasting vote for:", params.author);
+        steem_keychain.requestVote(account_name, params.permlink, params.author, params.weight, function(response) {
+          console.log(response);
+        });
       } else if (action === "transfer") {
-        console.log("Requesting transfer to:", params.to);
         steem_keychain.requestTransfer(account_name, params.to, params.amount, params.memo, params.currency, function(response) {
           console.log(response);
         },enforce);
