@@ -935,6 +935,14 @@ const LiveTwistComponent = {
       ).join(" ");
       _cons.appendChild(line);
       _cons.scrollTop = _cons.scrollHeight;
+    },
+    // --- Actions to access blockchain ---
+    action(type, params = {}) {
+      parent.postMessage({ 
+        type: "LIVE_TWIST_ACTION", 
+        actionType: type, 
+        params: params 
+      }, "*");
     }
   };
 
