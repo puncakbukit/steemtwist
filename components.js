@@ -1030,28 +1030,58 @@ ${'<'}/script>
       // 2. Map actions to actual Steem logic
       if (action === "vote") {
         // We can use inject/provide or a global call here
-        voteTwist(this.username, params.permlink, params.author, params.weight, function(response) {
-          console.log(response);
+        voteTwist(this.username, params.permlink, params.author, params.weight, function(res) {
+          console.log(res);
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
         });
       } else if (action === "reply") {
-        postTwistReply(this.username, params.message, params.parentAuthor, params.parentPermlink, function(response) {
-          console.log(response);
+        postTwistReply(this.username, params.message, params.parentAuthor, params.parentPermlink, function(res) {
+          console.log(res);
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
         });
       } else if (action === "retwist") {
-        retwistPost(this.username, params.author, params.permlink, function(response) {
-          console.log(response);
+        retwistPost(this.username, params.author, params.permlink, function(res) {
+          console.log(res);
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
         });
       } else if (action === "follow") {
-        followUser(this.username, params.following, function(response) {
-          console.log(response);
+        followUser(this.username, params.following, function(res) {
+          console.log(res);
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
         });
       } else if (action === "unfollow") {
-        unfollowUser(this.username, params.following, function(response) {
-          console.log(response);
+        unfollowUser(this.username, params.following, function(res) {
+          console.log(res);
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
         });
       } else if (action === "transfer") {
-        steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo, params.currency, function(response) {
-          console.log(response);
+        steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo, params.currency, function(res) {
+          console.log(res);
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
         },enforce);
       } else {
         console.log(action + " is unsupported.");
