@@ -1041,10 +1041,20 @@ ${'<'}/script>
         retwistPost(this.username, params.author, params.permlink, function(response) {
           console.log(response);
         });
+      } else if (action === "follow") {
+        followUser(this.username, params.following, function(response) {
+          console.log(response);
+        });
+      } else if (action === "unfollow") {
+        unfollowUser(this.username, params.following, function(response) {
+          console.log(response);
+        });
       } else if (action === "transfer") {
         steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo, params.currency, function(response) {
           console.log(response);
         },enforce);
+      } else {
+        console.log(action + " is unsupported.");
       }
     }
   },
