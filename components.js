@@ -1034,6 +1034,9 @@ ${'<'}/script>
         console.log("Broadcasting vote for:", params.author);
       } else if (action === "transfer") {
         console.log("Requesting transfer to:", params.to);
+        steem_keychain.requestTransfer(account_name, params.to, params.amount, params.memo, params.currency, function(response) {
+          console.log(response);
+        },enforce);
       }
     }
   },
