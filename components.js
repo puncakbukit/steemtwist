@@ -1018,6 +1018,23 @@ ${'<'}/script>
       if (type === "LIVE_TWIST_ACTION") {
         this.handleActionRequest(actionType, params);
       }
+    },
+
+    // Helper method to HANDLE ACTIONS to access blockchain
+    handleActionRequest(action, params) {
+      // 1. Ask for permission (Safety First!)
+      const confirmed = confirm(`This Live Twist wants to: ${action}\n\nData: ${JSON.stringify(params)}\n\nAllow this?`);
+      
+      if (!confirmed) return;
+
+      // 2. Map actions to actual Steem logic
+      if (action === "vote") {
+        // We can use inject/provide or a global call here
+        // Example: steem_keychain.requestVote(...)
+        console.log("Broadcasting vote for:", params.author);
+      } else if (action === "transfer") {
+        console.log("Requesting transfer to:", params.to);
+      }
     }
   },
 
