@@ -1041,7 +1041,7 @@ ${'<'}/script>
       // 4. Map actions to actual Steem logic
       if (action === "vote") {
         // We can use inject/provide or a global call here
-        this.voteTwist(currentUsername, params.permlink, params.author, params.weight || 10000, function(res) {
+        this.voteTwist(currentUsername, params.permlink, params.author, parseInt(params.weight || 10000), function(res) {
           if (res.success) {
             this.notify(action + " succeeded", "success");
           } else {
