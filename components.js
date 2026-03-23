@@ -1023,6 +1023,17 @@ ${'<'}/script>
 
     // Helper method to HANDLE ACTIONS to access blockchain
     handleActionRequest(action, params) {
+      // Helper to message the specific iframe running this twist
+      const sendBack = (success) => {
+        const iframe = this.$refs.sandbox;
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ 
+            type: "ACTION_RESULT", 
+            success: success, 
+            action: action 
+          }, "*");
+        }
+      };
       // Check the global window object for Keychain
       if (!window.steem_keychain) {
         this.notify("Steem Keychain extension is not installed.", "error");
@@ -1038,7 +1049,7 @@ ${'<'}/script>
       const confirmed = confirm(`This Live Twist wants to: ${action}\n\nData: ${JSON.stringify(params)}\n\nAllow this?`);
       if (!confirmed) return;
 
-      // 4. Map actions to actual Steem logic
+      // Map actions to actual Steem logic
       if (action === "vote") {
         // We can use inject/provide or a global call here
         this.voteTwist(currentUsername, params.permlink, params.author, parseInt(params.weight || 10000), function(res) {
@@ -1047,6 +1058,7 @@ ${'<'}/script>
           } else {
             this.notify(res.error || res.message || action + " failed.", "error");
           }
+          sendBack(res.success);          
         });
       } else if (action === "reply") {
         this.postTwistReply(currentUsername, params.message, params.parentAuthor, params.parentPermlink, function(res) {
@@ -1055,6 +1067,7 @@ ${'<'}/script>
           } else {
             this.notify(res.error || res.message || action + " failed.", "error");
           }
+          sendBack(res.success);
         });
       } else if (action === "retwist") {
         this.retwistPost(currentUsername, params.author, params.permlink, function(res) {
@@ -1063,6 +1076,7 @@ ${'<'}/script>
           } else {
             this.notify(res.error || res.message || action + " failed.", "error");
           }
+          sendBack(res.success);
         });
       } else if (action === "follow") {
         this.followUser(currentUsername, params.following, function(res) {
@@ -1071,6 +1085,7 @@ ${'<'}/script>
           } else {
             this.notify(res.error || res.message || action + " failed.", "error");
           }
+          sendBack(res.success);
         });
       } else if (action === "unfollow") {
         this.unfollowUser(currentUsername, params.following, function(res) {
@@ -1079,6 +1094,7 @@ ${'<'}/script>
           } else {
             this.notify(res.error || res.message || action + " failed.", "error");
           }
+          sendBack(res.success);
         });
       } else if (action === "transfer") {
         window.steem_keychain.requestTransfer(currentUsername, params.to, params.amount, params.memo || "", params.currency || "STEEM", function(res) {
@@ -1087,6 +1103,7 @@ ${'<'}/script>
           } else {
             this.notify(res.error || res.message || action + " failed.", "error");
           }
+          sendBack(res.success);
         });
       } else {
         console.log(action + " is unsupported.");
