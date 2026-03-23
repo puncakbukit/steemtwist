@@ -1139,6 +1139,15 @@ ${'<'}/script>
           }
           sendBack(res.success);
         });
+      } else if (action === "power_down") {
+        window.steem_keychain.requestPowerDown(currentUsername,  params.amount, function(res) {
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
+          sendBack(res.success);
+        });
       } else {
         console.log(action + " is unsupported.");
       }
