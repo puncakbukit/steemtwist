@@ -831,10 +831,10 @@ const ThreadComponent = {
 //
 const LiveTwistComponent = {
   name: "LiveTwistComponent",
+  inject: ["username", "hasKeychain", "notify", "voteTwist", "postTwistReply", "retwistPost", "followUser", "unfollowUser"],
   props: {
     post: { type: Object, required: true }
   },
-  inject: ["username", "hasKeychain", "notify", "voteTwist", "postTwistReply", "retwistPost", "followUser", "unfollowUser"],
   data() {
     return {
       running:    false,
