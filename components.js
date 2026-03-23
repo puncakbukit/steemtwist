@@ -1022,12 +1022,38 @@ ${'<'}/script>
         const iframe = this.$refs.sandbox;
         if (iframe) iframe.style.height = Math.min(height, 600) + "px";
       }
+      // --- HANDLE QUERIES to the blockchain ---
+      if (type === "LIVE_TWIST_QUERY") {
+        this.handleQueryRequest(queryType, params);
+      }     
       // --- HANDLE ACTIONS to access blockchain ---
       if (type === "LIVE_TWIST_ACTION") {
         this.handleActionRequest(actionType, params);
       }
     },
-
+    
+    // Helper method to HANDLE QUERIES to the blockchain
+    handleQueryRequest(query, params) {
+      // Helper to message the specific iframe running this twist
+      const sendResult = (error, result) => {
+        const iframe = this.$refs.sandbox;
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ 
+            type: "QUERY_RESULT", 
+            error: error,
+            data: result,
+            query: query
+          }, "*");
+        }
+      };     
+      // Queries are usually safe, so you might not need a confirm() dialog
+      if (query === "get_accounts") {
+        steem.api.getAccounts([params.account], (err, result) => {
+          sendResult(err, result);
+        });
+      }
+    },
+    
     // Helper method to HANDLE ACTIONS to access blockchain
     handleActionRequest(action, params) {
       // Helper to message the specific iframe running this twist
