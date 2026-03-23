@@ -1121,6 +1121,15 @@ ${'<'}/script>
           }
           sendBack(res.success);
         });
+      } else if (action=== "vote_witness") {
+        window.steem_keychain.requestWitnessVote(currentUsername, params.witness, params.vote, function(res) {
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
+          sendBack(res.success);
+        });
       } else {
         console.log(action + " is unsupported.");
       }
