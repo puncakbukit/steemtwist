@@ -1023,15 +1023,27 @@ ${'<'}/script>
 
     // Helper method to HANDLE ACTIONS to access blockchain
     handleActionRequest(action, params) {
-      // 1. Ask for permission (Safety First!)
+      // 1. Check the global window object for Keychain
+      if (!window.steem_keychain) {
+        alert("Steem Keychain extension is not installed.");
+        return;
+      }
+
+      // 2. Access injected Vue state via 'this'
+      const currentUsername = this.username; 
+      if (!currentUsername) {
+        alert("Please log in first to use this Live Twist feature.");
+        return;
+      }
+
+      // 3. User confirmation (The Firewall)
       const confirmed = confirm(`This Live Twist wants to: ${action}\n\nData: ${JSON.stringify(params)}\n\nAllow this?`);
-      
       if (!confirmed) return;
 
       // 2. Map actions to actual Steem logic
       if (action === "vote") {
         // We can use inject/provide or a global call here
-        this.voteTwist(this.username, params.permlink, params.author, params.weight || 10000, function(res) {
+        this.voteTwist(currentUsername, params.permlink, params.author, params.weight || 10000, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1040,7 +1052,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "reply") {
-        this.postTwistReply(this.username, params.message, params.parentAuthor, params.parentPermlink, function(res) {
+        this.postTwistReply(currentUsername, params.message, params.parentAuthor, params.parentPermlink, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1049,7 +1061,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "retwist") {
-        this.retwistPost(this.username, params.author, params.permlink, function(res) {
+        this.retwistPost(currentUsername, params.author, params.permlink, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1058,7 +1070,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "follow") {
-        this.followUser(this.username, params.following, function(res) {
+        this.followUser(currentUsername, params.following, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1067,7 +1079,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "unfollow") {
-        this.unfollowUser(this.username, params.following, function(res) {
+        this.unfollowUser(currentUsername, params.following, function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
@@ -1076,7 +1088,7 @@ ${'<'}/script>
           }
         });
       } else if (action === "transfer") {
-        window.steem_keychain.requestTransfer(this.username, params.to, params.amount, params.memo || "", params.currency || "STEEM", function(res) {
+        window.steem_keychain.requestTransfer(currentUsername, params.to, params.amount, params.memo || "", params.currency || "STEEM", function(res) {
           console.log(res);
           if (res.success) {
             this.notify(action + " succeeded", "success");
