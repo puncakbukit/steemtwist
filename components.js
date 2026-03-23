@@ -944,6 +944,13 @@ const LiveTwistComponent = {
         actionType: type, 
         params: params 
       }, "*");
+    },
+    onResult(callback) {
+      window.addEventListener("message", (e) => {
+        if (e.data.type === "ACTION_RESULT") {
+          callback(e.data.success, e.data.action);
+        }
+      });
     }
   };
 
