@@ -937,6 +937,14 @@ const LiveTwistComponent = {
       _cons.appendChild(line);
       _cons.scrollTop = _cons.scrollHeight;
     },
+    // --- Queries to access blockchain ---	
+	query(type, params = []) {
+	  parent.postMessage({ 
+	    type: "LIVE_TWIST_QUERY", 
+		queryType: type, 
+		params: params 
+	  }, "*");
+    },
     // --- Actions to access blockchain ---
     action(type, params = {}) {
       parent.postMessage({ 
