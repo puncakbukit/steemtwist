@@ -1047,7 +1047,7 @@ ${'<'}/script>
       // Helper to message the specific iframe running this twist
       const sendResult = (error, result) => {
         const iframe = this.$refs.sandbox;
-        if (iframe && iframe.contentWindow) {
+        if (iframe && e.source === iframe.contentWindow) {
           iframe.contentWindow.postMessage({ 
             type: "QUERY_RESULT", 
             error: error,
@@ -1511,7 +1511,7 @@ ${'<'}/script>
       // Helper to message the specific iframe running this twist
       const sendBack = (success) => {
         const iframe = this.$refs.sandbox;
-        if (iframe && iframe.contentWindow) {
+        if (iframe && e.source === iframe.contentWindow) {
           iframe.contentWindow.postMessage({ 
             type: "ACTION_RESULT", 
             success: success, 
