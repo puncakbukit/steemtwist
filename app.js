@@ -12,7 +12,7 @@ const { createRouter, createWebHashHistory, useRoute }                = VueRoute
 
 // ---- ExploreView ----
 // Global Twist Stream: all twists this month from everyone.
-// Supports three sort modes (New / Hot / Top) and Firehose live stream.
+// Supports three sort modes (New / Hot / Top) and Firehose real-time stream.
 // Route: /explore
 const ExploreView = {
   name: "ExploreView",
