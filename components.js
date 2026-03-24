@@ -1029,6 +1029,7 @@ ${'<'}/script>
       const { type, height } = e.data || {};
       if (type === "resize" && height) {
         const iframe = this.$refs.sandbox;
+        if (!iframe || e.source !== iframe.contentWindow) return;
         if (iframe) iframe.style.height = Math.min(height, 600) + "px";
       }
       // --- HANDLE QUERIES to the blockchain ---
