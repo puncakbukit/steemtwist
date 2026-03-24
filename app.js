@@ -327,7 +327,7 @@ const ExploreView = {
 // ---- HomeView ----
 // Personalised feed: twists from users the logged-in Twister follows.
 // Supports Understream (full blog instead of tw- only) and Firehose
-// (live stream filtered to followed users).
+// (real-time stream filtered to followed users).
 // Logged-out visitors see a welcome prompt.
 // Route: /
 const HomeView = {
@@ -525,16 +525,16 @@ const HomeView = {
             color:       firehoseOn ? '#fb923c' : '#9b8db0',
             borderColor: firehoseOn ? '#f97316' : '#2e2050'
           }"
-          :title="firehoseOn ? 'Stop live stream' : 'Start live stream (followed Twisters only)'"
+          :title="firehoseOn ? 'Stop real-time stream' : 'Start real-time stream (followed Twisters only)'"
         >{{ firehoseOn ? '🔥 Firehose ON' : '🔥 Firehose OFF' }}</button>
 
-        <!-- Live pulse -->
+        <!-- Real-time pulse -->
         <span v-if="firehoseOn" style="display:flex;align-items:center;gap:5px;color:#fb923c;font-size:12px;">
           <span style="
             display:inline-block;width:8px;height:8px;border-radius:50%;
             background:#fb923c;animation:twistFlash 1s ease-in-out infinite alternate;
           "></span>
-          Live
+          Real-time
         </span>
 
         <!-- Sort tabs — right-aligned -->
