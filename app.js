@@ -145,7 +145,7 @@ const ExploreView = {
           }, 2600);
         },
 
-        // onVote — update active_votes in-place so sortedTwists re-ranks live
+        // onVote — update active_votes in-place so sortedTwists re-ranks in real-time
         (author, permlink, voter, weight) => {
           const post = this.twists.find(
             p => p.author === author && p.permlink === permlink
