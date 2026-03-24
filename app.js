@@ -214,16 +214,16 @@ const ExploreView = {
             color:       firehoseOn ? '#fb923c' : '#9b8db0',
             borderColor: firehoseOn ? '#f97316' : '#2e2050'
           }"
-          :title="firehoseOn ? 'Stop live stream' : 'Start live stream'"
+          :title="firehoseOn ? 'Stop real-time stream' : 'Start real-time stream'"
         >{{ firehoseOn ? '🔥 Firehose ON' : '🔥 Firehose OFF' }}</button>
 
-        <!-- Live pulse -->
+        <!-- Real-time pulse -->
         <span v-if="firehoseOn" style="display:flex;align-items:center;gap:5px;color:#fb923c;font-size:12px;">
           <span style="
             display:inline-block;width:8px;height:8px;border-radius:50%;
             background:#fb923c;animation:twistFlash 1s ease-in-out infinite alternate;
           "></span>
-          Live
+          Real-time
         </span>
 
         <!-- Sort mode tabs — right-aligned -->
