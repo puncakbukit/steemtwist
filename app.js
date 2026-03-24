@@ -67,10 +67,10 @@ const ExploreView = {
 
         const [fresh, pinned] = await Promise.all([feedPromise, pinPromise]);
         const serverPermalinks = new Set(fresh.map(p => p.permlink));
-        const liveOnly = this.twists.filter(
+        const realTimeOnly = this.twists.filter(
           p => p._firehose && !serverPermalinks.has(p.permlink)
         );
-        this.twists      = [...liveOnly, ...fresh];
+        this.twists      = [...realTimeOnly, ...fresh];
         this.pinnedTwist = pinned;
       } catch (e) {
         this.notify("Could not load twists. Please try again.", "error");
