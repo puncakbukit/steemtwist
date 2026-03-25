@@ -543,6 +543,85 @@ function voteTwist(voter, author, permlink, weight, callback) {
   steem_keychain.requestVote(voter, permlink, author, weight, callback);
 }
 
+// ============================================================
+// STEEMTWIST — Live Twist flag / downvote
+// ============================================================
+
+// Reasons a user may flag a Live Twist as harmful.
+// Stored verbatim in the flag-reply's json_metadata so third-party
+// tools can index them without parsing free text.
+const LIVE_TWIST_FLAG_REASONS = [
+  { id: "spam",        label: "Spam",        emoji: "🗑️" },
+  { id: "scam",        label: "Scam",        emoji: "💸" },
+  { id: "phishing",    label: "Phishing",    emoji: "🎣" },
+  { id: "spoofing",    label: "Spoofing",    emoji: "🎭" },
+  { id: "hacking",     label: "Hacking",     emoji: "💀" },
+  { id: "malware",     label: "Malware",     emoji: "🦠" },
+  { id: "harassment",  label: "Harassment",  emoji: "🚫" },
+  { id: "other",       label: "Other",       emoji: "⚠️" }
+];
+
+// Flag a Live Twist by atomically broadcasting:
+//   1. A -10000 downvote on the Live Twist.
+//   2. A reply comment whose body describes the flag reason in plain text
+//      and whose json_metadata.type === "live_twist_flag" so the UI can
+//      display flags separately from normal replies.
+//
+// Both operations are sent in a single requestBroadcast call so they
+// either both land or both fail — the flag reply is never orphaned
+// without its accompanying downvote, and vice versa.
+//
+// callback: (response) => { response.success, response.error }
+function flagLiveTwist(voter, author, permlink, reasonId, callback) {
+  const reason = LIVE_TWIST_FLAG_REASONS.find(r => r.id === reasonId);
+  if (!reason) {
+    return callback({ success: false, error: "Unknown flag reason: " + reasonId });
+  }
+
+  const flagPermlink = generateTwistPermlink(voter);
+  const bodyText =
+    `⚑ Flagged as **${reason.label}** ${reason.emoji}` +
+    `\n\nThis Live Twist has been flagged by @${voter} for: **${reason.label}**.` +
+    `\n\n<sub>Posted via [SteemTwist](${TWIST_CONFIG.DAPP_URL})</sub>`;
+
+  const ops = [
+    // Downvote the Live Twist at full weight
+    ["vote", {
+      voter:    voter,
+      author:   author,
+      permlink: permlink,
+      weight:   -10000
+    }],
+    // Reply comment recording the reason on-chain
+    ["comment", {
+      parent_author:   author,
+      parent_permlink: permlink,
+      author:          voter,
+      permlink:        flagPermlink,
+      title:           "",
+      body:            bodyText,
+      json_metadata:   JSON.stringify({
+        app:     "steemtwist/0.1",
+        type:    "live_twist_flag",
+        reason:  reason.id,
+        tags:    TWIST_CONFIG.TAGS
+      })
+    }],
+    // Zero-payout on the flag reply
+    ["comment_options", {
+      author:               voter,
+      permlink:             flagPermlink,
+      max_accepted_payout:  "0.000 SBD",
+      percent_steem_dollars: 10000,
+      allow_votes:          false,
+      allow_curation_rewards: false,
+      extensions:           []
+    }]
+  ];
+
+  steem_keychain.requestBroadcast(voter, ops, "Posting", callback);
+}
+
 // Retwist (resteem) a post via Steem Keychain.
 // A resteem is a custom_json operation under the "follow" plugin.
 // callback: (response) => { response.success, response.error }

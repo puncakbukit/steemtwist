@@ -1770,7 +1770,13 @@ const TwistCardComponent = {
       showDeleteConfirm: false,
       isDeleting:      false,
       editedBody:      null,    // local override after successful edit
-      editedCode:      null     // local code override after live twist edit
+      editedCode:      null,    // local code override after live twist edit
+      // ── Live Twist flag (downvote + reason reply) ──────────────────
+      showFlagPanel:   false,   // flag panel open/closed
+      flagReason:      null,    // selected reason id or null
+      isFlagging:      false,   // broadcast in progress
+      hasFlagged:      false,   // optimistic: flag has been cast this session
+      flagCount:       0        // derived from active_votes on mount
     };
   },
   computed: {
@@ -1823,6 +1829,19 @@ const TwistCardComponent = {
     },
     canAct() {
       return !!this.username && this.hasKeychain;
+    },
+    // Count of negative votes already recorded on this post.
+    // Incremented optimistically after a successful flag.
+    downvoteCount() {
+      const votes = this.post.active_votes || [];
+      const count = votes.filter(v => v.percent < 0).length;
+      return count + (this.hasFlagged ? 1 : 0);
+    },
+    // Expose the shared reasons list so the template can iterate it.
+    flagReasons() {
+      return typeof LIVE_TWIST_FLAG_REASONS !== "undefined"
+        ? LIVE_TWIST_FLAG_REASONS
+        : [];
     },
     isLong() {
       return stripBackLink(this.post.body).length > PREVIEW_LENGTH ||
@@ -1932,6 +1951,37 @@ const TwistCardComponent = {
           this.lastError = res.error || res.message || "Reply failed.";
         }
       });
+    },
+
+    submitFlag() {
+      if (!this.canAct || this.isFlagging || this.hasFlagged) return;
+      if (!this.flagReason) {
+        this.lastError = "Please select a reason before flagging.";
+        return;
+      }
+      // Prevent self-flagging
+      if (this.post.author === this.username) {
+        this.lastError = "You cannot flag your own Live Twist.";
+        return;
+      }
+      this.isFlagging = true;
+      flagLiveTwist(
+        this.username,
+        this.post.author,
+        this.post.permlink,
+        this.flagReason,
+        (res) => {
+          this.isFlagging = false;
+          if (res.success) {
+            this.hasFlagged    = true;
+            this.showFlagPanel = false;
+            this.flagReason    = null;
+            this.replyCount++;   // the flag reply counts as a child
+          } else {
+            this.lastError = res.error || res.message || "Flag failed.";
+          }
+        }
+      );
     },
 
     openEdit() {
@@ -2104,6 +2154,22 @@ const TwistCardComponent = {
                  border-radius:20px;padding:4px 12px;font-size:13px;margin:0;"
         >💬 {{ replyCount }}</button>
 
+        <!-- Flag — Live Twists only, other users only -->
+        <button
+          v-if="isLiveTwist && !isOwnPost && canAct"
+          @click="showFlagPanel = !showFlagPanel"
+          :disabled="hasFlagged"
+          :style="{
+            background:   hasFlagged ? '#2d0a0a' : (showFlagPanel ? '#3b0000' : '#1e1535'),
+            color:        hasFlagged ? '#fca5a5' : (showFlagPanel ? '#f87171' : '#9b8db0'),
+            border:       hasFlagged ? '1px solid #7f1d1d' : (showFlagPanel ? '1px solid #f87171' : '1px solid #2e2050'),
+            borderRadius: '20px', padding: '4px 10px',
+            cursor:       hasFlagged ? 'default' : 'pointer',
+            fontSize:     '12px', margin: 0
+          }"
+          :title="hasFlagged ? 'You have already flagged this Live Twist' : 'Flag this Live Twist as harmful'"
+        >{{ hasFlagged ? '🚩 Flagged' : '🚩' }}{{ downvoteCount > 0 ? ' ' + downvoteCount : '' }}</button>
+
         <!-- Permalink -->
         <a
           :href="twistUrl"
@@ -2219,6 +2285,65 @@ const TwistCardComponent = {
             style="background:#1e1535;border:1px solid #2e2050;color:#9b8db0;
                    border-radius:20px;padding:4px 12px;font-size:12px;margin:0;"
           >Cancel</button>
+        </div>
+      </div>
+
+      <!-- Live Twist flag panel — reason selector + confirm ──────────────── -->
+      <div v-if="showFlagPanel && isLiveTwist && !isOwnPost && canAct && !hasFlagged"
+           style="margin-top:10px;padding:12px 14px;border-radius:10px;
+                  background:#1a0808;border:1px solid #7f1d1d;">
+
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span style="font-size:15px;">🚩</span>
+          <span style="font-size:13px;font-weight:600;color:#fca5a5;">Flag Live Twist as harmful</span>
+          <button
+            @click="showFlagPanel = false; flagReason = null"
+            style="margin-left:auto;background:none;border:none;cursor:pointer;
+                   font-size:15px;color:#7f1d1d;padding:0;line-height:1;"
+          >✕</button>
+        </div>
+
+        <div style="font-size:12px;color:#9b8db0;margin-bottom:8px;">
+          Select the reason that best describes the problem with this Live Twist.
+          Your flag will be cast as a downvote and the reason will be posted as a
+          reply on-chain so the community can review it.
+        </div>
+
+        <!-- Reason chips -->
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+          <button
+            v-for="r in flagReasons"
+            :key="r.id"
+            @click="flagReason = (flagReason === r.id ? null : r.id)"
+            :style="{
+              borderRadius: '20px', padding: '4px 12px', fontSize: '12px',
+              fontWeight: flagReason === r.id ? '700' : '400',
+              border: '1px solid',
+              background:   flagReason === r.id ? '#7f1d1d' : '#1e1535',
+              color:        flagReason === r.id ? '#fecaca' : '#9b8db0',
+              borderColor:  flagReason === r.id ? '#ef4444'  : '#2e2050',
+              cursor: 'pointer', margin: 0
+            }"
+          >{{ r.emoji }} {{ r.label }}</button>
+        </div>
+
+        <!-- Confirm row -->
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span v-if="!flagReason" style="font-size:12px;color:#5a4e70;font-style:italic;">
+            Choose a reason above to enable the flag button.
+          </span>
+          <span v-else style="font-size:12px;color:#fca5a5;">
+            Flag as: <strong>{{ flagReasons.find(r => r.id === flagReason)?.emoji }}
+            {{ flagReasons.find(r => r.id === flagReason)?.label }}</strong>
+          </span>
+          <button
+            @click="submitFlag"
+            :disabled="!flagReason || isFlagging"
+            style="margin-left:auto;padding:5px 16px;font-size:12px;margin:0;
+                   background:#7f1d1d;border:none;color:#fff;border-radius:20px;
+                   font-weight:600;cursor:pointer;opacity:1;"
+            :style="{ opacity: (!flagReason || isFlagging) ? 0.4 : 1, cursor: (!flagReason || isFlagging) ? 'default' : 'pointer' }"
+          >{{ isFlagging ? "Flagging…" : "🚩 Confirm flag" }}</button>
         </div>
       </div>
 
