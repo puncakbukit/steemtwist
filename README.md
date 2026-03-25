@@ -9,7 +9,7 @@ Posts are permanent and censorship-resistant. No backend, no build tools, no ser
 
 A SteemTwist user is called a **Twister** 🌀
 
-Just as a Hive user is a *Hiver* and a YouTube creator is a *YouTuber*, every person who posts, replies, loves, and connects on SteemTwist is a **Twister**. Twisters spin ideas into twists, connect with other Twisters, and keep the stream alive.
+Just as a blog writer is a *blogger* and a YouTube creator is a *YouTuber*, every person who posts, replies, loves, and connects on SteemTwist is a **Twister**. Twisters spin ideas into twists, connect with other Twisters, and keep the stream alive.
 
 ---
 
