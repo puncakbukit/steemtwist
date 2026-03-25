@@ -74,14 +74,25 @@ function fetchAccount(username) {
         return Math.floor(r);
       }
 
+      // Sanitize image URLs from profile metadata so neither profileImage
+      // nor coverImage can carry javascript: URIs or CSS-injection payloads.
+      // Only http/https URLs are accepted; anything else is silently dropped.
+      function sanitizeImageUrl(url) {
+        if (!url || typeof url !== "string") return "";
+        try {
+          const u = new URL(url);
+          return (u.protocol === "https:" || u.protocol === "http:") ? url : "";
+        } catch { return ""; }
+      }
+
       // Fetch follower/following counts in parallel with account data
       steem.api.getFollowCount(account.name, (fcErr, fc) => {
         resolve({
           username:       account.name,
-          profileImage:   profile.profile_image || "",
+          profileImage:   sanitizeImageUrl(profile.profile_image),
           displayName:    profile.name || account.name,
           about:          profile.about || "",
-          coverImage:     profile.cover_image || "",
+          coverImage:     sanitizeImageUrl(profile.cover_image),
           location:       profile.location || "",
           website:        profile.website || "",
           reputation:     calcReputation(parseInt(account.reputation || 0)),
@@ -109,9 +120,7 @@ function fetchReplies(author, permlink) {
 
 // Recursively fetch ALL nested replies for a post.
 function fetchAllReplies(author, permlink) {
-  alert("fetchAllReplies");
   function recurse(author, permlink) {
-    alert("recurse");
     return callWithFallbackAsync(
       steem.api.getContentReplies,
       [author, permlink]
@@ -130,7 +139,6 @@ function fetchAllReplies(author, permlink) {
   }
 
   return recurse(author, permlink).then(collected => {
-    alert("then");
     if (collected.length === 0) return [];
 
     return Promise.all(
@@ -813,6 +821,11 @@ function clearPinCache(username) {
   try { localStorage.removeItem(PIN_CACHE_KEY + "_" + username); } catch {}
 }
 
+// Steem username: 3-16 chars, lowercase a-z / 0-9 / hyphens / dots.
+// Permlink: 1-255 chars, lowercase a-z / 0-9 / hyphens.
+const _VALID_STEEM_NAME     = /^[a-z0-9\-.]{3,16}$/;
+const _VALID_STEEM_PERMLINK = /^[a-z0-9-]{1,255}$/;
+
 function getPinCache(username) {
   try {
     const raw = localStorage.getItem(PIN_CACHE_KEY + "_" + username);
@@ -821,6 +834,12 @@ function getPinCache(username) {
     if (Date.now() - cached.ts > PIN_CACHE_TTL) {
       localStorage.removeItem(PIN_CACHE_KEY + "_" + username);
       return null;
+    }
+    // cached.author === null signals a pending unpin — allow it through.
+    // For actual pin entries, validate both fields before trusting them.
+    if (cached.author !== null) {
+      if (typeof cached.author   !== "string" || !_VALID_STEEM_NAME.test(cached.author))      return null;
+      if (typeof cached.permlink !== "string" || !_VALID_STEEM_PERMLINK.test(cached.permlink)) return null;
     }
     return cached;
   } catch { return null; }
@@ -1026,7 +1045,11 @@ function classifySignalEntry(seqNum, item, username) {
 // Strip body down to a readable one-line preview for signal rows.
 function stripSignalBody(body) {
   if (!body) return "";
-  return body
+  // Cap input before regex to prevent ReDoS on crafted bodies with deeply
+  // nested or unclosed HTML tags. 10 KB is far more than any legitimate
+  // signal preview needs.
+  const safe = body.slice(0, 10000);
+  return safe
     .replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "")
     .replace(/<[^>]+>/g, "")
     .replace(/[#*`_~>\[\]!]/g, "")

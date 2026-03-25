@@ -181,8 +181,11 @@ const UserProfileComponent = {
     safeWebsite() {
       const url = this.profileData?.website || "";
       try {
+        // Normalise bare domains (e.g. "example.com") to https://
         const u = new URL(url.startsWith("http") ? url : "https://" + url);
-        return u.protocol === "https:" || u.protocol === "http:" ? u.href : "";
+        // Accept https only — http leaks mixed-content warnings and
+        // url.startsWith("http") above would also match "http:" which we drop.
+        return u.protocol === "https:" ? u.href : "";
       } catch { return ""; }
     },
     websiteLabel() {
@@ -1026,34 +1029,39 @@ ${'<'}/script>
     onMessage(e) {
       // Only accept messages from the sandboxed iframe (origin === "null")
       if (e.origin !== "null") return;
-      const { type, height } = e.data || {};
+      // Capture the source window immediately — async callbacks must not
+      // close over `e` directly because the event object may be recycled.
+      const iframeSource = e.source;
+      const { type, height, queryType, actionType, params } = e.data || {};
       if (type === "resize" && height) {
         const iframe = this.$refs.sandbox;
-        if (!iframe || e.source !== iframe.contentWindow) return;
-        if (iframe) iframe.style.height = Math.min(height, 600) + "px";
+        if (!iframe || iframeSource !== iframe.contentWindow) return;
+        iframe.style.height = Math.min(height, 600) + "px";
       }
       // --- HANDLE QUERIES to the blockchain ---
       if (type === "LIVE_TWIST_QUERY") {
-        this.handleQueryRequest(queryType, params);
-      }     
+        this.handleQueryRequest(queryType, params, iframeSource);
+      }
       // --- HANDLE ACTIONS to access blockchain ---
       if (type === "LIVE_TWIST_ACTION") {
-        this.handleActionRequest(actionType, params);
+        this.handleActionRequest(actionType, params, iframeSource);
       }
     },
     
     // Helper method to HANDLE QUERIES to the blockchain
-    handleQueryRequest(query, params) {
-      // Helper to message the specific iframe running this twist
+    handleQueryRequest(query, params, iframeSource) {
+      // Helper to message the specific iframe running this twist.
+      // iframeSource is passed in (not closed over) to avoid stale-event bugs.
+      // Target origin "null" is correct for sandbox="allow-scripts" iframes.
       const sendResult = (error, result) => {
         const iframe = this.$refs.sandbox;
-        if (iframe && e.source === iframe.contentWindow) {
-          iframe.contentWindow.postMessage({ 
-            type: "QUERY_RESULT", 
+        if (iframe && iframeSource === iframe.contentWindow) {
+          iframe.contentWindow.postMessage({
+            type: "QUERY_RESULT",
             error: error,
             data: result,
             query: query
-          }, "*");
+          }, "null");
         }
       };     
       // Queries are usually safe, so you might not need a confirm() dialog
@@ -1507,16 +1515,18 @@ ${'<'}/script>
     },
     
     // Helper method to HANDLE ACTIONS to access blockchain
-    handleActionRequest(action, params) {
-      // Helper to message the specific iframe running this twist
+    handleActionRequest(action, params, iframeSource) {
+      // Helper to message the specific iframe running this twist.
+      // iframeSource is passed in (not closed over) to avoid stale-event bugs.
+      // Target origin "null" is correct for sandbox="allow-scripts" iframes.
       const sendBack = (success) => {
         const iframe = this.$refs.sandbox;
-        if (iframe && e.source === iframe.contentWindow) {
-          iframe.contentWindow.postMessage({ 
-            type: "ACTION_RESULT", 
-            success: success, 
-            action: action 
-          }, "*");
+        if (iframe && iframeSource === iframe.contentWindow) {
+          iframe.contentWindow.postMessage({
+            type: "ACTION_RESULT",
+            success: success,
+            action: action
+          }, "null");
         }
       };
       // Check the global window object for Keychain
@@ -2357,12 +2367,12 @@ const LiveTwistComposerComponent = {
         "var app={" +
         "render:function(h){_root.innerHTML=sanitize(String(h));}," +
         "text:function(s){_root.textContent=String(s).slice(0,2000);}," +
-        "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},'*');}," +
+        "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},'null');}," +
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}" +
         "};" +
         "var userCode=" + escaped + ";" +
-        "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},'*');}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
-        "setTimeout(function(){var h=document.body.scrollHeight;if(h>40)parent.postMessage({type:'resize',height:h+16},'*');},150);" +
+        "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},'null');}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
+        "setTimeout(function(){var h=document.body.scrollHeight;if(h>40)parent.postMessage({type:'resize',height:h+16},'null');},150);" +
         "})();<\/script></body></html>";
     },
     runPreview() {

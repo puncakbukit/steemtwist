@@ -1703,11 +1703,14 @@ const App = {
     ══════════════════════════════════════════════════════════ -->
     <div style="position:relative;overflow:hidden;">
 
-      <!-- Cover layer: user cover image, falls back to gradient -->
+      <!-- Cover layer: user cover image, falls back to gradient.
+           coverImage is already sanitized to https/http only by fetchAccount,
+           but we CSS-encode it here as an extra layer of defence so
+           characters like ) ' " cannot break out of the url(...) value. -->
       <div :style="{
         position:'absolute', inset:0,
         backgroundImage: (profileData && profileData.coverImage)
-          ? 'url(' + profileData.coverImage + ')'
+          ? 'url(' + encodeURI(profileData.coverImage) + ')'
           : 'none',
         backgroundSize:'cover', backgroundPosition:'center',
         zIndex:0
