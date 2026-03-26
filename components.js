@@ -1769,6 +1769,7 @@ const LiveTwistComponent = {
 <html>
 <head>
 <meta charset="utf-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js" integrity="sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=" crossorigin="anonymous"></script>
 <style>
   body { margin:0; padding:8px; font-family:system-ui,sans-serif;
          font-size:14px; background:#0f0a1e; color:#e8e0f0;
@@ -3381,7 +3382,8 @@ const LiveTwistComposerComponent = {
   methods: {
     buildSandboxDoc(userCode) {
       const escaped = JSON.stringify(userCode);
-      return "<!DOCTYPE html><html><head><meta charset='utf-8'><style>" +
+      return "<!DOCTYPE html><html><head><meta charset='utf-8'>" + 
+		"<script src='https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js' integrity='sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=' crossorigin='anonymous'></script><style>" +
         "body{margin:0;padding:8px;font-family:system-ui,sans-serif;font-size:14px;" +
         "background:#0f0a1e;color:#e8e0f0;box-sizing:border-box;word-break:break-word}" +
         "*{box-sizing:border-box}" +
