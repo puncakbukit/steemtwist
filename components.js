@@ -1862,7 +1862,9 @@ const PARENT_ORIGIN = "https://puncakbukit.github.io";
     },
     onResult(callback) {
       window.addEventListener("message", (e) => {
-        if (e.data.type === "ACTION_RESULT") {
+        if (e.data.type === "QUERY_RESULT") {
+          callback(e.data.error, e.data.result, e.data.query);
+        } else if (e.data.type === "ACTION_RESULT") {
           callback(e.data.success, e.data.action);
         }
       });
@@ -1962,7 +1964,7 @@ ${'<'}/script>
           iframe.contentWindow.postMessage({
             type: "QUERY_RESULT",
             error: error,
-            data: result,
+            result: result,
             query: query
           }, "null");
         }
@@ -3407,6 +3409,8 @@ const LiveTwistComposerComponent = {
         "text:function(s){_root.textContent=String(s).slice(0,2000);}," +
         "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},PARENT_ORIGIN);}," +
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}," +
+		"query:function(type,params=[]){parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params},PARENT_ORIGIN);}," + 
+        "action:function(type,params={}){parent.postMessage({type:'LIVE_TWIST_ACTION',actionType:type,params:params},PARENT_ORIGIN);}," + 
 		"onResult:function(callback){window.addEventListener('message',(e)=>{if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}});}" + 
         "};" +
         "var userCode=" + escaped + ";" +
