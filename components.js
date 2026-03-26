@@ -3405,12 +3405,12 @@ const LiveTwistComposerComponent = {
         "var app={" +
         "render:function(h){_root.innerHTML=sanitize(String(h));}," +
         "text:function(s){_root.textContent=String(s).slice(0,2000);}," +
-        "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},'null');}," +
+        "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},'*');}," +
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}" +
         "};" +
         "var userCode=" + escaped + ";" +
-        "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},'null');}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
-        "setTimeout(function(){var h=document.body.scrollHeight;if(h>40)parent.postMessage({type:'resize',height:h+16},'null');},150);" +
+        "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},'*');}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
+        "setTimeout(function(){var h=document.body.scrollHeight;if(h>40)parent.postMessage({type:'resize',height:h+16},'*');},150);" +
         "})();<\/script></body></html>";
     },
     runPreview() {
