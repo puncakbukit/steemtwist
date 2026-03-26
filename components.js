@@ -1797,10 +1797,6 @@ const PARENT_ORIGIN = "https://puncakbukit.github.io";
   window.WebSocket   = function() { throw new Error("Network blocked"); };
   window.open        = () => null;
 
-  // ── Inline DOMPurify (subset — full lib loaded from parent message) ──
-  // We receive it via message bridge. Until then, use a strict allowlist.
-  let purify = null;
-
   function sanitize(html) {
     if (typeof html !== "string") return "";
     if (purify) return purify.sanitize(html, {
