@@ -1863,7 +1863,7 @@ const PARENT_ORIGIN = "https://puncakbukit.github.io";
     onResult(callback) {
       window.addEventListener("message", (e) => {
         if (e.data.type === "QUERY_RESULT") {
-          callback(e.data.error, e.data.result, e.data.query);
+          callback(e.data.success, e.data.result);
         } else if (e.data.type === "ACTION_RESULT") {
           callback(e.data.success, e.data.action);
         }
@@ -1963,9 +1963,8 @@ ${'<'}/script>
         if (iframe && iframeSource === iframe.contentWindow) {
           iframe.contentWindow.postMessage({
             type: "QUERY_RESULT",
-            error: error,
-            result: result,
-            query: query
+            success: error?false:true,
+            result: result
           }, "null");
         }
       };     
@@ -3411,7 +3410,7 @@ const LiveTwistComposerComponent = {
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}," +
 		"query:function(type,params=[]){parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params},PARENT_ORIGIN);}," + 
         "action:function(type,params={}){parent.postMessage({type:'LIVE_TWIST_ACTION',actionType:type,params:params},PARENT_ORIGIN);}," + 
-		"onResult:function(callback){window.addEventListener('message',(e)=>{if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}});}" + 
+	    "onResult:function(callback){window.addEventListener('message',(e)=>{if(e.data.type==='QUERY_RESULT'){callback(e.data.success,e.data.result);}else if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}});}" + 
         "};" +
         "var userCode=" + escaped + ";" +
         "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
