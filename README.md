@@ -58,11 +58,11 @@ Just as a blog writer is a *blogger* and a YouTube creator is a *YouTuber*, ever
 
 ### Feed & navigation
 - 🏠 **Home** — personalised stream of twists from Twisters you follow; Understream and Firehose supported
-- 🔭 **Explore** — global Twist Stream; sort New / Hot / Top; Firehose live stream; Understream toggle
+- 🔭 **Explore** — global Twist Stream; sort New / Hot / Top; Firehose real-time stream; Understream toggle
 - 🌊 **Understream** — toggle between Twist Stream and full Steem data on Home, Explore, Profile, and Signals
 
 ### Twists
-- 📝 **Post twists** up to 280 characters with **markdown** and live **Write / Preview** tab
+- 📝 **Post twists** up to 280 characters with **markdown** and real-time **Write / Preview** tab
 - 💬 **Thread replies** — recursive; auto-expanded two levels deep; Write / Preview on reply box
 - ✏️ **Edit** — re-broadcast with updated body; card updates instantly
 - 🗑️ **Delete** — true `delete_comment` (no votes/children) or body-blank fallback; removed from feed instantly
