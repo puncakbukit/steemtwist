@@ -2054,11 +2054,11 @@ ${'<'}/script>
 				steem.api.getOpsInBlock(params.blockNum, params.onlyVirtual, function(err, res) {
           sendResult(err, res);
 				});
-      } else if (query === "getStateWith") {
+      } else if (query === "getStateWithPath") {
 				steem.api.getStateWith(params.path, function(err, res) {
           sendResult(err, res);
 				});
-      } else if (query === "getStateWith") {
+      } else if (query === "getStateWithOptions") {
 				steem.api.getStateWith(params.options, function(err, res) {
           sendResult(err, res);
 				});
