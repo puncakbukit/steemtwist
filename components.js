@@ -1964,7 +1964,7 @@ ${'<'}/script>
             error: error,
             data: result,
             query: query
-          }, "null");
+          }, "*");
         }
       };     
       // Queries are usually safe, so you might not need a confirm() dialog
@@ -2429,7 +2429,7 @@ ${'<'}/script>
             type: "ACTION_RESULT",
             success: success,
             action: action
-          }, "null");
+          }, "*");
         }
       };
       // Check the global window object for Keychain
