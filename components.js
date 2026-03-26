@@ -1859,26 +1859,27 @@ const purify = DOMPurify;
       }, PARENT_ORIGIN);
     },
     onResult(callback) {
-      window.addEventListener("message", (e) => {
+      // Replace-not-accumulate: remove any previous onResult listener before
+      // registering the new one, so multiple app.onResult() calls within one
+      // run don't stack up and fire the callback multiple times per result.
+      if (app._onResultHandler) {
+        window.removeEventListener("message", app._onResultHandler);
+      }
+      app._onResultHandler = (e) => {
         if (e.data.type === "QUERY_RESULT") {
           callback(e.data.success, e.data.result);
         } else if (e.data.type === "ACTION_RESULT") {
           callback(e.data.success, e.data.action);
         }
-      });
+      };
+      window.addEventListener("message", app._onResultHandler);
     }
   };
 
-  // ── Receive DOMPurify + run signal from parent ────────────────
+  // ── Handle kill signal from parent (future timeout support) ──
   window.addEventListener("message", function(e) {
-    if (e.data && e.data.type === "purify") {
-      // Parent sends DOMPurify source; eval it inside sandbox
-      try { (new Function(e.data.src))(); purify = DOMPurify; } catch {}
-      return;
-    }
     if (e.data && e.data.type === "kill") {
       _root.innerHTML = "<em style='color:#fca5a5'>Execution timed out.</em>";
-      return;
     }
   });
 
@@ -1965,117 +1966,128 @@ ${'<'}/script>
             result: result
           }, "null");
         }
-      };     
+      };
+
+      // ── Param sanitisation helpers ──────────────────────────────
+      // Prevents a Live Twist from passing extreme limits that would cause
+      // the RPC node to return huge payloads and clog the main thread.
+      const MAX_LIMIT = 100;
+      const safeLimit = (v) => Math.min(Math.max(parseInt(v) || 20, 1), MAX_LIMIT);
+      // Coerce to string and cap length to prevent oversized RPC payloads.
+      const safeStr   = (v) => (typeof v === "string" ? v.slice(0, 256) : "");
+      // Generic integer coercion with a fallback default.
+      const safeInt   = (v, def = 0) => (Number.isFinite(parseInt(v)) ? parseInt(v) : def);
+
       // Queries are usually safe, so you might not need a confirm() dialog
       if (query === "getTrendingTags") {
 				// Tags
-				steem.api.getTrendingTags(params.afterTag, params.limit, function(err, res) {
+				steem.api.getTrendingTags(safeStr(params.afterTag), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getBlog") {
-				steem.api.getBlog(params.account, params.entryId, params.limit, function(err, res) {
+				steem.api.getBlog(safeStr(params.account), safeInt(params.entryId), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getBlogAuthors") {
-				steem.api.getBlogAuthors(params.blogAccount, function(err, res) {
+				steem.api.getBlogAuthors(safeStr(params.blogAccount), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getBlogEntries") {
-				steem.api.getBlogEntries(params.account, params.entryId, params.limit, function(err, res) {
+				steem.api.getBlogEntries(safeStr(params.account), safeInt(params.entryId), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByTrending30") {
-				steem.api.getDiscussionsByTrending30(params.query, function(err, res) {
+				steem.api.getDiscussionsByTrending30((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByCreated") {
-				steem.api.getDiscussionsByCreated(params.query, function(err, res) {
+				steem.api.getDiscussionsByCreated((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByActive") {
-				steem.api.getDiscussionsByActive(params.query, function(err, res) {
+				steem.api.getDiscussionsByActive((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByCashout") {
-				steem.api.getDiscussionsByCashout(params.query, function(err, res) {
+				steem.api.getDiscussionsByCashout((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByPayout") {
-				steem.api.getDiscussionsByPayout(params.query, function(err, res) {
+				steem.api.getDiscussionsByPayout((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByVotes") {
-				steem.api.getDiscussionsByVotes(params.query, function(err, res) {
+				steem.api.getDiscussionsByVotes((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByChildren") {
-				steem.api.getDiscussionsByChildren(params.query, function(err, res) {
+				steem.api.getDiscussionsByChildren((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByHot") {
-				steem.api.getDiscussionsByHot(params.query, function(err, res) {
+				steem.api.getDiscussionsByHot((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByFeed") {
-				steem.api.getDiscussionsByFeed(params.query, function(err, res) {
+				steem.api.getDiscussionsByFeed((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByBlog") {
-				steem.api.getDiscussionsByBlog(params.query, function(err, res) {
+				steem.api.getDiscussionsByBlog((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByComments") {
-				steem.api.getDiscussionsByComments(params.query, function(err, res) {
+				steem.api.getDiscussionsByComments((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByPromoted") {
-				steem.api.getDiscussionsByPromoted(params.query, function(err, res) {
+				steem.api.getDiscussionsByPromoted((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getCommentDiscussionsByPayout") {
-				steem.api.getCommentDiscussionsByPayout(params.query, function(err, res) {
+				steem.api.getCommentDiscussionsByPayout((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getPostDiscussionsByPayout") {
-				steem.api.getPostDiscussionsByPayout(params.query, function(err, res) {
+				steem.api.getPostDiscussionsByPayout((params.query && typeof params.query === 'object') ? {...params.query, tag: safeStr(params.query.tag), limit: safeLimit(params.query.limit)} : {}, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getBlockHeader") {
 				// Blocks and transactions
 
-				steem.api.getBlockHeader(params.blockNum, function(err, res) {
+				steem.api.getBlockHeader(safeInt(params.blockNum), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getBlock") {
-				steem.api.getBlock(params.blockNum, function(err, res) {
+				steem.api.getBlock(safeInt(params.blockNum), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getOpsInBlock") {
-				steem.api.getOpsInBlock(params.blockNum, params.onlyVirtual, function(err, res) {
+				steem.api.getOpsInBlock(safeInt(params.blockNum), !!params.onlyVirtual, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getStateWithPath") {
-				steem.api.getStateWith(params.path, function(err, res) {
+				steem.api.getStateWith(safeStr(params.path), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getStateWithOptions") {
-				steem.api.getStateWith(params.options, function(err, res) {
+				steem.api.getStateWith(safeStr(params.options), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getTrendingCategories") {
-				steem.api.getTrendingCategories(params.after, params.limit, function(err, res) {
+				steem.api.getTrendingCategories(safeStr(params.after), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getBestCategories") {
-				steem.api.getBestCategories(params.after, params.limit, function(err, res) {
+				steem.api.getBestCategories(safeStr(params.after), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getActiveCategories") {
-				steem.api.getActiveCategories(params.after, params.limit, function(err, res) {
+				steem.api.getActiveCategories(safeStr(params.after), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getRecentCategories") {
-				steem.api.getRecentCategories(params.after, params.limit, function(err, res) {
+				steem.api.getRecentCategories(safeStr(params.after), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getConfig") {
@@ -2093,7 +2105,7 @@ ${'<'}/script>
           sendResult(err, res);
 				});
       } else if (query === "getFeedEntries") {
-				steem.api.getFeedEntries(params.account, params.entryId, params.limit, function(err, res) {
+				steem.api.getFeedEntries(safeStr(params.account), safeInt(params.entryId), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getFeedHistory") {
@@ -2109,7 +2121,7 @@ ${'<'}/script>
           sendResult(err, res);
 				});
       } else if (query === "getTradeHistory") {
-				steem.api.getTradeHistory(params.start, params.end, params.limit, function(err, res) {
+				steem.api.getTradeHistory(safeStr(params.start), safeStr(params.end), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getVersion") {
@@ -2129,29 +2141,29 @@ ${'<'}/script>
           sendResult(err, res);
 				});
       } else if (query === "getRewardFund") {
-				steem.api.getRewardFund(params.name, function(err, res) {
+				steem.api.getRewardFund(safeStr(params.name), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getVestingDelegations") {
-				steem.api.getVestingDelegations(params.account, params.from, params.limit, function(err, res) {
+				steem.api.getVestingDelegations(safeStr(params.account), safeStr(params.from), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccounts") {
 				// Accounts
 
-				steem.api.getAccounts(params.names, function(err, res) {
+				steem.api.getAccounts(Array.isArray(params.names) ? params.names.slice(0,10).map(n=>safeStr(n)) : [], function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccountReferences") {
-				steem.api.getAccountReferences(params.accountId, function(err, res) {
+				steem.api.getAccountReferences(safeInt(params.accountId), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "lookupAccountNames") {
-				steem.api.lookupAccountNames(params.accountNames, function(err, res) {
+				steem.api.lookupAccountNames(Array.isArray(params.accountNames) ? params.accountNames.slice(0,10).map(n=>safeStr(n)) : [], function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "lookupAccounts") {
-				steem.api.lookupAccounts(params.lowerBoundName, params.limit, function(err, res) {
+				steem.api.lookupAccounts(safeStr(params.lowerBoundName), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccountCount") {
@@ -2159,57 +2171,57 @@ ${'<'}/script>
           sendResult(err, res);
 				});
       } else if (query === "getConversionRequests") {
-				steem.api.getConversionRequests(params.accountName, function(err, res) {
+				steem.api.getConversionRequests(safeStr(params.accountName), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccountHistory") {
-				steem.api.getAccountHistory(params.account, params.from, params.limit, function(err, res) {
+				steem.api.getAccountHistory(safeStr(params.account), safeInt(params.from, -1), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getOwnerHistory") {
-				steem.api.getOwnerHistory(params.account, function(err, res) {
+				steem.api.getOwnerHistory(safeStr(params.account), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getRecoveryRequest") {
-				steem.api.getRecoveryRequest(params.account, function(err, res) {
+				steem.api.getRecoveryRequest(safeStr(params.account), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccountBandwidth") {
-				steem.api.getAccountBandwidth(params.account, params.bandwidthType, function(err, res) {
+				steem.api.getAccountBandwidth(safeStr(params.account), safeStr(params.bandwidthType), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccountBandwidthWith") {
-				steem.api.getAccountBandwidthWith(params.options, function(err, res) {
+				steem.api.getAccountBandwidthWith(safeStr(params.options), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccountReputations") {
-				steem.api.getAccountReputations(params.lowerBoundName, params.limit, function(err, res) {
+				steem.api.getAccountReputations(safeStr(params.lowerBoundName), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "findChangeRecoveryAccountRequests") {
-				steem.api.findChangeRecoveryAccountRequests(params.names, function(err, res) {
+				steem.api.findChangeRecoveryAccountRequests(Array.isArray(params.names) ? params.names.slice(0,10).map(n=>safeStr(n)) : [], function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getOrderBook") {
 				// Market
 
-				steem.api.getOrderBook(params.limit, function(err, res) {
+				steem.api.getOrderBook(safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getMarketOrderBook") {
-				steem.api.getMarketOrderBook(params.limit, function(err, res) {
+				steem.api.getMarketOrderBook(safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getMarketOrderBookWith") {
-				steem.api.getMarketOrderBookWith(params.options, function(err, res) {
+				steem.api.getMarketOrderBookWith(safeStr(params.options), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getOpenOrders") {
-				steem.api.getOpenOrders(params.owner, function(err, res) {
+				steem.api.getOpenOrders(safeStr(params.owner), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getLiquidityQueue") {
-				steem.api.getLiquidityQueue(params.startAccount, params.limit, function(err, res) {
+				steem.api.getLiquidityQueue(safeStr(params.startAccount), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getMarketHistoryBuckets") {
@@ -2223,7 +2235,7 @@ ${'<'}/script>
           sendResult(err, res);
 				});
       } else if (query === "getTransaction") {
-				steem.api.getTransaction(params.trxId, function(err, res) {
+				steem.api.getTransaction(safeStr(params.trxId), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getRequiredSignatures") {
@@ -2243,55 +2255,55 @@ ${'<'}/script>
           sendResult(err, res);
 				});
       } else if (query === "getTagsUsedByAuthor") {
-				steem.api.getTagsUsedByAuthor(params.author, function(err, res) {
+				steem.api.getTagsUsedByAuthor(safeStr(params.author), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getActiveVotes") {
 				// Votes
 
-				steem.api.getActiveVotes(params.author, params.permlink, function(err, res) {
+				steem.api.getActiveVotes(safeStr(params.author), safeStr(params.permlink), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getAccountVotes") {
-				steem.api.getAccountVotes(params.voter, function(err, res) {
+				steem.api.getAccountVotes(safeStr(params.voter), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getContent") {
-				steem.api.getContent(params.author, params.permlink, function(err, res) {
+				steem.api.getContent(safeStr(params.author), safeStr(params.permlink), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getContentReplies") {
-				steem.api.getContentReplies(params.author, params.permlink, function(err, res) {
+				steem.api.getContentReplies(safeStr(params.author), safeStr(params.permlink), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getDiscussionsByAuthorBeforeDate") {
-				steem.api.getDiscussionsByAuthorBeforeDate(params.author, params.startPermlink, params.beforeDate, params.limit, function(err, res) {
+				steem.api.getDiscussionsByAuthorBeforeDate(safeStr(params.author), safeStr(params.startPermlink), safeStr(params.beforeDate), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getRebloggedBy") {
-				steem.api.getRebloggedBy(params.author, params.permlink, function(err, res) {
+				steem.api.getRebloggedBy(safeStr(params.author), safeStr(params.permlink), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getRepliesByLastUpdate") {
-				steem.api.getRepliesByLastUpdate(params.startAuthor, params.startPermlink, params.limit, function(err, res) {
+				steem.api.getRepliesByLastUpdate(safeStr(params.startAuthor), safeStr(params.startPermlink), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getWitnesses") {
 				// Witnesses
 
-				steem.api.getWitnesses(params.witnessIds, function(err, res) {
+				steem.api.getWitnesses(Array.isArray(params.witnessIds) ? params.witnessIds.slice(0,10).map(n=>safeStr(n)) : [], function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getWitnessByAccount") {
-				steem.api.getWitnessByAccount(params.accountName, function(err, res) {
+				steem.api.getWitnessByAccount(safeStr(params.accountName), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getWitnessesByVote") {
-				steem.api.getWitnessesByVote(params.from, params.limit, function(err, res) {
+				steem.api.getWitnessesByVote(safeStr(params.from), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "lookupWitnessAccounts") {
-				steem.api.lookupWitnessAccounts(params.lowerBoundName, params.limit, function(err, res) {
+				steem.api.lookupWitnessAccounts(safeStr(params.lowerBoundName), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getWitnessCount") {
@@ -2316,42 +2328,42 @@ ${'<'}/script>
 				});
       } else if (query === "getFollowers") {
 				// Follow API
-				steem.api.getFollowers(params.following, params.startFollower, params.followType, params.limit, function(err, res) {
+				steem.api.getFollowers(safeStr(params.following), safeStr(params.startFollower), safeStr(params.followType), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getFollowing") {
-				steem.api.getFollowing(params.follower, params.startFollowing, params.followType, params.limit, function(err, res) {
+				steem.api.getFollowing(safeStr(params.follower), safeStr(params.startFollowing), safeStr(params.followType), safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getFollowCount") {
-				steem.api.getFollowCount(params.account, function(err, res) {
+				steem.api.getFollowCount(safeStr(params.account), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getWithdrawRoutes") {
-				steem.api.getWithdrawRoutes(params.account, params.withdrawRouteType, function(err, res) {
+				steem.api.getWithdrawRoutes(safeStr(params.account), safeStr(params.withdrawRouteType), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getRecentTrades") {
-				steem.api.getRecentTrades(params.limit, function(err, res) {
+				steem.api.getRecentTrades(safeLimit(params.limit), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getSavingsWithdrawFrom") {
-				steem.api.getSavingsWithdrawFrom(params.account, function(err, res) {
+				steem.api.getSavingsWithdrawFrom(safeStr(params.account), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "getSavingsWithdrawTo") {
-				steem.api.getSavingsWithdrawTo(params.account, function(err, res) {
+				steem.api.getSavingsWithdrawTo(safeStr(params.account), function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "amount") {
 				try {
-					const res = steem.formatter.amount(params._amount, params.asset);
+					const res = steem.formatter.amount(params._amount, safeStr(params.asset));
           sendResult(null, res);
 				} catch (error) {
           sendResult(error, null);
 				}
       } else if (query === "vestingSteem") {
-				steem.formatter.vestingSteem(params.account, params.gprops, function(err, res) {
+				steem.formatter.vestingSteem(safeStr(params.account), params.gprops, function(err, res) {
           sendResult(err, res);
 				});
       } else if (query === "numberWithCommas") {
@@ -2363,7 +2375,7 @@ ${'<'}/script>
 				}
       } else if (query === "estimateAccountValue") {
 				try {
-					const res = steem.formatter.estimateAccountValue(params.account);
+					const res = steem.formatter.estimateAccountValue(safeStr(params.account));
           sendResult(null, res);
 				} catch (error) {
           sendResult(error, null);
@@ -2377,14 +2389,14 @@ ${'<'}/script>
 				}
       } else if (query === "commentPermlink") {
 				try {
-					const res = steem.formatter.commentPermlink(params.parentAuthor, params.parentPermlink);
+					const res = steem.formatter.commentPermlink(safeStr(params.parentAuthor), safeStr(params.parentPermlink));
           sendResult(null, res);
 				} catch (error) {
           sendResult(error, null);
 				}
       } else if (query === "reputation") {
 				try {
-					const res = steem.formatter.reputation(params.reputation);
+					const res = steem.formatter.reputation(safeInt(params.reputation));
           sendResult(null, res);
 				} catch (error) {
           sendResult(error, null);
@@ -2398,14 +2410,14 @@ ${'<'}/script>
 				}
       } else if (query === "validateAccountName") {
 				try {
-					const res = steem.utils.validateAccountName(params.account);
+					const res = steem.utils.validateAccountName(safeStr(params.account));
           sendResult(null, res);
 				} catch (error) {
           sendResult(error, null);
 				}
       } else if (query === "camelCase") {
 				try {
-					const res = steem.utils.camelCase(params.str);
+					const res = steem.utils.camelCase(safeStr(params.str));
           sendResult(null, res);
 				} catch (error) {
           sendResult(error, null);
@@ -3408,7 +3420,7 @@ const LiveTwistComposerComponent = {
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}," +
 		"query:function(type,params=[]){parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params},PARENT_ORIGIN);}," + 
         "action:function(type,params={}){parent.postMessage({type:'LIVE_TWIST_ACTION',actionType:type,params:params},PARENT_ORIGIN);}," + 
-	    "onResult:function(callback){window.addEventListener('message',(e)=>{if(e.data.type==='QUERY_RESULT'){callback(e.data.success,e.data.result);}else if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}});}" + 
+	    "onResult:function(callback){if(app._onResultHandler)window.removeEventListener('message',app._onResultHandler);app._onResultHandler=function(e){if(e.data.type==='QUERY_RESULT'){callback(e.data.success,e.data.result);}else if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}};window.addEventListener('message',app._onResultHandler);}" + 
         "};" +
         "var userCode=" + escaped + ";" +
         "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
