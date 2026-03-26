@@ -2223,7 +2223,6 @@ ${'<'}/script>
           sendResult(err, res);
 				});
       } else if (query === "getTransaction") {
-			query === "getTransaction"
 				steem.api.getTransaction(params.trxId, function(err, res) {
           sendResult(err, res);
 				});
