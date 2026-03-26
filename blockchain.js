@@ -1469,3 +1469,7 @@ function fetchSecretTwists(username) {
         .sort((a, b) => steemDate(b.created) - steemDate(a.created))
     );
 }
+
+export default {
+  voteTwist, postTwistReply, retwistPost, followUser, unfollowUser
+};
