@@ -47,6 +47,901 @@ const LIVE_TWIST_TEMPLATES = [
     code: "// UI Prototype \u2014 dashboard preview with interactive cards\nconst cards = [\n  { title: \"Twist Love\", value: \"2.4K\", icon: \"&#10084;\", trend: \"+12%\", color: \"#e879f9\" },\n  { title: \"Retwists\",   value: \"847\",  icon: \"&#128260;\", trend: \"+8%\",  color: \"#4ade80\" },\n  { title: \"Reputation\", value: \"68\",   icon: \"&#11088;\",  trend: \"+2\",   color: \"#fb923c\" },\n  { title: \"Followers\",  value: \"1.2K\", icon: \"&#128100;\", trend: \"+34\",  color: \"#22d3ee\" }\n];\nlet active = null;\n\nfunction draw() {\n  const grid = cards.map((c, i) => {\n    const on = active === i;\n    return \"<div id='card\" + i + \"' style='background:\" + (on ? \"#2e2050\" : \"#1a1030\") + \";\" +\n      \"border:1px solid \" + (on ? c.color : \"#3b1f5e\") + \";border-radius:10px;padding:12px;cursor:pointer;'>\" +\n      \"<div style='display:flex;justify-content:space-between;align-items:flex-start;'>\" +\n      \"<div><div style='font-size:11px;color:#9b8db0;margin-bottom:4px;'>\" + c.title + \"</div>\" +\n      \"<div style='font-size:20px;font-weight:700;color:#e8e0f0;'>\" + c.value + \"</div></div>\" +\n      \"<span style='font-size:20px;'>\" + c.icon + \"</span></div>\" +\n      \"<div style='font-size:11px;color:\" + c.color + \";margin-top:6px;'>\" + c.trend + \" this month</div></div>\";\n  }).join(\"\");\n  app.render(\n    \"<div style='padding:4px;'>\" +\n    \"<div style='font-weight:600;color:#c084fc;margin-bottom:8px;font-size:13px;'>Dashboard Preview</div>\" +\n    \"<div style='display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;'>\" + grid + \"</div>\" +\n    (active !== null\n      ? \"<div style='background:#0f0a1e;border:1px solid \" + cards[active].color + \";border-radius:8px;padding:10px;font-size:12px;color:#9b8db0;'>\" +\n        \"Selected: <b style='color:\" + cards[active].color + \";'>\" + cards[active].title + \"</b> \" + cards[active].value + \" (\" + cards[active].trend + \")</div>\"\n      : \"<div style='font-size:12px;color:#5a4e70;font-style:italic;'>Click a card to inspect</div>\"\n    ) + \"</div>\"\n  );\n  cards.forEach((_, i) => {\n    const el = document.getElementById(\"card\" + i);\n    if (el) el.onclick = () => { active = active===i ? null : i; draw(); };\n  });\n}\ndraw();" },
 ];
 
+// ---- Greeting / celebration card templates ----
+const LIVE_TWIST_GREETINGS = [
+  { id: "birthday", icon: "🎂", name: "Birthday Card", desc: "Animated birthday cake with candles",
+    code: `let blown = false;
+function draw() {
+  const flames = blown ? "" : "🕯️🕯️🕯️🕯️🕯️";
+  const msg = blown ? "<div style='font-size:20px;color:#4ade80;margin-top:12px;'>🎉 Happy Birthday! 🎉</div>" : "";
+  app.render(
+    "<div style='text-align:center;padding:12px;'>" +
+    "<div style='font-size:48px;'>🎂</div>" +
+    "<div style='font-size:22px;margin:4px 0;'>" + flames + "</div>" +
+    "<div style='color:#c084fc;font-size:15px;font-weight:600;margin-top:8px;'>🎈 Happy Birthday! 🎈</div>" +
+    msg +
+    (!blown ? "<button id='blow' style='margin-top:12px;'>💨 Blow out candles!</button>" : "") +
+    "</div>"
+  );
+  if (!blown) {
+    const b = document.getElementById("blow");
+    if (b) b.onclick = () => { blown = true; draw(); };
+  }
+}
+draw();` },
+  { id: "newyear", icon: "🎆", name: "New Year Card", desc: "Countdown and fireworks greeting",
+    code: `let launched = false;
+const colors = ["#f87171","#fb923c","#facc15","#4ade80","#38bdf8","#a78bfa","#f472b6"];
+function firework() {
+  const sparks = Array.from({length:12},(_,i)=>{
+    const angle = i*30, r = 60 + Math.random()*30;
+    const x = 50 + r*Math.cos(angle*Math.PI/180);
+    const y = 50 + r*Math.sin(angle*Math.PI/180);
+    const c = colors[i%colors.length];
+    return "<div style='position:absolute;width:8px;height:8px;border-radius:50%;background:"+c+";left:"+x+"px;top:"+y+"px;'></div>";
+  }).join("");
+  return "<div style='position:relative;width:160px;height:160px;margin:0 auto;'>"+sparks+"<div style='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;'>🎆</div></div>";
+}
+function draw() {
+  app.render(
+    "<div style='text-align:center;padding:8px;'>" +
+    (launched ? firework() : "<div style='font-size:48px;margin-bottom:8px;'>🎆</div>") +
+    "<div style='color:#facc15;font-size:16px;font-weight:700;margin:8px 0;'>🥂 Happy New Year! 🥂</div>" +
+    (!launched ? "<button id='launch'>🎇 Launch fireworks!</button>" : "<div style='color:#4ade80;font-size:13px;margin-top:8px;'>Wishing you a wonderful year ahead!</div>") +
+    "</div>"
+  );
+  if (!launched) {
+    const b = document.getElementById("launch");
+    if (b) b.onclick = () => { launched = true; draw(); };
+  }
+}
+draw();` },
+  { id: "congrats", icon: "🏆", name: "Congratulations", desc: "Trophy reveal with confetti burst",
+    code: `let revealed = false;
+function confetti() {
+  return Array.from({length:20},()=>{
+    const left = Math.random()*100;
+    const emojis = ["🎊","🎉","⭐","✨","🌟"];
+    return "<span style='position:absolute;left:"+left+"%;" +
+           "top:"+(Math.random()*80)+"%;" +
+           "font-size:"+(12+Math.random()*16)+"px;'>" +
+           emojis[Math.floor(Math.random()*emojis.length)] + "</span>";
+  }).join("");
+}
+function draw() {
+  app.render(
+    "<div style='text-align:center;padding:12px;position:relative;min-height:140px;'>" +
+    (revealed ? "<div style='position:absolute;inset:0;overflow:hidden;'>" + confetti() + "</div>" : "") +
+    "<div style='position:relative;'>" +
+    "<div style='font-size:"+(revealed?52:36)+"px;transition:font-size 0.3s;'>" + (revealed?"🏆":"🎁") + "</div>" +
+    (revealed
+      ? "<div style='color:#facc15;font-size:16px;font-weight:700;margin-top:8px;'>🎉 Congratulations! 🎉</div><div style='color:#9b8db0;font-size:13px;margin-top:4px;'>You deserve this!</div>"
+      : "<button id='reveal' style='margin-top:10px;'>🎁 Reveal your surprise!</button>") +
+    "</div></div>"
+  );
+  if (!revealed) {
+    const b = document.getElementById("reveal");
+    if (b) b.onclick = () => { revealed = true; draw(); };
+  }
+}
+draw();` },
+  { id: "wedding", icon: "💍", name: "Wedding Card", desc: "Heartfelt animated wedding greeting",
+    code: `let hearts = [];
+let frame = 0;
+function addHeart() {
+  hearts.push({ x: 20+Math.random()*60, y: 100, age: 0, size: 14+Math.random()*14 });
+}
+function tick() {
+  frame++;
+  if (frame % 12 === 0) addHeart();
+  hearts = hearts.filter(h => h.age < 40);
+  hearts.forEach(h => { h.y -= 1.5; h.age++; });
+  const floaters = hearts.map(h =>
+    "<span style='position:absolute;left:"+h.x+"%;top:"+h.y+"%;font-size:"+h.size+"px;opacity:"+(1-h.age/40)+";'>❤️</span>"
+  ).join("");
+  app.render(
+    "<div style='text-align:center;padding:12px;position:relative;min-height:150px;overflow:hidden;'>" +
+    "<div style='position:absolute;inset:0;'>" + floaters + "</div>" +
+    "<div style='position:relative;'>" +
+    "<div style='font-size:40px;'>💍</div>" +
+    "<div style='color:#f472b6;font-size:15px;font-weight:700;margin-top:8px;'>💒 Wishing you a lifetime of love!</div>" +
+    "<div style='color:#9b8db0;font-size:12px;margin-top:4px;'>Congratulations on your wedding day 🌸</div>" +
+    "</div></div>"
+  );
+}
+setInterval(tick, 80);
+tick();` },
+  { id: "graduation", icon: "🎓", name: "Graduation Card", desc: "Cap toss and achievement celebration",
+    code: `let tossed = false, caps = [];
+function draw() {
+  if (tossed) {
+    caps = caps.map(c => ({...c, y: c.y - 3, rot: c.rot+8, age: c.age+1})).filter(c=>c.age<40);
+    if (caps.length < 15) caps.push({x:20+Math.random()*60, y:80, rot:Math.random()*360, age:0});
+  }
+  const capHtml = caps.map(c =>
+    "<span style='position:absolute;left:"+c.x+"%;top:"+c.y+"%;font-size:20px;transform:rotate("+c.rot+"deg);opacity:"+(1-c.age/40)+";'>🎓</span>"
+  ).join("");
+  app.render(
+    "<div style='text-align:center;padding:12px;position:relative;min-height:150px;overflow:hidden;'>" +
+    "<div style='position:absolute;inset:0;'>" + capHtml + "</div>" +
+    "<div style='position:relative;'>" +
+    "<div style='font-size:44px;'>🎓</div>" +
+    "<div style='color:#a78bfa;font-size:15px;font-weight:700;margin-top:8px;'>Congratulations, Graduate!</div>" +
+    "<div style='color:#9b8db0;font-size:12px;margin-top:4px;'>Your hard work paid off 🌟</div>" +
+    (!tossed ? "<button id='toss' style='margin-top:10px;'>🎓 Toss the cap!</button>" : "") +
+    "</div></div>"
+  );
+  if (!tossed) {
+    const b = document.getElementById("toss");
+    if (b) b.onclick = () => { tossed = true; setInterval(draw, 60); };
+  }
+}
+draw();` },
+  { id: "eid", icon: "🌙", name: "Eid Mubarak", desc: "Eid celebration card with crescent and stars",
+    code: `let stars = Array.from({length:20},()=>({x:Math.random()*90,y:Math.random()*60,t:Math.random()*Math.PI*2,s:10+Math.random()*14}));
+let t = 0;
+function draw() {
+  t += 0.05;
+  const starHtml = stars.map(s =>
+    "<span style='position:absolute;left:"+s.x+"%;top:"+s.y+"%;font-size:"+s.s+"px;opacity:"+(0.4+0.6*Math.abs(Math.sin(s.t+t)))+";'>✨</span>"
+  ).join("");
+  app.render(
+    "<div style='text-align:center;padding:12px;position:relative;min-height:160px;background:#0a0a2e;border-radius:8px;overflow:hidden;'>" +
+    "<div style='position:absolute;inset:0;'>" + starHtml + "</div>" +
+    "<div style='position:relative;'>" +
+    "<div style='font-size:48px;margin-bottom:4px;'>🌙</div>" +
+    "<div style='color:#facc15;font-size:18px;font-weight:700;'>Eid Mubarak!</div>" +
+    "<div style='color:#fde68a;font-size:13px;margin-top:6px;'>عيد مبارك</div>" +
+    "<div style='color:#9b8db0;font-size:12px;margin-top:8px;'>Wishing you peace, joy, and blessings 🌟</div>" +
+    "</div></div>"
+  );
+}
+setInterval(draw, 60);
+draw();` },
+  { id: "christmas", icon: "🎄", name: "Christmas Card", desc: "Festive tree with falling snow",
+    code: `let snow = Array.from({length:25},()=>({x:Math.random()*100,y:Math.random()*100,s:8+Math.random()*10,spd:0.3+Math.random()*0.7}));
+function draw() {
+  snow.forEach(f=>{f.y+=f.spd;if(f.y>102){f.y=0;f.x=Math.random()*100;}});
+  const flakes = snow.map(f=>"<span style='position:absolute;left:"+f.x+"%;top:"+f.y+"%;font-size:"+f.s+"px;opacity:0.8;'>❄️</span>").join("");
+  app.render(
+    "<div style='text-align:center;padding:12px;position:relative;min-height:160px;background:#0c1a2e;border-radius:8px;overflow:hidden;'>" +
+    "<div style='position:absolute;inset:0;'>" + flakes + "</div>" +
+    "<div style='position:relative;'>" +
+    "<div style='font-size:52px;'>🎄</div>" +
+    "<div style='color:#4ade80;font-size:16px;font-weight:700;margin-top:4px;'>Merry Christmas!</div>" +
+    "<div style='color:#fde68a;font-size:12px;margin-top:6px;'>Wishing you warmth, joy &amp; peace ☃️</div>" +
+    "</div></div>"
+  );
+}
+setInterval(draw, 60);
+draw();` },
+  { id: "thankyou", icon: "🙏", name: "Thank You Card", desc: "Warm animated thank-you message",
+    code: `const msgs = ["You made a difference!","Your kindness matters.","So grateful for you!","This means so much!","From the bottom of my heart ❤️"];
+let idx = 0, fade = 1, dir = -1;
+function draw() {
+  fade += dir * 0.03;
+  if (fade <= 0) { dir = 1; idx = (idx+1)%msgs.length; }
+  if (fade >= 1) dir = -1;
+  app.render(
+    "<div style='text-align:center;padding:16px;'>" +
+    "<div style='font-size:48px;margin-bottom:8px;'>🙏</div>" +
+    "<div style='color:#f472b6;font-size:18px;font-weight:700;margin-bottom:12px;'>Thank You!</div>" +
+    "<div style='color:#e8e0f0;font-size:14px;opacity:"+Math.max(0,fade)+";min-height:24px;'>"+msgs[idx]+"</div>" +
+    "<div style='color:#5a4e70;font-size:11px;margin-top:10px;'>With gratitude 💜</div>" +
+    "</div>"
+  );
+}
+setInterval(draw, 50);
+draw();` },
+  { id: "getwell", icon: "🌻", name: "Get Well Card", desc: "Cheerful get-well-soon message with blooming flower",
+    code: `let petals = 0, maxPetals = 8, bloomed = false;
+const angles = Array.from({length:8},(_,i)=>i*45);
+function draw() {
+  if (!bloomed && petals < maxPetals) { petals++; setTimeout(draw, 150); }
+  const flower = angles.slice(0,petals).map(a=>{
+    const x = 50+28*Math.cos(a*Math.PI/180), y = 50+28*Math.sin(a*Math.PI/180);
+    return "<div style='position:absolute;width:18px;height:18px;border-radius:50%;background:#fbbf24;left:"+x+"px;top:"+y+"px;transform:translate(-50%,-50%);'></div>";
+  }).join("");
+  app.render(
+    "<div style='text-align:center;padding:12px;'>" +
+    "<div style='position:relative;width:100px;height:100px;margin:0 auto 8px;'>" +
+    flower +
+    "<div style='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;'>🌻</div>" +
+    "</div>" +
+    "<div style='color:#4ade80;font-size:16px;font-weight:700;'>Get Well Soon! 💚</div>" +
+    "<div style='color:#9b8db0;font-size:12px;margin-top:6px;'>Sending you healing thoughts and warm wishes 🌸</div>" +
+    "</div>"
+  );
+  if (petals >= maxPetals) bloomed = true;
+}
+draw();` },
+  { id: "anniversary", icon: "💑", name: "Anniversary Card", desc: "Heart pulse animation for anniversaries",
+    code: `let pulse = 1, dir = 1;
+function draw() {
+  pulse += dir * 0.015;
+  if (pulse > 1.18) dir = -1;
+  if (pulse < 0.88) dir = 1;
+  const years = ["1st","2nd","3rd","5th","10th","25th","50th"];
+  app.render(
+    "<div style='text-align:center;padding:16px;'>" +
+    "<div style='font-size:54px;display:inline-block;transform:scale("+pulse+");transition:transform 0.05s;'>❤️</div>" +
+    "<div style='color:#f472b6;font-size:17px;font-weight:700;margin-top:10px;'>Happy Anniversary!</div>" +
+    "<div style='color:#9b8db0;font-size:13px;margin-top:6px;'>Here's to many more beautiful years together 💑</div>" +
+    "<div style='margin-top:12px;display:flex;justify-content:center;gap:6px;flex-wrap:wrap;'>" +
+    years.map(y=>"<span style='background:#3b0764;color:#d8b4fe;border-radius:20px;padding:3px 10px;font-size:11px;cursor:pointer;'>"+y+"</span>").join("") +
+    "</div></div>"
+  );
+}
+setInterval(draw, 40);
+draw();` }
+];
+
+// ---- Blockchain query example templates ----
+const LIVE_TWIST_QUERIES = [
+  { id: "q_account", icon: "👤", name: "Account Info", desc: "Fetch and display a Steem account profile",
+    code: `let result = null, loading = false, searched = false;
+let query = "steemtwist";
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>Account Lookup</div>" +
+    "<div style='display:flex;gap:6px;margin-bottom:10px;'>" +
+    "<input id='u' type='text' placeholder='Steem username' value='" + query + "' style='flex:1;'>" +
+    "<button id='go'>Look up</button></div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     !searched ? "" :
+     !result ? "<div style='color:#fca5a5;'>Account not found.</div>" :
+     "<div style='background:#1a1030;border-radius:8px;padding:10px;border:1px solid #3b1f5e;'>" +
+     "<div style='font-size:15px;font-weight:600;color:#e8e0f0;'>" + result.name + "</div>" +
+     "<div style='font-size:12px;color:#9b8db0;margin-top:4px;'>Reputation: <b style='color:#c084fc;'>" + (result.reputation||0) + "</b></div>" +
+     "<div style='font-size:12px;color:#9b8db0;'>Posts: <b style='color:#e8e0f0;'>" + (result.post_count||0) + "</b></div>" +
+     "<div style='font-size:12px;color:#9b8db0;margin-top:4px;word-break:break-all;'>" + ((result.posting_json_metadata&&JSON.parse(result.posting_json_metadata||'{}').profile)||{}).about || "" + "</div>" +
+     "</div>") +
+    "</div>"
+  );
+  document.getElementById("go").onclick = () => {
+    query = document.getElementById("u").value.trim().toLowerCase();
+    if (!query) return;
+    loading = true; searched = true; result = null; draw();
+    app.query("getAccounts", { names: [query] });
+  };
+}
+app.onResult((ok, data) => {
+  loading = false;
+  result = (ok && Array.isArray(data) && data[0]) ? data[0] : null;
+  draw();
+});
+draw();` },
+  { id: "q_trending", icon: "🔥", name: "Trending Tags", desc: "Show the current top trending Steem tags",
+    code: `let tags = [], loading = true;
+app.query("getTrendingTags", { afterTag: "", limit: 12 });
+app.onResult((ok, data) => {
+  loading = false;
+  tags = ok && Array.isArray(data) ? data : [];
+  draw();
+});
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>🔥 Trending Tags</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     "<div style='display:flex;flex-wrap:wrap;gap:6px;'>" +
+     tags.map((t,i)=>"<span style='background:#"+(i<3?"7c3aed":"1a1030")+";color:#"+(i<3?"fff":"c084fc")+";border:1px solid #3b1f5e;border-radius:20px;padding:3px 10px;font-size:12px;'>#"+t.name+" <span style='opacity:0.6;font-size:10px;'>"+t.top_posts+"</span></span>").join("") +
+     "</div>") +
+    "</div>"
+  );
+}
+draw();` },
+  { id: "q_price", icon: "💱", name: "STEEM Price", desc: "Live STEEM/SBD market ticker",
+    code: `let ticker = null, loading = true;
+function load() {
+  loading = true; draw();
+  app.query("getTicker", {});
+}
+app.onResult((ok, data) => {
+  loading = false;
+  ticker = ok ? data : null;
+  draw();
+});
+function draw() {
+  const latest = ticker ? parseFloat(ticker.latest).toFixed(6) : "—";
+  const sbd_vol = ticker ? parseFloat(ticker.sbd_volume).toFixed(2) : "—";
+  const steem_vol = ticker ? parseFloat(ticker.steem_volume).toFixed(2) : "—";
+  const pct = ticker ? parseFloat(ticker.percent_change).toFixed(2) : "—";
+  const up = ticker && parseFloat(ticker.percent_change) >= 0;
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:10px;'>💱 STEEM / SBD Market</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Fetching…</div>" :
+     !ticker ? "<div style='color:#fca5a5;'>Could not load ticker.</div>" :
+     "<div style='background:#0f0a1e;border-radius:8px;padding:10px;border:1px solid #3b1f5e;'>" +
+     "<div style='font-size:22px;font-weight:700;color:#e8e0f0;'>" + latest + " <span style='font-size:13px;color:#9b8db0;'>SBD/STEEM</span></div>" +
+     "<div style='font-size:13px;color:"+(up?"#4ade80":"#f87171")+";margin-top:4px;'>"+(up?"▲":"▼")+" "+pct+"%</div>" +
+     "<div style='font-size:12px;color:#9b8db0;margin-top:6px;'>STEEM vol: <b style='color:#e8e0f0;'>"+steem_vol+"</b> &nbsp; SBD vol: <b style='color:#e8e0f0;'>"+sbd_vol+"</b></div>" +
+     "</div>") +
+    "<button id='r' style='margin-top:8px;font-size:12px;'>⟳ Refresh</button>" +
+    "</div>"
+  );
+  const r = document.getElementById("r");
+  if (r) r.onclick = load;
+}
+load();` },
+  { id: "q_posts", icon: "📰", name: "Hot Posts", desc: "Show current hot posts from a tag",
+    code: `let posts = [], loading = true, tag = "steem";
+function load(t) {
+  tag = t; loading = true; draw();
+  app.query("getDiscussionsByHot", { query: { tag, limit: 5 } });
+}
+app.onResult((ok, data) => {
+  loading = false;
+  posts = ok && Array.isArray(data) ? data : [];
+  draw();
+});
+const tags = ["steem","steemit","photography","life","crypto"];
+let selTag = "steem";
+function draw() {
+  const tagBtns = tags.map(t =>
+    "<button id='t_"+t+"' style='font-size:11px;padding:3px 8px;background:"+(selTag===t?"#6d28d9":"#1a1030")+";border:1px solid #3b1f5e;border-radius:12px;margin:2px;'>"+t+"</button>"
+  ).join("");
+  const postHtml = posts.map(p =>
+    "<div style='padding:8px 0;border-bottom:1px solid #2e2050;'>" +
+    "<div style='font-size:13px;font-weight:600;color:#e8e0f0;'>" + p.title.slice(0,60) + "</div>" +
+    "<div style='font-size:11px;color:#9b8db0;margin-top:2px;'>@"+p.author+" &nbsp;❤️ "+p.net_votes+"</div>" +
+    "</div>"
+  ).join("");
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:6px;'>📰 Hot Posts</div>" +
+    "<div style='margin-bottom:8px;'>" + tagBtns + "</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     posts.length === 0 ? "<div style='color:#5a4e70;'>No posts found.</div>" :
+     "<div>" + postHtml + "</div>") +
+    "</div>"
+  );
+  tags.forEach(t => {
+    const b = document.getElementById("t_"+t);
+    if (b) b.onclick = () => { selTag = t; load(t); };
+  });
+}
+load(selTag);` },
+  { id: "q_followers", icon: "👥", name: "Follower Count", desc: "Check follow counts for any Steem account",
+    code: `let fc = null, loading = false, searched = false, qname = "steemtwist";
+function search() {
+  loading = true; searched = true; fc = null; draw();
+  app.query("getFollowCount", { account: qname });
+}
+app.onResult((ok, data) => {
+  loading = false;
+  fc = ok ? data : null;
+  draw();
+});
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>👥 Follow Count</div>" +
+    "<div style='display:flex;gap:6px;margin-bottom:10px;'>" +
+    "<input id='n' type='text' placeholder='username' value='" + qname + "' style='flex:1;'>" +
+    "<button id='go'>Check</button></div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     !searched ? "" :
+     !fc ? "<div style='color:#fca5a5;'>Not found.</div>" :
+     "<div style='display:flex;gap:10px;justify-content:center;margin-top:4px;'>" +
+     "<div style='background:#1a1030;border:1px solid #3b1f5e;border-radius:10px;padding:12px 20px;text-align:center;'><div style='font-size:22px;font-weight:700;color:#c084fc;'>"+fc.follower_count+"</div><div style='font-size:11px;color:#9b8db0;'>Followers</div></div>" +
+     "<div style='background:#1a1030;border:1px solid #3b1f5e;border-radius:10px;padding:12px 20px;text-align:center;'><div style='font-size:22px;font-weight:700;color:#4ade80;'>"+fc.following_count+"</div><div style='font-size:11px;color:#9b8db0;'>Following</div></div>" +
+     "</div>") +
+    "</div>"
+  );
+  const go = document.getElementById("go");
+  if (go) go.onclick = () => { qname = document.getElementById("n").value.trim(); search(); };
+}
+draw();` },
+  { id: "q_witnesses", icon: "⚙️", name: "Top Witnesses", desc: "Display the current top Steem witnesses",
+    code: `let witnesses = [], loading = true;
+app.query("getWitnessesByVote", { from: "", limit: 10 });
+app.onResult((ok, data) => {
+  loading = false;
+  witnesses = ok && Array.isArray(data) ? data : [];
+  draw();
+});
+function draw() {
+  const rows = witnesses.map((w,i) =>
+    "<div style='display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #2e2050;'>" +
+    "<span style='color:#5a4e70;font-size:11px;width:18px;text-align:right;'>#"+(i+1)+"</span>" +
+    "<span style='color:#e8e0f0;font-size:13px;font-weight:600;flex:1;'>@"+w.owner+"</span>" +
+    "<span style='font-size:11px;color:#9b8db0;'>"+parseInt(w.votes/1e9).toLocaleString()+"B VP</span>" +
+    "</div>"
+  ).join("");
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>⚙️ Top 10 Witnesses</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" : rows) +
+    "</div>"
+  );
+}
+draw();` },
+  { id: "q_blockchain", icon: "⛓️", name: "Chain Stats", desc: "Show live Steem blockchain global properties",
+    code: `let props = null, loading = true;
+function load() { loading = true; draw(); app.query("getDynamicGlobalProperties", {}); }
+app.onResult((ok, data) => {
+  loading = false; props = ok ? data : null; draw();
+});
+function draw() {
+  const p = props;
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>⛓️ Chain Stats</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     !p ? "<div style='color:#fca5a5;'>Could not load.</div>" :
+     "<div style='display:grid;grid-template-columns:1fr 1fr;gap:6px;'>" +
+     [["Block", "#"+Number(p.head_block_number).toLocaleString()],
+      ["Time", p.time ? p.time.slice(11,19)+" UTC" : "—"],
+      ["Supply", parseFloat(p.current_supply).toFixed(0)+" STEEM"],
+      ["SBD", parseFloat(p.current_sbd_supply||0).toFixed(0)+" SBD"],
+      ["Witnesses", p.num_pow_witnesses],
+      ["Accounts", Number(p.recent_slots_filled||0)]
+     ].map(([k,v])=>
+       "<div style='background:#1a1030;border:1px solid #2e2050;border-radius:8px;padding:7px 10px;'>" +
+       "<div style='font-size:10px;color:#9b8db0;'>"+k+"</div>" +
+       "<div style='font-size:13px;font-weight:600;color:#e8e0f0;'>"+v+"</div></div>"
+     ).join("") + "</div>") +
+    "<button id='r' style='margin-top:8px;font-size:12px;'>⟳ Refresh</button>" +
+    "</div>"
+  );
+  const r = document.getElementById("r");
+  if (r) r.onclick = load;
+}
+load();` },
+  { id: "q_content", icon: "📄", name: "Post Viewer", desc: "Fetch and display any Steem post by author and permlink",
+    code: `let post = null, loading = false, searched = false;
+let pAuthor = "steemtwist", pPermlink = "feed-2026-03";
+function load() {
+  loading = true; searched = true; post = null; draw();
+  app.query("getContent", { author: pAuthor, permlink: pPermlink });
+}
+app.onResult((ok, data) => {
+  loading = false;
+  post = (ok && data && data.author) ? data : null;
+  draw();
+});
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>📄 Post Viewer</div>" +
+    "<input id='a' type='text' placeholder='author' value='" + pAuthor + "' style='margin-bottom:6px;'>" +
+    "<input id='p' type='text' placeholder='permlink' value='" + pPermlink + "' style='margin-bottom:6px;'>" +
+    "<button id='go'>Fetch</button>" +
+    (loading ? "<div style='color:#9b8db0;margin-top:8px;'>Loading…</div>" :
+     !searched ? "" :
+     !post ? "<div style='color:#fca5a5;margin-top:8px;'>Post not found.</div>" :
+     "<div style='margin-top:8px;background:#1a1030;border:1px solid #2e2050;border-radius:8px;padding:8px;'>" +
+     "<div style='font-size:13px;font-weight:600;color:#e8e0f0;'>" + post.title + "</div>" +
+     "<div style='font-size:11px;color:#9b8db0;margin:3px 0;'>@"+post.author+" &nbsp;❤️ "+post.net_votes+" &nbsp;💬 "+post.children+"</div>" +
+     "<div style='font-size:12px;color:#c0b0e0;margin-top:4px;max-height:80px;overflow-y:auto;'>"+post.body.slice(0,300).replace(/[<>]/g,"")+"…</div>" +
+     "</div>") +
+    "</div>"
+  );
+  document.getElementById("go").onclick = () => {
+    pAuthor = document.getElementById("a").value.trim();
+    pPermlink = document.getElementById("p").value.trim();
+    load();
+  };
+}
+draw();` },
+  { id: "q_orderbook", icon: "📊", name: "Order Book", desc: "View the STEEM internal market order book",
+    code: `let book = null, loading = true;
+function load() { loading = true; draw(); app.query("getOrderBook", { limit: 5 }); }
+app.onResult((ok, data) => {
+  loading = false; book = ok ? data : null; draw();
+});
+function draw() {
+  function rows(list, color) {
+    return (list||[]).slice(0,5).map(o=>
+      "<div style='display:flex;justify-content:space-between;padding:3px 0;font-size:12px;'>" +
+      "<span style='color:"+color+";'>" + parseFloat(o.real_price||o.order_price||0).toFixed(5) + "</span>" +
+      "<span style='color:#9b8db0;'>" + parseFloat(o.steem||o.steem_sat||0).toFixed(2) + " S</span>" +
+      "<span style='color:#9b8db0;'>" + parseFloat(o.sbd||o.sbd_sat||0).toFixed(2) + " SBD</span>" +
+      "</div>"
+    ).join("");
+  }
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>📊 STEEM Order Book</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     !book ? "<div style='color:#fca5a5;'>Could not load.</div>" :
+     "<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;'>" +
+     "<div><div style='font-size:11px;color:#4ade80;font-weight:600;margin-bottom:4px;'>BIDS (buy)</div>"+rows(book.bids,"#4ade80")+"</div>" +
+     "<div><div style='font-size:11px;color:#f87171;font-weight:600;margin-bottom:4px;'>ASKS (sell)</div>"+rows(book.asks,"#f87171")+"</div>" +
+     "</div>") +
+    "<button id='r' style='margin-top:8px;font-size:12px;'>⟳ Refresh</button>" +
+    "</div>"
+  );
+  const r = document.getElementById("r");
+  if (r) r.onclick = load;
+}
+load();` },
+  { id: "q_rewardpool", icon: "💰", name: "Reward Pool", desc: "Show the current Steem reward fund details",
+    code: `let fund = null, loading = true;
+app.query("getRewardFund", { name: "post" });
+app.onResult((ok, data) => {
+  loading = false; fund = ok ? data : null; draw();
+});
+function draw() {
+  const f = fund;
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>💰 Reward Fund</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     !f ? "<div style='color:#fca5a5;'>Could not load.</div>" :
+     "<div style='display:grid;gap:6px;'>" +
+     [["Name", f.name],
+      ["Reward Balance", parseFloat(f.reward_balance).toFixed(2)+" STEEM"],
+      ["Recent Claims", Number(BigInt(f.recent_claims||0)/BigInt(1e15)).toLocaleString()+"Q"],
+      ["Last Update", (f.last_update||"").slice(0,10)]
+     ].map(([k,v])=>
+       "<div style='display:flex;justify-content:space-between;padding:6px 8px;background:#1a1030;border-radius:6px;border:1px solid #2e2050;'>" +
+       "<span style='color:#9b8db0;font-size:12px;'>"+k+"</span>" +
+       "<span style='color:#e8e0f0;font-size:12px;font-weight:600;'>"+v+"</span></div>"
+     ).join("") + "</div>") +
+    "</div>"
+  );
+}
+draw();` }
+];
+
+// ---- Blockchain action example templates ----
+const LIVE_TWIST_ACTIONS = [
+  { id: "a_vote", icon: "❤️", name: "Vote on a Post", desc: "Upvote any post by author and permlink",
+    code: `let pAuthor = "", pPermlink = "", weight = 100, done = false, msg = "";
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>❤️ Vote on a Post</div>" +
+    "<input id='a' type='text' placeholder='author' value='" + pAuthor + "' style='margin-bottom:6px;'>" +
+    "<input id='p' type='text' placeholder='permlink' value='" + pPermlink + "' style='margin-bottom:6px;'>" +
+    "<label style='font-size:11px;color:#9b8db0;'>Vote weight: <b style='color:#e8e0f0;'>" + weight + "%</b></label>" +
+    "<input id='w' type='range' min='1' max='100' value='" + weight + "' style='width:100%;margin-bottom:8px;accent-color:#a855f7;'>" +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
+    "<button id='go'" + (done?" disabled":"") + ">❤️ Vote</button>" +
+    "</div>"
+  );
+  document.getElementById("w").oninput = e => { weight = +e.target.value; draw(); };
+  document.getElementById("go").onclick = () => {
+    pAuthor = document.getElementById("a").value.trim();
+    pPermlink = document.getElementById("p").value.trim();
+    if (!pAuthor || !pPermlink) { msg = "Enter author and permlink."; draw(); return; }
+    app.action("vote", { author: pAuthor, permlink: pPermlink, weight: weight * 100 });
+  };
+}
+app.onResult((ok, type) => {
+  if (type !== "vote") return;
+  done = ok; msg = ok ? "✅ Vote cast successfully!" : "❌ Vote failed.";
+  draw();
+});
+draw();` },
+  { id: "a_reply", icon: "💬", name: "Post a Reply", desc: "Reply to a twist with a custom message",
+    code: `let pAuthor = "", pPermlink = "", message = "", done = false, msg = "";
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>💬 Post a Reply</div>" +
+    "<input id='a' type='text' placeholder='parent author' value='" + pAuthor + "' style='margin-bottom:6px;'>" +
+    "<input id='p' type='text' placeholder='parent permlink' value='" + pPermlink + "' style='margin-bottom:6px;'>" +
+    "<textarea id='m' placeholder='Your reply…' style='min-height:60px;margin-bottom:8px;'>" + message + "</textarea>" +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
+    "<button id='go'" + (done?" disabled":"") + ">💬 Post Reply</button>" +
+    "</div>"
+  );
+  document.getElementById("go").onclick = () => {
+    pAuthor = document.getElementById("a").value.trim();
+    pPermlink = document.getElementById("p").value.trim();
+    message = document.getElementById("m").value.trim();
+    if (!pAuthor || !pPermlink || !message) { msg = "Fill in all fields."; draw(); return; }
+    app.action("reply", { parentAuthor: pAuthor, parentPermlink: pPermlink, message });
+  };
+}
+app.onResult((ok, type) => {
+  if (type !== "reply") return;
+  done = ok; msg = ok ? "✅ Reply posted!" : "❌ Reply failed.";
+  draw();
+});
+draw();` },
+  { id: "a_follow", icon: "➕", name: "Follow / Unfollow", desc: "Follow or unfollow a Steem account",
+    code: `let target = "", fc = null, done = false, msg = "", mode = "follow";
+function lookup() {
+  if (!target) return;
+  app.query("getFollowCount", { account: target });
+}
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>➕ Follow / Unfollow</div>" +
+    "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
+    "<input id='t' type='text' placeholder='username' value='" + target + "' style='flex:1;'>" +
+    "<button id='lu'>Look up</button></div>" +
+    (fc ? "<div style='font-size:12px;color:#9b8db0;margin-bottom:8px;'>@"+target+" — Followers: <b style='color:#e8e0f0;'>"+fc.follower_count+"</b></div>" : "") +
+    "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
+    "<button id='f' style='background:"+(mode==="follow"?"#166534":"#1e1535")+";border:1px solid "+(mode==="follow"?"#4ade80":"#2e2050")+";">Follow</button>" +
+    "<button id='u' style='background:"+(mode==="unfollow"?"#7f1d1d":"#1e1535")+";border:1px solid "+(mode==="unfollow"?"#f87171":"#2e2050")+";">Unfollow</button>" +
+    "</div>" +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
+    "<button id='go'>✓ Confirm " + mode + "</button>" +
+    "</div>"
+  );
+  document.getElementById("lu").onclick = () => { target = document.getElementById("t").value.trim(); fc = null; lookup(); draw(); };
+  document.getElementById("f").onclick = () => { mode = "follow"; draw(); };
+  document.getElementById("u").onclick = () => { mode = "unfollow"; draw(); };
+  document.getElementById("go").onclick = () => {
+    target = document.getElementById("t").value.trim();
+    if (!target) { msg = "Enter a username."; draw(); return; }
+    app.action(mode, { following: target });
+  };
+}
+app.onResult((ok, type) => {
+  if (type === "getFollowCount") { fc = ok; draw(); return; }
+  if (type === "follow" || type === "unfollow") { done = ok; msg = ok ? "✅ Done!" : "❌ Failed."; draw(); }
+});
+draw();` },
+  { id: "a_transfer", icon: "💸", name: "Transfer STEEM/SBD", desc: "Send STEEM or SBD with an optional memo",
+    code: `let to = "", amount = "0.001", currency = "STEEM", memo = "", done = false, msg = "";
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>💸 Transfer</div>" +
+    "<input id='to' type='text' placeholder='recipient username' value='" + to + "' style='margin-bottom:6px;'>" +
+    "<div style='display:flex;gap:6px;margin-bottom:6px;'>" +
+    "<input id='amt' type='number' min='0.001' step='0.001' value='" + amount + "' style='flex:1;'>" +
+    "<button id='cs' style='background:"+(currency==="STEEM"?"#6d28d9":"#1e1535")+";padding:5px 10px;'>STEEM</button>" +
+    "<button id='cb' style='background:"+(currency==="SBD"?"#6d28d9":"#1e1535")+";padding:5px 10px;'>SBD</button>" +
+    "</div>" +
+    "<input id='memo' type='text' placeholder='memo (optional)' value='" + memo + "' style='margin-bottom:8px;'>" +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
+    "<button id='go'" + (done?" disabled":"") + ">💸 Send</button>" +
+    "</div>"
+  );
+  document.getElementById("cs").onclick = () => { currency = "STEEM"; draw(); };
+  document.getElementById("cb").onclick = () => { currency = "SBD"; draw(); };
+  document.getElementById("go").onclick = () => {
+    to = document.getElementById("to").value.trim();
+    amount = parseFloat(document.getElementById("amt").value).toFixed(3);
+    memo = document.getElementById("memo").value.trim();
+    if (!to || isNaN(+amount) || +amount <= 0) { msg = "Check recipient and amount."; draw(); return; }
+    app.action("transfer", { to, amount, memo, currency });
+  };
+}
+app.onResult((ok, type) => {
+  if (type !== "transfer") return;
+  done = ok; msg = ok ? "✅ Transfer sent!" : "❌ Transfer failed.";
+  draw();
+});
+draw();` },
+  { id: "a_delegate", icon: "🤝", name: "Delegate SP", desc: "Delegate Steem Power to another account",
+    code: `let delegatee = "", sp = "1", done = false, msg = "";
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>🤝 Delegate Steem Power</div>" +
+    "<input id='d' type='text' placeholder='delegate to (username)' value='" + delegatee + "' style='margin-bottom:6px;'>" +
+    "<label style='font-size:11px;color:#9b8db0;display:block;margin-bottom:3px;'>Amount (SP)</label>" +
+    "<input id='sp' type='number' min='0' step='1' value='" + sp + "' style='margin-bottom:8px;'>" +
+    "<div style='font-size:11px;color:#5a4e70;margin-bottom:8px;'>Set to 0 to cancel an existing delegation.</div>" +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
+    "<button id='go'" + (done?" disabled":"") + ">🤝 Delegate</button>" +
+    "</div>"
+  );
+  document.getElementById("go").onclick = () => {
+    delegatee = document.getElementById("d").value.trim();
+    sp = document.getElementById("sp").value.trim();
+    if (!delegatee) { msg = "Enter a username."; draw(); return; }
+    app.action("delegate", { delegatee, amount: sp + ".000000 VESTS", unit: "SP" });
+  };
+}
+app.onResult((ok, type) => {
+  if (type !== "delegate") return;
+  done = ok; msg = ok ? "✅ Delegation updated!" : "❌ Failed.";
+  draw();
+});
+draw();` },
+  { id: "a_powerup", icon: "⚡", name: "Power Up", desc: "Convert liquid STEEM to Steem Power",
+    code: `let to = "", amount = "1", done = false, msg = "";
+let props = null;
+app.query("getDynamicGlobalProperties", {});
+app.onResult((ok, data) => {
+  if (ok && data && data.current_supply) {
+    props = data;
+    draw();
+    return;
+  }
+  if (typeof ok === "boolean") {
+    done = ok; msg = ok ? "✅ Power Up successful!" : "❌ Power Up failed.";
+    draw();
+  }
+});
+function draw() {
+  const supply = props ? parseFloat(props.current_supply).toFixed(0) + " STEEM in circulation" : "";
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>⚡ Power Up STEEM</div>" +
+    "<input id='to' type='text' placeholder='power up to (username)' value='" + to + "' style='margin-bottom:6px;'>" +
+    "<input id='amt' type='number' min='0.001' step='1' value='" + amount + "' placeholder='amount in STEEM' style='margin-bottom:6px;'>" +
+    (supply ? "<div style='font-size:11px;color:#5a4e70;margin-bottom:8px;'>"+supply+"</div>" : "") +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
+    "<button id='go'" + (done?" disabled":"") + ">⚡ Power Up</button>" +
+    "</div>"
+  );
+  document.getElementById("go").onclick = () => {
+    to = document.getElementById("to").value.trim();
+    amount = parseFloat(document.getElementById("amt").value).toFixed(3);
+    if (!to) { msg = "Enter a username."; draw(); return; }
+    app.action("powerUp", { to, amount });
+  };
+}
+draw();` },
+  { id: "a_witness", icon: "🗳️", name: "Witness Vote", desc: "Vote for or unvote a Steem witness",
+    code: `let witness = "", vote = true, done = false, msg = "";
+let wInfo = null;
+function lookup() {
+  if (!witness) return;
+  app.query("getWitnessByAccount", { accountName: witness });
+}
+function draw() {
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>🗳️ Witness Vote</div>" +
+    "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
+    "<input id='w' type='text' placeholder='witness username' value='" + witness + "' style='flex:1;'>" +
+    "<button id='lu'>Look up</button></div>" +
+    (wInfo ? "<div style='font-size:12px;color:#9b8db0;margin-bottom:8px;'>@"+wInfo.owner+" — Votes: <b style='color:#e8e0f0;'>"+parseInt(wInfo.votes/1e9)+"B</b></div>" : "") +
+    "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
+    "<button id='vt' style='background:"+(vote?"#166534":"#1e1535")+";border:1px solid "+(vote?"#4ade80":"#2e2050")+";">✅ Vote</button>" +
+    "<button id='uv' style='background:"+(!vote?"#7f1d1d":"#1e1535")+";border:1px solid "+(!vote?"#f87171":"#2e2050")+";">❌ Unvote</button>" +
+    "</div>" +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
+    "<button id='go'>🗳️ Submit</button>" +
+    "</div>"
+  );
+  document.getElementById("lu").onclick = () => { witness = document.getElementById("w").value.trim(); wInfo = null; lookup(); draw(); };
+  document.getElementById("vt").onclick = () => { vote = true; draw(); };
+  document.getElementById("uv").onclick = () => { vote = false; draw(); };
+  document.getElementById("go").onclick = () => {
+    witness = document.getElementById("w").value.trim();
+    if (!witness) { msg = "Enter a witness name."; draw(); return; }
+    app.action("voteWitness", { witness, vote });
+  };
+}
+app.onResult((ok, data) => {
+  if (ok && data && data.owner) { wInfo = data; draw(); return; }
+  if (typeof ok === "boolean" && typeof data === "string" && data === "voteWitness") {
+    done = ok; msg = ok ? "✅ Witness vote submitted!" : "❌ Failed."; draw();
+  }
+});
+draw();` },
+  { id: "a_retwist", icon: "🔁", name: "Retwist", desc: "Resteem a post by looking up a user's recent posts first",
+    code: `let author = "", posts = [], selected = null, done = false, msg = "", loading = false;
+function loadPosts() {
+  if (!author) return;
+  loading = true; posts = []; selected = null; done = false; msg = ""; draw();
+  app.query("getDiscussionsByBlog", { query: { tag: author, limit: 5 } });
+}
+function draw() {
+  const postList = posts.map((p,i) =>
+    "<div id='sel_"+i+"' style='padding:6px 8px;border-radius:6px;margin-bottom:4px;cursor:pointer;" +
+    "background:"+(selected===i?"#2e2050":"#1a1030")+";border:1px solid "+(selected===i?"#a855f7":"#2e2050")+";" +
+    "font-size:12px;color:#e8e0f0;'>" + p.title.slice(0,60) + "</div>"
+  ).join("");
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>🔁 Retwist</div>" +
+    "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
+    "<input id='a' type='text' placeholder='author' value='"+author+"' style='flex:1;'>" +
+    "<button id='load'>Load posts</button></div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" : postList) +
+    (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin:6px 0;'>" + msg + "</div>" : "") +
+    (selected !== null ? "<button id='go'" + (done?" disabled":"") + ">🔁 Retwist selected</button>" : "") +
+    "</div>"
+  );
+  document.getElementById("load").onclick = () => { author = document.getElementById("a").value.trim(); loadPosts(); };
+  posts.forEach((_,i) => {
+    const el = document.getElementById("sel_"+i);
+    if (el) el.onclick = () => { selected = i; draw(); };
+  });
+  const go = document.getElementById("go");
+  if (go) go.onclick = () => {
+    const p = posts[selected];
+    app.action("retwist", { author: p.author, permlink: p.permlink });
+  };
+}
+app.onResult((ok, data) => {
+  if (Array.isArray(data)) { loading = false; posts = ok ? data : []; draw(); return; }
+  if (typeof ok === "boolean") { done = ok; msg = ok ? "✅ Retwisted!" : "❌ Failed."; draw(); }
+});
+draw();` },
+  { id: "a_query_vote", icon: "🔍", name: "Check & Vote", desc: "Look up a post's votes then upvote it",
+    code: `let author = "", permlink = "", votes = null, loading = false, voted = false, msg = "";
+function loadVotes() {
+  if (!author || !permlink) return;
+  loading = true; votes = null; draw();
+  app.query("getActiveVotes", { author, permlink });
+}
+function draw() {
+  const voteList = (votes||[]).slice(0,8).map(v=>
+    "<span style='background:#1a1030;border:1px solid #2e2050;border-radius:12px;padding:2px 8px;font-size:11px;color:#9b8db0;margin:2px;display:inline-block;'>@"+v.voter+"</span>"
+  ).join("");
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>🔍 Check Votes &amp; Vote</div>" +
+    "<input id='a' type='text' placeholder='author' value='"+author+"' style='margin-bottom:6px;'>" +
+    "<input id='p' type='text' placeholder='permlink' value='"+permlink+"' style='margin-bottom:6px;'>" +
+    "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
+    "<button id='chk'>Check votes</button>" +
+    "<button id='vt'" + (voted?" disabled":"") + " style='background:linear-gradient(135deg,#6d28d9,#e0187a);'>❤️ Upvote</button>" +
+    "</div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     votes ? "<div style='margin-bottom:8px;'><span style='font-size:12px;color:#9b8db0;'>"+votes.length+" vote(s):</span><br>" + voteList + "</div>" : "") +
+    (msg ? "<div style='font-size:12px;color:"+(voted?"#4ade80":"#fca5a5")+";'>" + msg + "</div>" : "") +
+    "</div>"
+  );
+  document.getElementById("chk").onclick = () => { author = document.getElementById("a").value.trim(); permlink = document.getElementById("p").value.trim(); loadVotes(); };
+  document.getElementById("vt").onclick = () => {
+    author = document.getElementById("a").value.trim();
+    permlink = document.getElementById("p").value.trim();
+    if (!author||!permlink) { msg = "Enter author and permlink."; draw(); return; }
+    app.action("vote", { author, permlink, weight: 10000 });
+  };
+}
+app.onResult((ok, data) => {
+  if (Array.isArray(data)) { loading = false; votes = ok ? data : []; draw(); return; }
+  if (typeof ok === "boolean") { voted = ok; msg = ok ? "✅ Voted!" : "❌ Vote failed."; draw(); }
+});
+draw();` },
+  { id: "a_profile_follow", icon: "🌐", name: "Profile + Follow", desc: "View a Steem profile and follow/unfollow in one card",
+    code: `let uname = "steemtwist", profile = null, fc = null, loading = false, done = false, msg = "", action = "";
+function load(u) {
+  uname = u; loading = true; profile = null; fc = null; draw();
+  app.query("getAccounts", { names: [uname] });
+}
+app.onResult((ok, data) => {
+  if (Array.isArray(data) && data[0] && data[0].name) {
+    profile = data[0];
+    try { profile._p = JSON.parse(profile.posting_json_metadata||"{}").profile||{}; } catch {}
+    app.query("getFollowCount", { account: uname });
+    return;
+  }
+  if (ok && data && data.follower_count !== undefined) {
+    loading = false; fc = data; draw(); return;
+  }
+  if (typeof ok === "boolean" && (action==="follow"||action==="unfollow")) {
+    done = ok; msg = ok ? "✅ Done!" : "❌ Failed."; draw();
+  }
+});
+function draw() {
+  const p = profile, meta = p && p._p || {};
+  app.render(
+    "<div style='padding:8px;'>" +
+    "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
+    "<input id='u' type='text' value='"+uname+"' placeholder='username' style='flex:1;'>" +
+    "<button id='go'>Load</button></div>" +
+    (loading ? "<div style='color:#9b8db0;'>Loading…</div>" :
+     !p ? "<div style='color:#fca5a5;'>Not found.</div>" :
+     "<div style='background:#1a1030;border:1px solid #2e2050;border-radius:8px;padding:10px;'>" +
+     "<div style='font-size:14px;font-weight:700;color:#e8e0f0;'>@"+p.name+"</div>" +
+     (meta.about ? "<div style='font-size:12px;color:#9b8db0;margin:3px 0;'>"+meta.about.slice(0,80)+"</div>" : "") +
+     (fc ? "<div style='font-size:12px;color:#9b8db0;'>Followers: <b style='color:#e8e0f0;'>"+fc.follower_count+"</b> &nbsp; Following: <b style='color:#e8e0f0;'>"+fc.following_count+"</b></div>" : "") +
+     "<div style='display:flex;gap:6px;margin-top:8px;'>" +
+     "<button id='fo' style='background:#166534;border-color:#4ade80;'>➕ Follow</button>" +
+     "<button id='uf' style='background:#7f1d1d;border-color:#f87171;'>➖ Unfollow</button>" +
+     "</div>" +
+     (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-top:6px;'>"+msg+"</div>" : "") +
+     "</div>") +
+    "</div>"
+  );
+  document.getElementById("go").onclick = () => { load(document.getElementById("u").value.trim()); };
+  const fo = document.getElementById("fo"), uf = document.getElementById("uf");
+  if (fo) fo.onclick = () => { action = "follow"; app.action("follow", { following: uname }); };
+  if (uf) uf.onclick = () => { action = "unfollow"; app.action("unfollow", { following: uname }); };
+}
+load(uname);` }
+];
+
 // ---- AppNotificationComponent ----
 // A slim toast bar rendered at the top of the app.
 // Type: "error" | "success" | "info"
@@ -854,6 +1749,14 @@ const LiveTwistComponent = {
     },
     code()    { return (this.meta.code  || "").trim(); },
     title()   { return (this.meta.title || "Live Twist").trim(); },
+    // Body is the human-readable description written by the author.
+    // Strip the SteemTwist back-link appended by buildZeroPayoutOps before display.
+    bodyText() {
+      const raw = (this.post.body || "").replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "").trimEnd();
+      // Also skip the generic placeholder that means "no real description was provided"
+      const placeholder = "\u26a1 Live Twist \u2014 view on SteemTwist";
+      return (raw === placeholder || raw === "\u26a1 Live Twist - view on SteemTwist") ? "" : raw;
+    },
     codeSize(){ return new TextEncoder().encode(this.code).length; },
     tooBig()  { return this.codeSize > 10240; },   // 10 KB limit
     // The srcdoc injected into the sandboxed iframe.
@@ -1688,6 +2591,12 @@ ${'<'}/script>
         </div>
       </div>
 
+      <!-- Author description — shown when body is not just the generic placeholder -->
+      <div v-if="bodyText" style="
+        padding:8px 10px;font-size:13px;color:#c0b0e0;line-height:1.6;
+        border-bottom:1px solid #1a0a30;background:#120820;word-break:break-word;
+      ">{{ bodyText }}</div>
+
       <!-- Sandbox iframe (only mounted when running) -->
       <div v-if="running" style="padding:0;">
         <iframe
@@ -2432,7 +3341,10 @@ const TwistCardComponent = {
 // so what you see in the editor is exactly what viewers will see.
 const LiveTwistComposerComponent = {
   name: "LiveTwistComposerComponent",
-  templates: LIVE_TWIST_TEMPLATES,   // static; accessed via $options.templates
+  templates:  LIVE_TWIST_TEMPLATES,   // Simple tab — accessed via $options.templates
+  greetings:  LIVE_TWIST_GREETINGS,  // Greetings tab
+  queries:    LIVE_TWIST_QUERIES,    // Queries tab
+  actions:    LIVE_TWIST_ACTIONS,    // Actions tab
   props: {
     username:    { type: String,  default: "" },
     hasKeychain: { type: Boolean, default: false },
@@ -2445,7 +3357,8 @@ const LiveTwistComposerComponent = {
       title:        draft.title || "",
       body:         draft.body  || "",
       code:         draft.code  || "",
-      activeTab:   "code",  // "code" | "preview" | "templates"
+      activeTab:      "code",  // "code" | "preview" | "templates"
+      templateSubTab: "simple", // "simple" | "greetings" | "queries" | "actions"
       previewKey:  0,
       iframeHeight: 200
     };
@@ -2527,6 +3440,9 @@ const LiveTwistComposerComponent = {
     useTemplate(tpl) {
       this.code      = tpl.code;
       this.title     = this.title || tpl.name;
+      // Pre-fill body with the template description if the author hasn't
+      // written one yet — gives viewers a description before they click Run.
+      this.body      = this.body || tpl.desc || "";
       this.activeTab = "code";
     }
   },
@@ -2587,21 +3503,51 @@ const LiveTwistComposerComponent = {
           scrolling="no"></iframe>
       </div>
 
-      <!-- Templates grid -->
+      <!-- Templates panel with subtabs -->
       <div v-if="activeTab === 'templates'"
-        style="border:1px solid #2e2050;border-radius:0 8px 8px 8px;background:#0a0616;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div
-          v-for="tpl in $options.templates"
-          :key="tpl.id"
-          @click="useTemplate(tpl)"
-          style="background:#1a1030;border:1px solid #2e2050;border-radius:8px;padding:10px;cursor:pointer;transition:border-color 0.15s;"
-          @mouseenter="$event.currentTarget.style.borderColor='#a855f7'"
-          @mouseleave="$event.currentTarget.style.borderColor='#2e2050'"
-        >
-          <div style="font-size:18px;margin-bottom:4px;">{{ tpl.icon }}</div>
-          <div style="font-size:13px;font-weight:600;color:#e8e0f0;margin-bottom:2px;">{{ tpl.name }}</div>
-          <div style="font-size:11px;color:#9b8db0;line-height:1.4;">{{ tpl.desc }}</div>
-          <div style="margin-top:6px;font-size:11px;color:#22d3ee;">Use template &#8594;</div>
+        style="border:1px solid #2e2050;border-radius:0 8px 8px 8px;background:#0a0616;padding:10px;">
+
+        <!-- Subtab bar -->
+        <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">
+          <button
+            v-for="st in [{k:'simple',label:'🔧 Simple'},{k:'greetings',label:'🎉 Greetings'},{k:'queries',label:'🔍 Queries'},{k:'actions',label:'⚡ Actions'}]"
+            :key="st.k"
+            @click="templateSubTab = st.k"
+            :style="{
+              borderRadius:'20px', padding:'3px 12px', fontSize:'11px',
+              fontWeight: templateSubTab === st.k ? '700' : '400',
+              border:'1px solid',
+              background:  templateSubTab === st.k ? '#2e2050' : 'none',
+              color:       templateSubTab === st.k ? '#e8e0f0' : '#9b8db0',
+              borderColor: templateSubTab === st.k ? '#a855f7'  : '#2e2050',
+              cursor:'pointer', margin:0
+            }"
+          >{{ st.label }}</button>
+        </div>
+
+        <!-- Subtab hint -->
+        <div style="font-size:11px;color:#5a4e70;margin-bottom:8px;line-height:1.5;">
+          <template v-if="templateSubTab==='simple'">Interactive UI widgets — polls, quizzes, charts, games.</template>
+          <template v-else-if="templateSubTab==='greetings'">Animated greeting and celebration cards.</template>
+          <template v-else-if="templateSubTab==='queries'">Read-only Steem blockchain data — no wallet required.</template>
+          <template v-else>Blockchain actions via Keychain — each requires user confirmation.</template>
+        </div>
+
+        <!-- Template cards grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div
+            v-for="tpl in (templateSubTab==='simple' ? $options.templates : templateSubTab==='greetings' ? $options.greetings : templateSubTab==='queries' ? $options.queries : $options.actions)"
+            :key="tpl.id"
+            @click="useTemplate(tpl)"
+            style="background:#1a1030;border:1px solid #2e2050;border-radius:8px;padding:10px;cursor:pointer;transition:border-color 0.15s;"
+            @mouseenter="$event.currentTarget.style.borderColor='#a855f7'"
+            @mouseleave="$event.currentTarget.style.borderColor='#2e2050'"
+          >
+            <div style="font-size:18px;margin-bottom:4px;">{{ tpl.icon }}</div>
+            <div style="font-size:13px;font-weight:600;color:#e8e0f0;margin-bottom:2px;">{{ tpl.name }}</div>
+            <div style="font-size:11px;color:#9b8db0;line-height:1.4;">{{ tpl.desc }}</div>
+            <div style="margin-top:6px;font-size:11px;color:#22d3ee;">Use template &#8594;</div>
+          </div>
         </div>
       </div>
 
