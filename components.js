@@ -3407,7 +3407,7 @@ const LiveTwistComposerComponent = {
         "text:function(s){_root.textContent=String(s).slice(0,2000);}," +
         "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},PARENT_ORIGIN);}," +
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}," +
-		"onResult(callback){window.addEventListener('message',(e)=>{if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}});}" + 
+		"onResult:function(callback){window.addEventListener('message',(e)=>{if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}});}" + 
         "};" +
         "var userCode=" + escaped + ";" +
         "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
