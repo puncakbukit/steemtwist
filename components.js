@@ -4,6 +4,8 @@
 // No app-specific logic — extend freely.
 // ============================================================
 
+import { voteTwist, postTwistReply, retwistPost, followUser, unfollowUser } from 'blockchain';
+
 // ---- Draft auto-save helpers ----
 // Thin wrappers around localStorage for persisting in-progress composer drafts.
 // Keys are namespaced with "st_draft_" to avoid collisions.
