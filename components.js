@@ -1790,6 +1790,7 @@ const LiveTwistComponent = {
 <div id="_console"></div>
 <script>
 const PARENT_ORIGIN = "https://puncakbukit.github.io";
+const purify = DOMPurify;
 (function() {
   // ── Kill the network ─────────────────────────────────────────
   window.fetch       = () => Promise.reject(new Error("Network blocked"));
@@ -3397,7 +3398,7 @@ const LiveTwistComposerComponent = {
         "window.XMLHttpRequest=function(){throw new Error('Network blocked');};" +
         "window.WebSocket=function(){throw new Error('Network blocked');};" +
         "window.open=()=>null;" +
-        "var purify=null;" +
+        "var purify=DOMPurify;" +
         "function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,{FORBID_TAGS:['script','iframe','object','embed'],FORBID_ATTR:['onclick','onerror','onload','onmouseover','onfocus'],ALLOW_DATA_ATTR:false,FORCE_BODY:true});return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}" +
         "var _log=document.getElementById('_log');" +
         "var _root=document.getElementById('_root');" +
