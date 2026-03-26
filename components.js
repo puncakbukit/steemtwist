@@ -36,7 +36,7 @@ const LIVE_TWIST_TEMPLATES = [
   { id: "chart", icon: "\ud83d\udcca", name: "Chart", desc: "Interactive bar chart with slider filter",
     code: "// Interactive bar chart with filter\nconst data = [\n  { label: \"Jan\", value: 42 }, { label: \"Feb\", value: 67 },\n  { label: \"Mar\", value: 55 }, { label: \"Apr\", value: 89 },\n  { label: \"May\", value: 73 }, { label: \"Jun\", value: 95 },\n  { label: \"Jul\", value: 60 }, { label: \"Aug\", value: 82 }\n];\nlet threshold = 0;\n\nfunction draw() {\n  const max = Math.max(...data.map(d => d.value));\n  const filtered = data.filter(d => d.value >= threshold);\n  const bars = filtered.map(d => {\n    const pct = Math.round(d.value / max * 100);\n    const color = d.value >= 80 ? \"#c084fc\" : d.value >= 60 ? \"#a855f7\" : \"#6d28d9\";\n    return \"<div style='display:flex;align-items:center;gap:6px;margin-bottom:5px;'>\" +\n      \"<div style='width:30px;font-size:11px;color:#9b8db0;'>\" + d.label + \"</div>\" +\n      \"<div style='flex:1;background:#1a1030;border-radius:4px;height:20px;overflow:hidden;'>\" +\n      \"<div style='width:\" + pct + \"%;background:\" + color + \";height:100%;border-radius:4px;'></div></div>\" +\n      \"<div style='width:28px;font-size:12px;color:#e8e0f0;text-align:right;'>\" + d.value + \"</div></div>\";\n  }).join(\"\");\n  app.render(\n    \"<div style='padding:4px;'>\" +\n    \"<div style='font-weight:600;color:#c084fc;margin-bottom:8px;'>Monthly Activity</div>\" +\n    \"<label style='font-size:12px;color:#9b8db0;'>Min value: <b style='color:#e8e0f0;'>\" + threshold + \"</b></label>\" +\n    \"<input id='thr' type='range' min='0' max='90' value='\" + threshold + \"' style='width:100%;margin:4px 0 10px;accent-color:#a855f7;'>\" +\n    (bars || \"<div style='color:#5a4e70;font-size:13px;'>No data above threshold.</div>\") +\n    \"</div>\"\n  );\n  document.getElementById(\"thr\").oninput = e => { threshold = +e.target.value; draw(); };\n}\ndraw();" },
   { id: "expandable", icon: "\ud83d\udcd6", name: "Expandable", desc: "Tabbed collapsible content sections",
-    code: "// Tabbed expandable content\nconst tabs = [\n  { label: \"Overview\", content: \"This is the overview section. Put a summary here to keep the card compact.\" },\n  { label: \"Details\",  content: \"Here are the full details. Add tables, lists, or longer explanations.\" },\n  { label: \"Sources\",  content: \"1. Steem Whitepaper (2016)\n2. Steem Developer Portal\n3. Community research.\" }\n];\nlet active = 0;\n\nfunction draw() {\n  const tabBar = tabs.map((t, i) =>\n    \"<button id='tab\" + i + \"' style='padding:5px 12px;font-size:12px;margin-right:4px;\" +\n    \"border-radius:6px 6px 0 0;border:1px solid \" + (active===i ? \"#a855f7\" : \"#3b1f5e\") + \";\" +\n    \"background:\" + (active===i ? \"#2e2050\" : \"none\") + \";color:\" + (active===i ? \"#e8e0f0\" : \"#9b8db0\") + \";'>\" +\n    t.label + \"</button>\"\n  ).join(\"\");\n  app.render(\n    \"<div style='padding:4px;'><div>\" + tabBar + \"</div>\" +\n    \"<div style='background:#0f0a1e;border:1px solid #3b1f5e;border-radius:0 6px 6px 6px;\" +\n    \"padding:10px;font-size:13px;color:#c0b0e0;white-space:pre-wrap;min-height:60px;'>\" +\n    tabs[active].content + \"</div></div>\"\n  );\n  tabs.forEach((_, i) => {\n    const b = document.getElementById(\"tab\" + i);\n    if (b) b.onclick = () => { active = i; draw(); };\n  });\n}\ndraw();" },
+    code: "// Tabbed expandable content\nconst tabs = [\n  { label: \"Overview\", content: \"This is the overview section. Put a summary here to keep the card compact.\" },\n  { label: \"Details\",  content: \"Here are the full details. Add tables, lists, or longer explanations.\" },\n  { label: \"Sources\",  content: \"1. Steem Whitepaper (2016)\\n2. Steem Developer Portal\\n3. Community research.\" }\n];\nlet active = 0;\n\nfunction draw() {\n  const tabBar = tabs.map((t, i) =>\n    \"<button id='tab\" + i + \"' style='padding:5px 12px;font-size:12px;margin-right:4px;\" +\n    \"border-radius:6px 6px 0 0;border:1px solid \" + (active===i ? \"#a855f7\" : \"#3b1f5e\") + \";\" +\n    \"background:\" + (active===i ? \"#2e2050\" : \"none\") + \";color:\" + (active===i ? \"#e8e0f0\" : \"#9b8db0\") + \";'>\" +\n    t.label + \"</button>\"\n  ).join(\"\");\n  app.render(\n    \"<div style='padding:4px;'><div>\" + tabBar + \"</div>\" +\n    \"<div style='background:#0f0a1e;border:1px solid #3b1f5e;border-radius:0 6px 6px 6px;\" +\n    \"padding:10px;font-size:13px;color:#c0b0e0;white-space:pre-wrap;min-height:60px;'>\" +\n    tabs[active].content + \"</div></div>\"\n  );\n  tabs.forEach((_, i) => {\n    const b = document.getElementById(\"tab\" + i);\n    if (b) b.onclick = () => { active = i; draw(); };\n  });\n}\ndraw();" },
   { id: "story", icon: "\ud83d\udcdc", name: "Story", desc: "Branching choose-your-own-adventure",
     code: "// Choose Your Own Adventure\nconst story = {\n  start: {\n    text: \"You stand at a crossroads in a dark forest. The path forks ahead.\",\n    choices: [{ text: \"Take the left path\", next: \"left\" }, { text: \"Take the right path\", next: \"right\" }]\n  },\n  left: {\n    text: \"You find a glowing chest! Inside is 100 STEEM. Lucky!\",\n    choices: [{ text: \"Return to start\", next: \"start\" }]\n  },\n  right: {\n    text: \"You encounter a troll. He demands a riddle: what has keys but no locks?\",\n    choices: [{ text: \"A piano!\", next: \"win\" }, { text: \"A map!\", next: \"lose\" }]\n  },\n  win: {\n    text: \"Correct! The troll bows and lets you pass to the treasure vault: 500 STEEM!\",\n    choices: [{ text: \"Play again\", next: \"start\" }]\n  },\n  lose: {\n    text: \"Wrong! The troll eats your sandwich and chases you away.\",\n    choices: [{ text: \"Try again\", next: \"start\" }]\n  }\n};\nlet scene = \"start\";\n\nfunction draw() {\n  const s = story[scene];\n  const choices = s.choices.map((c, i) =>\n    \"<button id='ch\" + i + \"' style='display:block;width:100%;text-align:left;\" +\n    \"padding:8px 12px;margin:4px 0;border-radius:8px;border:1px solid #3b1f5e;\" +\n    \"background:#1a1030;color:#e8e0f0;font-size:13px;'>\" + c.text + \"</button>\"\n  ).join(\"\");\n  app.render(\n    \"<div style='padding:4px;'>\" +\n    \"<div style='font-size:14px;color:#e8e0f0;line-height:1.6;margin-bottom:12px;\" +\n    \"padding:10px;background:#0f0a1e;border-radius:8px;border:1px solid #2e2050;'>\" + s.text + \"</div>\" +\n    \"<div>\" + choices + \"</div></div>\"\n  );\n  s.choices.forEach((c, i) => {\n    const b = document.getElementById(\"ch\" + i);\n    if (b) b.onclick = () => { scene = c.next; draw(); };\n  });\n}\ndraw();" },
   { id: "demo", icon: "\ud83d\udcbb", name: "Code Demo", desc: "Step-by-step algorithm visualizer",
@@ -1727,232 +1727,11 @@ const ThreadComponent = {
 //   app.resize(h)     — tell parent to resize the iframe
 //   app.log(msg)      — append a line to the built-in console panel
 //
-const LiveTwistComponent = {
-  name: "LiveTwistComponent",
-  inject: ["username", "hasKeychain", "notify", "voteTwist", "postTwistReply", "retwistPost", "followUser", "unfollowUser"],
-  props: {
-    post: { type: Object, required: true }
-  },
-  data() {
-    return {
-      running:    false,
-      error:      "",
-      iframeKey:  0   // increment to force iframe recreation on re-run
-    };
-  },
-  computed: {
-    meta() {
-      try {
-        const raw = this.post.json_metadata;
-        return raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
-      } catch { return {}; }
-    },
-    code()    { return (this.meta.code  || "").trim(); },
-    title()   { return (this.meta.title || "Live Twist").trim(); },
-    // Body is the human-readable description written by the author.
-    // Strip the SteemTwist back-link appended by buildZeroPayoutOps before display.
-    bodyText() {
-      const raw = (this.post.body || "").replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "").trimEnd();
-      // Also skip the generic placeholder that means "no real description was provided"
-      const placeholder = "\u26a1 Live Twist \u2014 view on SteemTwist";
-      return (raw === placeholder || raw === "\u26a1 Live Twist - view on SteemTwist") ? "" : raw;
-    },
-    codeSize(){ return new TextEncoder().encode(this.code).length; },
-    tooBig()  { return this.codeSize > 10240; },   // 10 KB limit
-    // The srcdoc injected into the sandboxed iframe.
-    // DOMPurify is inlined so the iframe never needs to load external scripts.
-    sandboxDoc() {
-      // We encode the user code as a JSON string so it survives
-      // the srcdoc attribute escaping without any eval trickery.
-      const escapedCode = JSON.stringify(this.code);
-      return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js" integrity="sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=" crossorigin="anonymous"></script>
-<style>
-  body { margin:0; padding:8px; font-family:system-ui,sans-serif;
-         font-size:14px; background:#0f0a1e; color:#e8e0f0;
-         box-sizing:border-box; word-break:break-word; }
-  * { box-sizing:border-box; }
-  button { cursor:pointer; padding:5px 12px; border-radius:6px;
-           background:#6d28d9; color:#fff; border:none; font-size:13px; }
-  input,textarea { background:#1a1030; color:#e8e0f0; border:1px solid #3b1f5e;
-                   border-radius:6px; padding:5px 8px; font-size:13px; width:100%; }
-  #_console { margin-top:8px; padding:6px; background:#0a0616;
-              border-radius:6px; font-family:monospace; font-size:12px;
-              color:#9b8db0; max-height:80px; overflow-y:auto;
-              border:1px solid #2e1060; display:none; }
-</style>
-</head>
-<body>
-<div id="_root"></div>
-<div id="_console"></div>
-<script>
-const PARENT_ORIGIN = "https://puncakbukit.github.io";
-const purify = DOMPurify;
-(function() {
-  // ── Kill the network ─────────────────────────────────────────
-  window.fetch       = () => Promise.reject(new Error("Network blocked"));
-  window.XMLHttpRequest = function() { throw new Error("Network blocked"); };
-  window.WebSocket   = function() { throw new Error("Network blocked"); };
-  window.open        = () => null;
-
-  function sanitize(html) {
-    if (typeof html !== "string") return "";
-    if (purify) return purify.sanitize(html, {
-      ALLOWED_TAGS: ["div","span","p","br","b","i","strong","em","u","s",
-                     "h1","h2","h3","h4","ul","ol","li","pre","code",
-                     "table","thead","tbody","tr","th","td","button",
-                     "input","textarea","label","select","option",
-                     "hr","blockquote","a","img"],
-      ALLOWED_ATTR: ["id","class","style","type","value","placeholder",
-                     "checked","disabled","readonly","href","src","alt",
-                     "width","height","rows","cols","for","name","max",
-                     "min","step","multiple"],
-      FORBID_TAGS:  ["script","iframe","object","embed","form","frame"],
-      FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
-                     "onblur","onchange","onsubmit"]
-    });
-    // Sandbox is already fully isolated — return html as-is when DOMPurify unavailable
-    return html;
-  }
-
-  // ── Restricted API exposed to Live Twist code ─────────────────
-  const _cons = document.getElementById("_console");
-  const _root = document.getElementById("_root");
-
-  const app = {
-    render(html) {
-      _root.innerHTML = sanitize(String(html));
-    },
-    text(str) {
-      _root.textContent = String(str).slice(0, 2000);
-    },
-    resize(h) {
-      const height = Math.min(Math.max(parseInt(h) || 200, 40), 600);
-      parent.postMessage({ type: "resize", height }, PARENT_ORIGIN);
-    },
-    log(...args) {
-      _cons.style.display = "block";
-      const line = document.createElement("div");
-      line.textContent = args.map(a =>
-        typeof a === "object" ? JSON.stringify(a) : String(a)
-      ).join(" ");
-      _cons.appendChild(line);
-      _cons.scrollTop = _cons.scrollHeight;
-    },
-    // --- Queries to access blockchain ---	
-	query(type, params = []) {
-	  parent.postMessage({ 
-	    type: "LIVE_TWIST_QUERY", 
-		queryType: type, 
-		params: params 
-	  }, PARENT_ORIGIN);
-    },
-    // --- Actions to access blockchain ---
-    action(type, params = {}) {
-      parent.postMessage({ 
-        type: "LIVE_TWIST_ACTION", 
-        actionType: type, 
-        params: params 
-      }, PARENT_ORIGIN);
-    },
-    onResult(callback) {
-      // Replace-not-accumulate: remove any previous onResult listener before
-      // registering the new one, so multiple app.onResult() calls within one
-      // run don't stack up and fire the callback multiple times per result.
-      if (app._onResultHandler) {
-        window.removeEventListener("message", app._onResultHandler);
-      }
-      app._onResultHandler = (e) => {
-        if (e.data.type === "QUERY_RESULT") {
-          callback(e.data.success, e.data.result);
-        } else if (e.data.type === "ACTION_RESULT") {
-          callback(e.data.success, e.data.action);
-        }
-      };
-      window.addEventListener("message", app._onResultHandler);
-    }
-  };
-
-  // ── Handle kill signal from parent (future timeout support) ──
-  window.addEventListener("message", function(e) {
-    if (e.data && e.data.type === "kill") {
-      _root.innerHTML = "<em style='color:#fca5a5'>Execution timed out.</em>";
-    }
-  });
-
-  // ── Execute user code ─────────────────────────────────────────
-  const userCode = ${escapedCode};
-  try {
-    const fn = new Function("app", userCode);
-    const result = fn(app);
-    // Support async code
-    if (result && typeof result.catch === "function") {
-      result.catch(err => {
-        _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
-          String(err).replace(/</g,"&lt;") + "</em>";
-      });
-    }
-    // Signal parent that execution started
-    parent.postMessage({ type: "running" }, PARENT_ORIGIN);
-  } catch (err) {
-    _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
-      String(err).replace(/</g,"&lt;") + "</em>";
-    parent.postMessage({ type: "error", message: String(err) }, PARENT_ORIGIN);
-  }
-
-  // Auto-resize based on content height
-  setTimeout(() => {
-    const h = document.body.scrollHeight;
-    if (h > 40) parent.postMessage({ type: "resize", height: h + 16 }, PARENT_ORIGIN);
-  }, 100);
-})();
-${'<'}/script>
-</body>
-</html>`;
-    }
-  },
-  methods: {
-    run() {
-      if (this.tooBig) {
-        this.error = "Live Twist code exceeds the 10 KB size limit.";
-        return;
-      }
-      this.error   = "";
-      this.running = true;
-      this.iframeKey++;  // forces Vue to recreate the iframe element
-    },
-
-    stop() {
-      this.running  = false;
-      this.iframeKey++;
-    },
-
-    onMessage(e) {
-      // Only accept messages from the sandboxed iframe (origin === "null")
-      if (e.origin !== "null") return;
-      // Capture the source window immediately — async callbacks must not
-      // close over `e` directly because the event object may be recycled.
-      const iframeSource = e.source;
-      const { type, height, queryType, actionType, params } = e.data || {};
-      if (type === "resize" && height) {
-        const iframe = this.$refs.sandbox;
-        if (!iframe || iframeSource !== iframe.contentWindow) return;
-        iframe.style.height = Math.min(height, 600) + "px";
-      }
-      // --- HANDLE QUERIES to the blockchain ---
-      if (type === "LIVE_TWIST_QUERY") {
-        this.handleQueryRequest(queryType, params, iframeSource);
-      }
-      // --- HANDLE ACTIONS to access blockchain ---
-      if (type === "LIVE_TWIST_ACTION") {
-        this.handleActionRequest(actionType, params, iframeSource);
-      }
-    },
-    
-    // Helper method to HANDLE QUERIES to the blockchain
+// ---- Shared query/action handler mixin ----
+// Both LiveTwistComponent and LiveTwistComposerComponent need these
+// methods to dispatch iframe postMessage queries/actions to steem.api
+// and Steem Keychain. Defined once here and spread into both components.
+const LIVE_TWIST_HANDLER_MIXIN = {
     handleQueryRequest(query, params, iframeSource) {
       // Helper to message the specific iframe running this twist.
       // iframeSource is passed in (not closed over) to avoid stale-event bugs.
@@ -2553,6 +2332,236 @@ ${'<'}/script>
         console.log(action + " is unsupported.");
       }
     }
+  },
+};
+
+const LiveTwistComponent = {
+  name: "LiveTwistComponent",
+  inject: ["username", "hasKeychain", "notify", "voteTwist", "postTwistReply", "retwistPost", "followUser", "unfollowUser"],
+  props: {
+    post: { type: Object, required: true }
+  },
+  data() {
+    return {
+      running:    false,
+      error:      "",
+      iframeKey:  0   // increment to force iframe recreation on re-run
+    };
+  },
+  computed: {
+    meta() {
+      try {
+        const raw = this.post.json_metadata;
+        return raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+      } catch { return {}; }
+    },
+    code()    { return (this.meta.code  || "").trim(); },
+    title()   { return (this.meta.title || "Live Twist").trim(); },
+    // Body is the human-readable description written by the author.
+    // Strip the SteemTwist back-link appended by buildZeroPayoutOps before display.
+    bodyText() {
+      const raw = (this.post.body || "").replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "").trimEnd();
+      // Also skip the generic placeholder that means "no real description was provided"
+      const placeholder = "\u26a1 Live Twist \u2014 view on SteemTwist";
+      return (raw === placeholder || raw === "\u26a1 Live Twist - view on SteemTwist") ? "" : raw;
+    },
+    codeSize(){ return new TextEncoder().encode(this.code).length; },
+    tooBig()  { return this.codeSize > 10240; },   // 10 KB limit
+    // The srcdoc injected into the sandboxed iframe.
+    // DOMPurify is inlined so the iframe never needs to load external scripts.
+    sandboxDoc() {
+      // We encode the user code as a JSON string so it survives
+      // the srcdoc attribute escaping without any eval trickery.
+      const escapedCode = JSON.stringify(this.code);
+      return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js" integrity="sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=" crossorigin="anonymous"></script>
+<style>
+  body { margin:0; padding:8px; font-family:system-ui,sans-serif;
+         font-size:14px; background:#0f0a1e; color:#e8e0f0;
+         box-sizing:border-box; word-break:break-word; }
+  * { box-sizing:border-box; }
+  button { cursor:pointer; padding:5px 12px; border-radius:6px;
+           background:#6d28d9; color:#fff; border:none; font-size:13px; }
+  input,textarea { background:#1a1030; color:#e8e0f0; border:1px solid #3b1f5e;
+                   border-radius:6px; padding:5px 8px; font-size:13px; width:100%; }
+  #_console { margin-top:8px; padding:6px; background:#0a0616;
+              border-radius:6px; font-family:monospace; font-size:12px;
+              color:#9b8db0; max-height:80px; overflow-y:auto;
+              border:1px solid #2e1060; display:none; }
+</style>
+</head>
+<body>
+<div id="_root"></div>
+<div id="_console"></div>
+<script>
+const PARENT_ORIGIN = "https://puncakbukit.github.io";
+const purify = DOMPurify;
+(function() {
+  // ── Kill the network ─────────────────────────────────────────
+  window.fetch       = () => Promise.reject(new Error("Network blocked"));
+  window.XMLHttpRequest = function() { throw new Error("Network blocked"); };
+  window.WebSocket   = function() { throw new Error("Network blocked"); };
+  window.open        = () => null;
+
+  function sanitize(html) {
+    if (typeof html !== "string") return "";
+    if (purify) return purify.sanitize(html, {
+      ALLOWED_TAGS: ["div","span","p","br","b","i","strong","em","u","s",
+                     "h1","h2","h3","h4","ul","ol","li","pre","code",
+                     "table","thead","tbody","tr","th","td","button",
+                     "input","textarea","label","select","option",
+                     "hr","blockquote","a","img"],
+      ALLOWED_ATTR: ["id","class","style","type","value","placeholder",
+                     "checked","disabled","readonly","href","src","alt",
+                     "width","height","rows","cols","for","name","max",
+                     "min","step","multiple"],
+      FORBID_TAGS:  ["script","iframe","object","embed","form","frame"],
+      FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
+                     "onblur","onchange","onsubmit"]
+    });
+    // Sandbox is already fully isolated — return html as-is when DOMPurify unavailable
+    return html;
+  }
+
+  // ── Restricted API exposed to Live Twist code ─────────────────
+  const _cons = document.getElementById("_console");
+  const _root = document.getElementById("_root");
+
+  const app = {
+    render(html) {
+      _root.innerHTML = sanitize(String(html));
+    },
+    text(str) {
+      _root.textContent = String(str).slice(0, 2000);
+    },
+    resize(h) {
+      const height = Math.min(Math.max(parseInt(h) || 200, 40), 600);
+      parent.postMessage({ type: "resize", height }, PARENT_ORIGIN);
+    },
+    log(...args) {
+      _cons.style.display = "block";
+      const line = document.createElement("div");
+      line.textContent = args.map(a =>
+        typeof a === "object" ? JSON.stringify(a) : String(a)
+      ).join(" ");
+      _cons.appendChild(line);
+      _cons.scrollTop = _cons.scrollHeight;
+    },
+    // --- Queries to access blockchain ---	
+	query(type, params = []) {
+	  parent.postMessage({ 
+	    type: "LIVE_TWIST_QUERY", 
+		queryType: type, 
+		params: params 
+	  }, PARENT_ORIGIN);
+    },
+    // --- Actions to access blockchain ---
+    action(type, params = {}) {
+      parent.postMessage({ 
+        type: "LIVE_TWIST_ACTION", 
+        actionType: type, 
+        params: params 
+      }, PARENT_ORIGIN);
+    },
+    onResult(callback) {
+      // Replace-not-accumulate: remove any previous onResult listener before
+      // registering the new one, so multiple app.onResult() calls within one
+      // run don't stack up and fire the callback multiple times per result.
+      if (app._onResultHandler) {
+        window.removeEventListener("message", app._onResultHandler);
+      }
+      app._onResultHandler = (e) => {
+        if (e.data.type === "QUERY_RESULT") {
+          callback(e.data.success, e.data.result);
+        } else if (e.data.type === "ACTION_RESULT") {
+          callback(e.data.success, e.data.action);
+        }
+      };
+      window.addEventListener("message", app._onResultHandler);
+    }
+  };
+
+  // ── Handle kill signal from parent (future timeout support) ──
+  window.addEventListener("message", function(e) {
+    if (e.data && e.data.type === "kill") {
+      _root.innerHTML = "<em style='color:#fca5a5'>Execution timed out.</em>";
+    }
+  });
+
+  // ── Execute user code ─────────────────────────────────────────
+  const userCode = ${escapedCode};
+  try {
+    const fn = new Function("app", userCode);
+    const result = fn(app);
+    // Support async code
+    if (result && typeof result.catch === "function") {
+      result.catch(err => {
+        _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
+          String(err).replace(/</g,"&lt;") + "</em>";
+      });
+    }
+    // Signal parent that execution started
+    parent.postMessage({ type: "running" }, PARENT_ORIGIN);
+  } catch (err) {
+    _root.innerHTML = "<em style='color:#fca5a5'>Error: " +
+      String(err).replace(/</g,"&lt;") + "</em>";
+    parent.postMessage({ type: "error", message: String(err) }, PARENT_ORIGIN);
+  }
+
+  // Auto-resize based on content height
+  setTimeout(() => {
+    const h = document.body.scrollHeight;
+    if (h > 40) parent.postMessage({ type: "resize", height: h + 16 }, PARENT_ORIGIN);
+  }, 100);
+})();
+${'<'}/script>
+</body>
+</html>`;
+    }
+  },
+  methods: {
+    run() {
+      if (this.tooBig) {
+        this.error = "Live Twist code exceeds the 10 KB size limit.";
+        return;
+      }
+      this.error   = "";
+      this.running = true;
+      this.iframeKey++;  // forces Vue to recreate the iframe element
+    },
+
+    stop() {
+      this.running  = false;
+      this.iframeKey++;
+    },
+
+    onMessage(e) {
+      // Only accept messages from the sandboxed iframe (origin === "null")
+      if (e.origin !== "null") return;
+      // Capture the source window immediately — async callbacks must not
+      // close over `e` directly because the event object may be recycled.
+      const iframeSource = e.source;
+      const { type, height, queryType, actionType, params } = e.data || {};
+      if (type === "resize" && height) {
+        const iframe = this.$refs.sandbox;
+        if (!iframe || iframeSource !== iframe.contentWindow) return;
+        iframe.style.height = Math.min(height, 600) + "px";
+      }
+      // --- HANDLE QUERIES to the blockchain ---
+      if (type === "LIVE_TWIST_QUERY") {
+        this.handleQueryRequest(queryType, params, iframeSource);
+      }
+      // --- HANDLE ACTIONS to access blockchain ---
+      if (type === "LIVE_TWIST_ACTION") {
+        this.handleActionRequest(actionType, params, iframeSource);
+      }
+    },
+    
+    // Helper method to HANDLE QUERIES to the blockchain
+    ...LIVE_TWIST_HANDLER_MIXIN,
   },
 
   mounted() {
@@ -3360,6 +3369,9 @@ const LiveTwistComposerComponent = {
     hasKeychain: { type: Boolean, default: false },
     isPosting:   { type: Boolean, default: false }
   },
+  // Inject the same blockchain helpers that LiveTwistComponent uses so that
+  // handleQueryRequest / handleActionRequest work identically in the preview.
+  inject: ["notify", "voteTwist", "postTwistReply", "retwistPost", "followUser", "unfollowUser"],
   emits: ["post", "cancel"],
   data() {
     const draft = draftStorage.load("live_composer", {});
@@ -3388,6 +3400,7 @@ const LiveTwistComposerComponent = {
     code(v)  { draftStorage.save("live_composer", { title: this.title, body: this.body, code: v }); }
   },
   methods: {
+    ...LIVE_TWIST_HANDLER_MIXIN,
     buildSandboxDoc(userCode) {
       const escaped = JSON.stringify(userCode);
       return "<!DOCTYPE html><html><head><meta charset='utf-8'>" + 
@@ -3433,8 +3446,18 @@ const LiveTwistComposerComponent = {
     },
     onMessage(e) {
       if (e.origin !== "null") return;
-      if (e.data && e.data.type === "resize") {
-        this.iframeHeight = Math.min(e.data.height || 200, 480);
+      const { type, height, queryType, actionType, params } = e.data || {};
+      if (type === "resize") {
+        this.iframeHeight = Math.min(height || 200, 480);
+      }
+      // Forward blockchain queries from the preview iframe to the shared handlers.
+      // Without this, app.query() calls in template previews hang forever because
+      // the composer's iframe sends the postMessage but nothing was listening.
+      if (type === "LIVE_TWIST_QUERY") {
+        this.handleQueryRequest(queryType, params, e.source);
+      }
+      if (type === "LIVE_TWIST_ACTION") {
+        this.handleActionRequest(actionType, params, e.source);
       }
     },
     submit() {
@@ -3452,11 +3475,10 @@ const LiveTwistComposerComponent = {
       this.activeTab = "code"; this.previewKey++;
     },
     useTemplate(tpl) {
+      // Always overwrite all three fields so switching templates is a clean swap.
       this.code      = tpl.code;
-      this.title     = this.title || tpl.name;
-      // Pre-fill body with the template description if the author hasn't
-      // written one yet — gives viewers a description before they click Run.
-      this.body      = this.body || tpl.desc || "";
+      this.title     = tpl.name;
+      this.body      = tpl.desc || "";
       this.activeTab = "code";
     }
   },
