@@ -22,6 +22,7 @@ Just as a blog writer is a *blogger* and a YouTube creator is a *YouTuber*, ever
 | Comment reply | **Twist** | 🌀 |
 | Reply to a twist | **Thread Reply** | 💬 |
 | Upvote | **Twist Love** | ❤️ |
+| Downvote / flag | **Flag** | 🚩 |
 | Resteem | **Retwist** | 🔁 |
 | Personalised timeline | **Home** | 🏠 |
 | Global timeline | **Explore** | 🔭 |
@@ -38,7 +39,8 @@ Just as a blog writer is a *blogger* and a YouTube creator is a *YouTuber*, ever
 @steemtwist/feed-2026-03               ← monthly feed root
 ├── @alice/tw-20260315-091530-alice     ← twist
 ├── @bob/tw-20260315-102244-bob         ← twist (Live Twist)
-│   └── @alice/tw-20260315-150012-alice ← thread reply
+│   ├── @alice/tw-20260315-150012-alice ← thread reply
+│   └── @carol/tw-20260315-160000-carol ← flag reply (type: live_twist_flag)
 └── ...
 
 @steemtwist/secret-2026-03             ← monthly secret root
@@ -47,7 +49,7 @@ Just as a blog writer is a *blogger* and a YouTube creator is a *YouTuber*, ever
 └── ...
 ```
 
-**Permlink formats:** `tw-YYYYMMDD-HHMMSS-username` (twist), `st-YYYYMMDD-HHMMSS-username` (secret)
+**Permlink formats:** `tw-YYYYMMDD-HHMMSS-username` (twist / flag reply), `st-YYYYMMDD-HHMMSS-username` (secret)
 **Monthly roots:** `feed-YYYY-MM`, `secret-YYYY-MM`
 
 ---
@@ -72,13 +74,15 @@ Just as a blog writer is a *blogger* and a YouTube creator is a *YouTuber*, ever
 
 ### Live Twists ⚡
 - Write JavaScript that runs in an **isolated iframe sandbox** when viewers click ▶ Run
-- Full **Live Twist Editor** with Code tab and ▶ Preview tab (WYSIWYG — uses the same sandbox)
+- Full **Live Twist Editor** with Code tab, ▶ Preview tab (WYSIWYG), and Templates gallery
 - **Edit** published Live Twists with the inline Live Twist editor (Card label, Body, Code fields)
-- Security: `sandbox="allow-scripts"` only (no same-origin), network blocked, Keychain unreachable, DOMPurify sanitisation, 10 KB size limit
-- Sandbox API: `app.render(html)`, `app.text(str)`, `app.resize(px)`, `app.log(...args)`
+- **Blockchain queries** — call read-only Steem API methods from inside the sandbox via `app.query()`
+- **Blockchain actions** — trigger Keychain-signed operations (vote, reply, follow, transfer, etc.) via `app.action()`, each requiring explicit user confirmation
+- **Flag system** — users can downvote and flag a Live Twist as harmful; reason is selected from a fixed list and stored on-chain as a reply
+- Security: `sandbox="allow-scripts"` only (no same-origin), network blocked, Keychain unreachable from sandbox, DOMPurify sanitisation on every `app.render()`, 10 KB code size limit, user-initiated execution only
 
 ### Social
-- 👤 **Rich profiles** — avatar, reputation (1–100), bio, location, website, join date, stats grid
+- 👤 **Rich profiles** — avatar, reputation (1–100), bio, location, website (https only), join date, stats grid
 - 👥 **Social pages** — paginated Followers / Following / Friends; Follow / Unfollow button per row
 - 👤 **Follow / Unfollow** from the Social page using Steem's `follow` plugin
 
@@ -109,8 +113,56 @@ Stored in `json_metadata`. The `body` field of the Steem comment is shown on non
 |---|---|
 | `app.render(html)` | Sanitise and set `body` innerHTML |
 | `app.text(str)` | Set `body` as plain text (max 2000 chars) |
-| `app.resize(px)` | Resize the iframe height (max 600px) |
+| `app.resize(px)` | Resize the iframe height (max 600 px) |
 | `app.log(...args)` | Append a line to the built-in console panel |
+| `app.query(type, params)` | Call a read-only Steem API method; result delivered via `app.onResult()` |
+| `app.action(type, params)` | Request a Keychain-signed blockchain operation; requires explicit user confirmation; result delivered via `app.onResult()` |
+| `app.onResult(callback)` | Register `callback(success, type)` to receive results from `app.query()` and `app.action()` calls |
+
+#### Supported `app.query()` types
+
+Read-only Steem API calls. Pass parameters as a plain object matching the steem-js argument names.
+
+**Discussions:** `getDiscussionsByCreated`, `getDiscussionsByTrending30`, `getDiscussionsByActive`, `getDiscussionsByHot`, `getDiscussionsByVotes`, `getDiscussionsByChildren`, `getDiscussionsByCashout`, `getDiscussionsByPayout`, `getDiscussionsByFeed`, `getDiscussionsByBlog`, `getDiscussionsByComments`, `getDiscussionsByPromoted`, `getCommentDiscussionsByPayout`, `getPostDiscussionsByPayout`, `getDiscussionsByAuthorBeforeDate`
+
+**Content:** `getContent`, `getContentReplies`, `getRepliesByLastUpdate`, `getRebloggedBy`
+
+**Accounts:** `getAccounts`, `getAccountHistory`, `getAccountReferences`, `getAccountBandwidth`, `getAccountVotes`, `getAccountCount`, `getAccountReputations`, `lookupAccountNames`, `lookupAccounts`, `getConversionRequests`, `getOwnerHistory`, `getRecoveryRequest`, `findChangeRecoveryAccountRequests`
+
+**Follow:** `getFollowers`, `getFollowing`, `getFollowCount`, `getWithdrawRoutes`
+
+**Blog:** `getBlog`, `getBlogAuthors`, `getBlogEntries`, `getFeedEntries`
+
+**Chain globals:** `getConfig`, `getDynamicGlobalProperties`, `getChainProperties`, `getFeedHistory`, `getCurrentMedianHistoryPrice`, `getTicker`, `getTradeHistory`, `getVolume`, `getVersion`, `getHardforkVersion`, `getNextScheduledHardfork`, `getRewardFund`, `getVestingDelegations`
+
+**Blocks:** `getBlockHeader`, `getBlock`, `getOpsInBlock`, `getStateWith`
+
+**Market:** `getOrderBook`, `getMarketOrderBook`, `getOpenOrders`, `getLiquidityQueue`, `getMarketHistoryBuckets`, `getRecentTrades`, `getSavingsWithdrawFrom`, `getSavingsWithdrawTo`
+
+**Witnesses:** `getWitnesses`, `getWitnessByAccount`, `getWitnessesByVote`, `lookupWitnessAccounts`, `getWitnessCount`, `getActiveWitnesses`, `getWitnessSchedule`, `getMinerQueue`, `getApiByName`
+
+**Authority:** `getTransactionHex`, `getTransaction`, `getRequiredSignatures`, `getPotentialSignatures`, `verifyAuthority`, `verifyAccountAuthority`, `getTagsUsedByAuthor`, `getActiveVotes`
+
+**Categories:** `getTrendingCategories`, `getBestCategories`, `getActiveCategories`, `getRecentCategories`
+
+**Formatter / utils:** `amount`, `vestingSteem`, `numberWithCommas`, `estimateAccountValue`, `createSuggestedPassword`, `commentPermlink`, `reputation`, `vestToSteem`, `validateAccountName`, `camelCase`
+
+#### Supported `app.action()` types
+
+Each action triggers a Keychain confirmation popup. The user must approve before the operation is broadcast.
+
+| Action | Key parameters |
+|---|---|
+| `vote` | `author`, `permlink`, `weight` (-10000 to 10000) |
+| `reply` | `parentAuthor`, `parentPermlink`, `message` |
+| `retwist` | `author`, `permlink` |
+| `follow` | `following` |
+| `unfollow` | `following` |
+| `transfer` | `to`, `amount`, `memo`, `currency` |
+| `delegate` | `delegatee`, `amount`, `unit` |
+| `voteWitness` | `witness`, `vote` (true/false) |
+| `powerUp` | `to`, `amount` |
+| `powerDown` | `amount` |
 
 ### Security layers
 
@@ -119,7 +171,8 @@ Stored in `json_metadata`. The `body` field of the Steem comment is shown on non
 3. DOMPurify sanitises every `app.render()` call (forbids `<script>`, `<iframe>`, `on*` attributes)
 4. 10 KB code size limit enforced before publish
 5. User must click ▶ Run — never auto-executed
-6. Keychain is never accessible from inside the sandbox
+6. Keychain is never accessible from inside the sandbox — all `app.action()` calls route through the parent page with an explicit `confirm()` firewall before reaching Keychain
+7. `postMessage` from sandbox to parent uses the hardcoded `PARENT_ORIGIN` constant; from parent to sandbox uses target origin `"null"` — wildcard `"*"` is never used
 
 ### Minimum test code
 
@@ -129,7 +182,52 @@ app.render("<b style='color:#c084fc'>Hello from Live Twist!</b> " + new Date().t
 
 ### Security note on `</script>`
 
-The sandboxDoc string (generated inside a JS template literal loaded as `<script src>`) must never contain the literal sequence `</script>`, which the HTML tokeniser would misinterpret before JS execution. The closing sandbox tag uses the template expression `${'<'}/script>` and regexes are constructed with `new RegExp(...)` to avoid this.
+The `sandboxDoc` string (generated inside a JS template literal loaded as `<script src>`) must never contain the literal sequence `</script>`, which the HTML tokeniser would misinterpret before JS execution. The closing sandbox tag uses the template expression `${'<'}/script>` and regexes are constructed with `new RegExp(...)` to avoid this.
+
+---
+
+## Live Twist flag system 🚩
+
+Users can flag a Live Twist they believe is harmful. Flagging is only available on Live Twists authored by others — you cannot flag your own Live Twist.
+
+### How it works
+
+1. The viewer clicks 🚩 on a Live Twist card to open the flag panel.
+2. They select one reason from the fixed list below.
+3. Clicking **Confirm flag** triggers two sequential Keychain operations:
+   - A `-10000` weight downvote on the Live Twist (via `requestVote`).
+   - A reply comment posted under the Live Twist (via `requestBroadcast`) whose `json_metadata` records the reason and whose `body` provides a human-readable description for non-SteemTwist clients.
+4. The 🚩 button turns red and shows the cumulative downvote count.
+
+### Flag reasons
+
+| ID | Label | Emoji |
+|---|---|---|
+| `spam` | Spam | 🗑️ |
+| `scam` | Scam | 💸 |
+| `phishing` | Phishing | 🎣 |
+| `spoofing` | Spoofing | 🎭 |
+| `hacking` | Hacking | 💀 |
+| `malware` | Malware | 🦠 |
+| `harassment` | Harassment | 🚫 |
+| `other` | Other | ⚠️ |
+
+### Flag reply on-chain format
+
+```json
+{
+  "app": "steemtwist/0.1",
+  "type": "live_twist_flag",
+  "reason": "malware",
+  "tags": ["steemtwist", "microblog", "steem", "twist", "social", "web"]
+}
+```
+
+The flag reply is posted with `max_accepted_payout: "0.000 SBD"` and `allow_votes: false`.
+
+### Why two separate Keychain calls
+
+Steem Keychain's `requestBroadcast` rejects `vote` operations bundled with other op types — it validates op types against the key tier differently for broadcast versus the dedicated vote endpoint. The flag therefore uses `requestVote` for the downvote and a separate `requestBroadcast` for the reply. A downvote landing without the reply comment is harmless; a reply without the downvote cannot happen because the second call only runs on the first succeeding.
 
 ---
 
@@ -183,7 +281,7 @@ Recipient sees 🔒 signal → requestVerifyKey (Keychain) → message revealed
 
 ```
 steemtwist/
-├── index.html       # HTML shell — CDN scripts, CSS tokens, app mount
+├── index.html       # HTML shell — CDN scripts with SRI hashes, CSS tokens, app mount
 ├── blockchain.js    # Steem API and Keychain helpers (no Vue)
 ├── components.js    # Vue 3 components
 └── app.js           # Views, router, root App
@@ -198,6 +296,8 @@ steemtwist/
 
 ### Account
 - `fetchAccount(username)` → `{ username, profileImage, displayName, about, coverImage, location, website, reputation, postCount, followerCount, followingCount, created }`
+  - `profileImage` and `coverImage` are sanitised to `http://` or `https://` URLs only; anything else is returned as `""`
+  - `website` is validated to `https://` only in `UserProfileComponent.safeWebsite`
 
 ### Posts
 - `fetchPost(author, permlink)` — always returns populated `active_votes`
@@ -217,22 +317,27 @@ steemtwist/
 - `postTwist(username, message, callback)` — post new twist
 - `postTwistReply(username, message, parentAuthor, parentPermlink, callback)`
 - `postLiveTwist(username, title, body, code, callback)` — post Live Twist; stores `{ type:"live_twist", version:1, title, code }` in `json_metadata`
-- `voteTwist(voter, author, permlink, weight, callback)`
+- `voteTwist(voter, author, permlink, weight, callback)` — weight 1–10000 (upvote); use `flagLiveTwist` for downvotes
 - `retwistPost(username, author, permlink, callback)`
 - `followUser(follower, following, callback)` — `custom_json` follow plugin `what:["blog"]`
 - `unfollowUser(follower, following, callback)` — `what:[]`
 - `editTwist(username, post, newBody, callback)` — re-broadcast `comment` op
 - `deleteTwist(username, post, callback)` — `delete_comment` or body-blank fallback; `res._deleted` indicates path
 
+### Live Twist flag
+- `LIVE_TWIST_FLAG_REASONS` — array of `{ id, label, emoji }` objects; the authoritative reason list shared by both `blockchain.js` and the UI
+- `flagLiveTwist(voter, author, permlink, reasonId, callback)` — step 1: `requestVote` at weight `-10000`; step 2 on success: `requestBroadcast` with `[comment, comment_options]` whose `json_metadata.type === "live_twist_flag"` and `json_metadata.reason === reasonId`
+
 ### Sorting, Firehose, Pin
 - `sortTwists(posts, mode)` — new / hot / top
 - `startFirehose(monthlyRoot, onTwist, onVote, options)` — options: `{ understream, followingSet }`; Understream mode streams root posts instead of monthly-root replies
-- `pinTwist / unpinTwist / fetchPinnedTwist / setPinCache / clearPinCache / getPinCache`
+- `pinTwist / unpinTwist / fetchPinnedTwist` — on-chain pin via `custom_json`
+- `setPinCache / clearPinCache / getPinCache` — localStorage cache with 5-minute TTL; `getPinCache` validates `author` and `permlink` against Steem format regexes before returning
 
 ### Signals
 - `classifySignalEntry(seqNum, item, username)` → `love | reply | mention | follow | retwist | secret_twist`
 - `fetchSignals(username)` — latest 500 history entries
-- `stripSignalBody(body)`
+- `stripSignalBody(body)` — caps input at 10 000 chars before regex processing to prevent ReDoS; truncates output to 100 chars
 
 ### Follow lists
 - `fetchFollowersPage(username, startFrom, limit)` → `{ users, nextCursor, hasMore }` — single page
@@ -254,13 +359,13 @@ steemtwist/
 |---|---|
 | `AppNotificationComponent` | Toast; auto-dismiss 3.5 s for non-errors |
 | `AuthComponent` | Keychain login / logout |
-| `UserProfileComponent` | Profile card: avatar, reputation badge, bio, meta row, stats grid; no cover (shown in header) |
+| `UserProfileComponent` | Profile card: avatar, reputation badge, bio, meta row, stats grid; website validated to https only |
 | `LoadingSpinnerComponent` | Animated spinner |
 | `ReplyCardComponent` | Reply: Love / Retwist / Reply / Edit / Delete; Write/Preview on reply box |
 | `ThreadComponent` | Lazy-loads replies; enriches `active_votes` |
-| `LiveTwistComponent` | Renders a Live Twist card: header, ▶ Run / ■ Stop, sandboxed iframe, security notice |
-| `TwistCardComponent` | Full twist card: action bar; Live Twist or markdown body; Edit (regular textarea or Live Twist editor); Delete |
-| `LiveTwistComposerComponent` | Live Twist editor: Card label, Body, Code textarea, ▶ Preview sandbox, Publish ⚡ |
+| `LiveTwistComponent` | Renders a Live Twist card: ▶ Run / ■ Stop, sandboxed iframe, blockchain query/action bridge, security notice |
+| `TwistCardComponent` | Full twist card: action bar (Love, Retwist, Replies, **Flag** for Live Twists); body; Edit; Delete; inline flag panel with reason selector |
+| `LiveTwistComposerComponent` | Live Twist editor: Card label, Body, Code textarea, ▶ Preview sandbox, Templates gallery, Publish ⚡ |
 | `TwistComposerComponent` | 🌀 Twist / ⚡ Live Twist tabs; Write/Preview on twist pane |
 | `SignalItemComponent` | Signal row: icon, label, preview, timestamp, View link |
 | `UserRowComponent` | Twister row with optional Follow/Unfollow button |
@@ -286,21 +391,45 @@ steemtwist/
 
 ### Global provided state
 
-| Key | Type |
-|---|---|
-| `username` | `ref<string>` |
-| `hasKeychain` | `ref<boolean>` |
-| `notify` | `function(msg, type)` |
-| `unreadSignals` | `ref<number>` |
-| `refreshUnreadSignals` | `function(user)` |
-| `understreamOn` | `ref<boolean>` persisted in `localStorage` |
-| `toggleUnderstream` | `function()` |
+| Key | Type | Notes |
+|---|---|---|
+| `username` | `ref<string>` | Persisted in `localStorage` |
+| `hasKeychain` | `ref<boolean>` | Detected on mount via polling |
+| `notify` | `function(msg, type)` | type: `"error"` \| `"success"` \| `"info"` |
+| `unreadSignals` | `ref<number>` | Recomputed on nav to Signals |
+| `refreshUnreadSignals` | `function(user)` | Called on login and nav |
+| `understreamOn` | `ref<boolean>` | Persisted in `localStorage` |
+| `toggleUnderstream` | `function()` | Flips and persists `understreamOn` |
+
+---
+
+## Security
+
+### Supply chain
+All CDN scripts (`steem-js`, `vue`, `vue-router`, `marked`, `DOMPurify`) load with `integrity` (SRI) and `crossorigin="anonymous"` attributes. A tampered CDN file will be rejected by the browser before execution.
+
+### Content
+- All user-supplied markdown and HTML rendered via `v-html` is passed through `DOMPurify.sanitize()` before insertion.
+- Profile `coverImage` and `profileImage` URLs are validated to `http://` or `https://` only inside `fetchAccount`; `coverImage` is additionally passed through `encodeURI()` before being interpolated into a CSS `url(...)` value in the header.
+- User-supplied `website` URLs are validated to `https://` only in `UserProfileComponent.safeWebsite`.
+
+### Live Twist sandbox
+- Sandboxed iframe uses `sandbox="allow-scripts"` only — null origin, no same-origin, no form submission, no top navigation.
+- `fetch`, `XMLHttpRequest`, `WebSocket`, and `window.open` are all overridden to throw inside the sandbox.
+- `postMessage` from parent to sandbox uses target origin `"null"` (not `"*"`); from sandbox to parent uses the hardcoded `PARENT_ORIGIN` constant.
+- The parent validates `e.origin === "null"` on every inbound message and additionally checks `e.source === iframe.contentWindow` before acting. The source window reference is captured immediately from the event object to avoid stale-closure bugs in async callbacks.
+
+### localStorage
+- The pending-pin cache (`getPinCache`) validates `author` against `/^[a-z0-9\-.]{3,16}$/` and `permlink` against `/^[a-z0-9-]{1,255}$/` before use. Tampered or injected cache values are silently discarded.
+
+### Signals
+- `stripSignalBody` caps its input to 10 000 characters before applying regex patterns, preventing potential ReDoS from crafted post bodies with deeply nested or unclosed HTML tags.
 
 ---
 
 ## No payouts by design
 
-All twists broadcast with `max_accepted_payout = "0.000 SBD"`, `allow_votes = true`, `allow_curation_rewards = false`. Twist Love works as appreciation without moving money.
+All twists broadcast with `max_accepted_payout = "0.000 SBD"`, `allow_votes = true`, `allow_curation_rewards = false`. Twist Love works as appreciation without moving money. Flag replies additionally set `allow_votes = false`.
 
 ---
 
@@ -310,6 +439,8 @@ All twists broadcast with `max_accepted_payout = "0.000 SBD"`, `allow_votes = tr
 2. `https://api.justyy.com`
 3. `https://steemd.steemworld.org`
 4. `https://api.steem.fans`
+
+On error the app automatically advances to the next node in the list for the remainder of the session.
 
 ---
 
