@@ -2332,7 +2332,6 @@ const LIVE_TWIST_HANDLER_MIXIN = {
         console.log(action + " is unsupported.");
       }
     }
-  },
 };
 
 const LiveTwistComponent = {
