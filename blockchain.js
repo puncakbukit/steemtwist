@@ -561,15 +561,19 @@ const LIVE_TWIST_FLAG_REASONS = [
   { id: "other",       label: "Other",       emoji: "⚠️" }
 ];
 
-// Flag a Live Twist by atomically broadcasting:
-//   1. A -10000 downvote on the Live Twist.
-//   2. A reply comment whose body describes the flag reason in plain text
-//      and whose json_metadata.type === "live_twist_flag" so the UI can
-//      display flags separately from normal replies.
+// Flag a Live Twist with a two-step Keychain sequence:
+//   Step 1 — requestVote (Posting key, weight -10000).
+//             Keychain requires votes to go through requestVote; bundling a
+//             vote op inside requestBroadcast triggers a "Posting key
+//             incorrect" error because Keychain validates op types against
+//             the key type differently for broadcast vs. the dedicated call.
+//   Step 2 — requestBroadcast with [comment, comment_options] (Posting key).
+//             Posts the flag-reason reply only after the downvote succeeds.
 //
-// Both operations are sent in a single requestBroadcast call so they
-// either both land or both fail — the flag reply is never orphaned
-// without its accompanying downvote, and vice versa.
+// The two steps are not atomic at the chain level, but this is acceptable:
+// a downvote without the reply comment is a harmless extra signal; a reply
+// without the downvote cannot happen because Step 2 only runs on Step 1
+// success.
 //
 // callback: (response) => { response.success, response.error }
 function flagLiveTwist(voter, author, permlink, reasonId, callback) {
@@ -584,15 +588,7 @@ function flagLiveTwist(voter, author, permlink, reasonId, callback) {
     `\n\nThis Live Twist has been flagged by @${voter} for: **${reason.label}**.` +
     `\n\n<sub>Posted via [SteemTwist](${TWIST_CONFIG.DAPP_URL})</sub>`;
 
-  const ops = [
-    // Downvote the Live Twist at full weight
-    ["vote", {
-      voter:    voter,
-      author:   author,
-      permlink: permlink,
-      weight:   -10000
-    }],
-    // Reply comment recording the reason on-chain
+  const replyOps = [
     ["comment", {
       parent_author:   author,
       parent_permlink: permlink,
@@ -607,7 +603,6 @@ function flagLiveTwist(voter, author, permlink, reasonId, callback) {
         tags:    TWIST_CONFIG.TAGS
       })
     }],
-    // Zero-payout on the flag reply
     ["comment_options", {
       author:               voter,
       permlink:             flagPermlink,
@@ -619,7 +614,13 @@ function flagLiveTwist(voter, author, permlink, reasonId, callback) {
     }]
   ];
 
-  steem_keychain.requestBroadcast(voter, ops, "Posting", callback);
+  // Step 1: downvote via the dedicated vote API
+  steem_keychain.requestVote(voter, permlink, author, -10000, (voteRes) => {
+    if (!voteRes.success) return callback(voteRes);
+
+    // Step 2: post the flag-reason reply
+    steem_keychain.requestBroadcast(voter, replyOps, "Posting", callback);
+  });
 }
 
 // Retwist (resteem) a post via Steem Keychain.
