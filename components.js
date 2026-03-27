@@ -3627,6 +3627,8 @@ const LiveTwistComposerComponent = {
     },
     onMessage(e) {
       if (e.origin !== "null") return;
+	  const iframe = this.$refs.previewSandbox;
+      if (!iframe || e.source !== iframe.contentWindow) return;
       const { type, height, queryType, actionType, params, _reqId } = e.data || {};
       if (type === "resize") {
         this.iframeHeight = Math.max(height || 200, this.iframeHeight);
