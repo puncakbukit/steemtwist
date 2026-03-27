@@ -1737,13 +1737,16 @@ const LIVE_TWIST_HANDLER_MIXIN = {
       // iframeSource is passed in (not closed over) to avoid stale-event bugs.
       // Target origin "null" is correct for sandbox="allow-scripts" iframes.
       const sendResult = (error, result) => {
-        const iframe = this.$refs.sandbox;
-        if (iframe && iframeSource === iframe.contentWindow) {
-          iframe.contentWindow.postMessage({
+        // Post directly to iframeSource — works for both LiveTwistComponent
+        // (ref="sandbox") and LiveTwistComposerComponent (ref="previewSandbox"),
+        // as long as the source window is still the live iframe.
+        const liveRef = this.$refs.sandbox || this.$refs.previewSandbox;
+        if (liveRef && iframeSource === liveRef.contentWindow) {
+          iframeSource.postMessage({
             type: "QUERY_RESULT",
             success: error?false:true,
             result: result
-          }, "null");
+          }, "*");
         }
       };
 
@@ -2212,13 +2215,13 @@ const LIVE_TWIST_HANDLER_MIXIN = {
       // iframeSource is passed in (not closed over) to avoid stale-event bugs.
       // Target origin "null" is correct for sandbox="allow-scripts" iframes.
       const sendBack = (success) => {
-        const iframe = this.$refs.sandbox;
-        if (iframe && iframeSource === iframe.contentWindow) {
-          iframe.contentWindow.postMessage({
+        const liveRef = this.$refs.sandbox || this.$refs.previewSandbox;
+        if (liveRef && iframeSource === liveRef.contentWindow) {
+          iframeSource.postMessage({
             type: "ACTION_RESULT",
             success: success,
             action: action
-          }, "null");
+          }, "*");
         }
       };
       // Check the global window object for Keychain
@@ -3532,7 +3535,7 @@ const LiveTwistComposerComponent = {
 
       <!-- Preview iframe -->
       <div v-if="activeTab === 'preview'" style="border-radius:0 8px 8px 8px;border:1px solid #2e2050;overflow:hidden;">
-        <iframe :key="previewKey" sandbox="allow-scripts"
+        <iframe :key="previewKey" ref="previewSandbox" sandbox="allow-scripts"
           :srcdoc="buildSandboxDoc(code)"
           :style="{ width:'100%', border:'none', display:'block', height: iframeHeight + 'px', background:'#0f0a1e' }"
           scrolling="no"></iframe>
