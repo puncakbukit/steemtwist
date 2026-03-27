@@ -931,7 +931,7 @@ const AboutView = {
       const res  = await fetch("README.md");
       if (!res.ok) throw new Error(res.statusText);
       const text = await res.text();
-      this.html  = marked.parse(text, { breaks: true, gfm: true });
+      this.html  = DOMPurify.sanitize(marked.parse(text, { breaks: true, gfm: true }));
     } catch (e) {
       this.notify("Could not load README.md.", "error");
     }
