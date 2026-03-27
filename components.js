@@ -2501,6 +2501,10 @@ const purify = DOMPurify;
   // ── Execute user code ─────────────────────────────────────────
   const userCode = ${escapedCode};
   try {
+    const EXECUTION_LIMIT_MS = 3000;
+    setTimeout(() => {
+      parent.postMessage({ type: "kill" }, PARENT_ORIGIN);
+    }, EXECUTION_LIMIT_MS);
     const fn = new Function("app", userCode);
     const result = fn(app);
     // Support async code
@@ -3443,7 +3447,7 @@ const LiveTwistComposerComponent = {
 	    "onResult:function(callback){if(app._onResultHandler)window.removeEventListener('message',app._onResultHandler);app._onResultHandler=function(e){if(e.data.type==='QUERY_RESULT'){callback(e.data.success,e.data.result);}else if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}};window.addEventListener('message',app._onResultHandler);}" + 
         "};" +
         "var userCode=" + escaped + ";" +
-        "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
+        "try{const EXECUTION_LIMIT_MS=3000;setTimeout(()=>{parent.postMessage({type:'kill'},PARENT_ORIGIN);},EXECUTION_LIMIT_MS);var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
         "setTimeout(function(){var h=document.body.scrollHeight;if(h>40)parent.postMessage({type:'resize',height:h+16},PARENT_ORIGIN);},150);" +
         "})();<\/script></body></html>";
     },
