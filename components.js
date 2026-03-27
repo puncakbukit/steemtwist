@@ -2556,22 +2556,21 @@ ${'<'}/script>
       // close over `e` directly because the event object may be recycled.
       const iframeSource = e.source;
       const { type, height, queryType, actionType, params } = e.data || {};
-      if (type === "resize" && height) {
-        const iframe = this.$refs.sandbox;
-        if (!iframe || iframeSource !== iframe.contentWindow) return;
-        iframe.style.height = Math.min(height, 600) + "px";
-      }
-	  if (type === "kill") {
-        if (!iframe || iframeSource !== iframe.contentWindow) return;
+      const iframe = this.$refs.sandbox;
+      if (!iframe || iframeSource !== iframe.contentWindow) return;
+      if (type === "resize") {
+        if (height) {
+          iframe.style.height = Math.min(height, 600) + "px";
+		}
+      } else if (type === "kill") {
 	    console.warn("Live Twist killed due to timeout");
-		killIframeExecution();
-	  }
+        // Forcefully reset iframe
+        iframe.srcdoc = "<html><body>Execution terminated</body></html>";
+	  } else if (type === "LIVE_TWIST_QUERY") {
       // --- HANDLE QUERIES to the blockchain ---
-      if (type === "LIVE_TWIST_QUERY") {
         this.handleQueryRequest(queryType, params, iframeSource);
-      }
+      } else if (type === "LIVE_TWIST_ACTION") {
       // --- HANDLE ACTIONS to access blockchain ---
-      if (type === "LIVE_TWIST_ACTION") {
         this.handleActionRequest(actionType, params, iframeSource);
       }
     },
