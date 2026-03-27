@@ -1763,17 +1763,22 @@ const LIVE_TWIST_HANDLER_MIXIN = {
       // QUERY_RESULT to any window; "null" restricts delivery to the sandbox only.
       // reqId is echoed back so app.ask() can route results to the right Promise.
       const sendResult = (error, result) => {
-        // Post directly to iframeSource — works for both LiveTwistComponent
-        // (ref="sandbox") and LiveTwistComposerComponent (ref="previewSandbox"),
-        // as long as the source window is still the live iframe.
-        const liveRef = this.$refs.sandbox || this.$refs.previewSandbox;
-        if (liveRef && iframeSource === liveRef.contentWindow) {
+        // Post directly to iframeSource — it was already validated as the
+        // correct iframe window in onMessage() at event-receive time.
+        // Do NOT re-read liveRef.contentWindow here: the async RPC callback
+        // may fire after Vue has recycled the iframe element (e.g. a reactive
+        // update increments :key), making liveRef.contentWindow stale and
+        // causing the guard to silently drop every query reply.
+        try {
           iframeSource.postMessage({
             type: "QUERY_RESULT",
-            success: error?false:true,
+            success: error ? false : true,
             result: result,
             _reqId: reqId || null
           }, "null");
+        } catch (_) {
+          // iframeSource may have been GC'd if the iframe was destroyed
+          // before the RPC returned — ignore silently.
         }
       };
 
@@ -2244,13 +2249,18 @@ const LIVE_TWIST_HANDLER_MIXIN = {
       // their origin is the opaque string "null", so wildcard "*" would broadcast
       // ACTION_RESULT to any window; "null" restricts delivery to the sandbox only.
       const sendBack = (success) => {
-        const liveRef = this.$refs.sandbox || this.$refs.previewSandbox;
-        if (liveRef && iframeSource === liveRef.contentWindow) {
+        // Post directly to iframeSource — already validated at event-receive
+        // time. Avoid re-reading liveRef.contentWindow asynchronously; after
+        // Keychain returns the iframe may have been recycled by Vue, making the
+        // ref stale and silently dropping the ACTION_RESULT reply.
+        try {
           iframeSource.postMessage({
             type: "ACTION_RESULT",
             success: success,
             action: action
           }, "null");
+        } catch (_) {
+          // iframeSource GC'd — ignore.
         }
       };
       // Check the global window object for Keychain
@@ -3627,8 +3637,6 @@ const LiveTwistComposerComponent = {
     },
     onMessage(e) {
       if (e.origin !== "null") return;
-	  const iframe = this.$refs.previewSandbox;
-      if (!iframe || e.source !== iframe.contentWindow) return;
       const { type, height, queryType, actionType, params, _reqId } = e.data || {};
       if (type === "resize") {
         this.iframeHeight = Math.max(height || 200, this.iframeHeight);
