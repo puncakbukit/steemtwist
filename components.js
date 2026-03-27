@@ -1727,15 +1727,41 @@ const ThreadComponent = {
 //   app.resize(h)     — tell parent to resize the iframe
 //   app.log(msg)      — append a line to the built-in console panel
 //
+// ---- Shared DOMPurify config for Live Twist sandboxes ----
+// Used verbatim by both LiveTwistComponent.sandboxDoc and
+// LiveTwistComposerComponent.buildSandboxDoc so the viewer and the
+// author's preview apply identical sanitisation rules.
+// Serialised to JSON here so it can be embedded as a JS literal inside
+// the srcdoc string without any escaping gymnastics.
+const LIVE_TWIST_PURIFY_CONFIG = JSON.stringify({
+  ALLOWED_TAGS: ["div","span","p","br","b","i","strong","em","u","s",
+                 "h1","h2","h3","h4","ul","ol","li","pre","code",
+                 "table","thead","tbody","tr","th","td","button",
+                 "input","textarea","label","select","option",
+                 "hr","blockquote","a","img"],
+  ALLOWED_ATTR: ["id","class","style","type","value","placeholder",
+                 "checked","disabled","readonly","href","src","alt",
+                 "width","height","rows","cols","for","name","max",
+                 "min","step","multiple"],
+  FORBID_TAGS:  ["script","iframe","object","embed","form","frame"],
+  FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
+                 "onblur","onchange","onsubmit"],
+  ALLOW_DATA_ATTR: false,
+  FORCE_BODY: true
+});
+
 // ---- Shared query/action handler mixin ----
 // Both LiveTwistComponent and LiveTwistComposerComponent need these
 // methods to dispatch iframe postMessage queries/actions to steem.api
 // and Steem Keychain. Defined once here and spread into both components.
 const LIVE_TWIST_HANDLER_MIXIN = {
-    handleQueryRequest(query, params, iframeSource) {
+    handleQueryRequest(query, params, iframeSource, reqId) {
       // Helper to message the specific iframe running this twist.
       // iframeSource is passed in (not closed over) to avoid stale-event bugs.
-      // Target origin "null" is correct for sandbox="allow-scripts" iframes.
+      // Target origin "null" is required for sandbox="allow-scripts" iframes —
+      // their origin is the opaque string "null", so wildcard "*" would broadcast
+      // QUERY_RESULT to any window; "null" restricts delivery to the sandbox only.
+      // reqId is echoed back so app.ask() can route results to the right Promise.
       const sendResult = (error, result) => {
         // Post directly to iframeSource — works for both LiveTwistComponent
         // (ref="sandbox") and LiveTwistComposerComponent (ref="previewSandbox"),
@@ -1745,8 +1771,9 @@ const LIVE_TWIST_HANDLER_MIXIN = {
           iframeSource.postMessage({
             type: "QUERY_RESULT",
             success: error?false:true,
-            result: result
-          }, "*");
+            result: result,
+            _reqId: reqId || null
+          }, "null");
         }
       };
 
@@ -2213,7 +2240,9 @@ const LIVE_TWIST_HANDLER_MIXIN = {
     handleActionRequest(action, params, iframeSource) {
       // Helper to message the specific iframe running this twist.
       // iframeSource is passed in (not closed over) to avoid stale-event bugs.
-      // Target origin "null" is correct for sandbox="allow-scripts" iframes.
+      // Target origin "null" is required for sandbox="allow-scripts" iframes —
+      // their origin is the opaque string "null", so wildcard "*" would broadcast
+      // ACTION_RESULT to any window; "null" restricts delivery to the sandbox only.
       const sendBack = (success) => {
         const liveRef = this.$refs.sandbox || this.$refs.previewSandbox;
         if (liveRef && iframeSource === liveRef.contentWindow) {
@@ -2221,7 +2250,7 @@ const LIVE_TWIST_HANDLER_MIXIN = {
             type: "ACTION_RESULT",
             success: success,
             action: action
-          }, "*");
+          }, "null");
         }
       };
       // Check the global window object for Keychain
@@ -2230,110 +2259,221 @@ const LIVE_TWIST_HANDLER_MIXIN = {
         return;
       }
       // Access injected Vue state via 'this'
-      const currentUsername = this.username; 
+      const currentUsername = this.username;
       if (!currentUsername) {
         this.notify("Please log in first to use this Live Twist feature.", "error");
         return;
       }
-      // User confirmation (The Firewall)
-      const confirmed = confirm(`This Live Twist wants to: ${action}\n\nData: ${JSON.stringify(params)}\n\nAllow this?`);
-      if (!confirmed) return;
 
-      // Map actions to actual Steem logic
+      // ── Param sanitisation ────────────────────────────────────────────────
+      // Validate and coerce all action params before use to prevent a crafted
+      // Live Twist from passing unexpected types or visually spoofed values.
+      // _VALID_STEEM_NAME and safeStr are defined in blockchain.js / above.
+      const safeActionStr  = (v, max = 256) => (typeof v === "string" ? v.slice(0, max) : "");
+      const safeActionName = (v) => {
+        const s = safeActionStr(v, 16).toLowerCase();
+        return _VALID_STEEM_NAME.test(s) ? s : "";
+      };
+      const safeActionAmount = (v) => {
+        // Accept "1.000" or "1" — reject anything that isn't a non-negative decimal string.
+        const s = safeActionStr(v, 32);
+        return /^\d+(\.\d+)?$/.test(s) ? s : "0";
+      };
+      const ALLOWED_CURRENCIES = ["STEEM", "SBD"];
+
+      // Build a human-readable, spoofing-resistant summary of what the action
+      // will do, then show it in a styled in-page modal instead of confirm().
+      // The modal renders labelled rows so unusual unicode / newlines in values
+      // are visually obvious to the user before they approve.
+      let rows = [];   // [{ label, value }] displayed in the modal
+      let execAction;  // () => void — runs the actual Keychain call on approval
+
       if (action === "vote") {
-        // We can use inject/provide or a global call here
-        this.voteTwist(currentUsername, params.permlink, params.author, parseInt(params.weight || 10000), (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);          
-        });
+        const author   = safeActionName(params.author);
+        const permlink = safeActionStr(params.permlink, 255);
+        const weight   = Math.min(Math.max(parseInt(params.weight) || 10000, -10000), 10000);
+        if (!author) { this.notify("vote: invalid author.", "error"); return; }
+        rows = [
+          { label: "Action",   value: "❤️ Vote" },
+          { label: "Author",   value: "@" + author },
+          { label: "Permlink", value: permlink },
+          { label: "Weight",   value: (weight / 100).toFixed(0) + "%" }
+        ];
+        execAction = (cb) => this.voteTwist(currentUsername, permlink, author, weight, cb);
+
       } else if (action === "reply") {
-        this.postTwistReply(currentUsername, params.message, params.parentAuthor, params.parentPermlink, (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const parentAuthor   = safeActionName(params.parentAuthor);
+        const parentPermlink = safeActionStr(params.parentPermlink, 255);
+        const message        = safeActionStr(params.message, 2000);
+        if (!message) { this.notify("reply: empty message.", "error"); return; }
+        rows = [
+          { label: "Action",        value: "💬 Reply" },
+          { label: "Replying to",   value: "@" + parentAuthor + "/" + parentPermlink },
+          { label: "Message",       value: message.slice(0, 120) + (message.length > 120 ? "…" : "") }
+        ];
+        execAction = (cb) => this.postTwistReply(currentUsername, message, parentAuthor, parentPermlink, cb);
+
       } else if (action === "retwist") {
-        this.retwistPost(currentUsername, params.author, params.permlink, (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const author   = safeActionName(params.author);
+        const permlink = safeActionStr(params.permlink, 255);
+        if (!author) { this.notify("retwist: invalid author.", "error"); return; }
+        rows = [
+          { label: "Action",   value: "🔁 Retwist" },
+          { label: "Author",   value: "@" + author },
+          { label: "Permlink", value: permlink }
+        ];
+        execAction = (cb) => this.retwistPost(currentUsername, author, permlink, cb);
+
       } else if (action === "follow") {
-        this.followUser(currentUsername, params.following, (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const following = safeActionName(params.following);
+        if (!following) { this.notify("follow: invalid username.", "error"); return; }
+        rows = [
+          { label: "Action",  value: "➕ Follow" },
+          { label: "Account", value: "@" + following }
+        ];
+        execAction = (cb) => this.followUser(currentUsername, following, cb);
+
       } else if (action === "unfollow") {
-        this.unfollowUser(currentUsername, params.following, (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const following = safeActionName(params.following);
+        if (!following) { this.notify("unfollow: invalid username.", "error"); return; }
+        rows = [
+          { label: "Action",  value: "➖ Unfollow" },
+          { label: "Account", value: "@" + following }
+        ];
+        execAction = (cb) => this.unfollowUser(currentUsername, following, cb);
+
       } else if (action === "transfer") {
-        window.steem_keychain.requestTransfer(currentUsername, params.to, params.amount, params.memo || "", params.currency || "STEEM", (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const to       = safeActionName(params.to);
+        const amount   = safeActionAmount(params.amount);
+        const currency = ALLOWED_CURRENCIES.includes(params.currency) ? params.currency : "STEEM";
+        const memo     = safeActionStr(params.memo || "", 2048);
+        if (!to)              { this.notify("transfer: invalid recipient.", "error"); return; }
+        if (amount === "0")   { this.notify("transfer: invalid amount.", "error"); return; }
+        rows = [
+          { label: "Action",   value: "💸 Transfer" },
+          { label: "To",       value: "@" + to },
+          { label: "Amount",   value: amount + " " + currency },
+          { label: "Memo",     value: memo ? memo.slice(0, 120) + (memo.length > 120 ? "…" : "") : "(none)" }
+        ];
+        execAction = (cb) => window.steem_keychain.requestTransfer(currentUsername, to, amount, memo, currency, cb);
+
       } else if (action === "delegate") {
-        window.steem_keychain.requestDelegation(currentUsername, params.delegatee, params.amount, params.unit || "VEST", (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const delegatee = safeActionName(params.delegatee);
+        const amount    = safeActionAmount(params.amount);
+        const unit      = params.unit === "SP" ? "SP" : "VEST";
+        if (!delegatee)     { this.notify("delegate: invalid delegatee.", "error"); return; }
+        if (amount === "0") { this.notify("delegate: invalid amount.", "error"); return; }
+        rows = [
+          { label: "Action",    value: "🤝 Delegate" },
+          { label: "To",        value: "@" + delegatee },
+          { label: "Amount",    value: amount + " " + unit }
+        ];
+        execAction = (cb) => window.steem_keychain.requestDelegation(currentUsername, delegatee, amount, unit, cb);
+
       } else if (action === "voteWitness") {
-        window.steem_keychain.requestWitnessVote(currentUsername, params.witness, params.vote, (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const witness  = safeActionName(params.witness);
+        const vote     = !!params.vote;
+        if (!witness) { this.notify("voteWitness: invalid witness.", "error"); return; }
+        rows = [
+          { label: "Action",  value: vote ? "✅ Approve witness" : "❌ Remove witness vote" },
+          { label: "Witness", value: "@" + witness }
+        ];
+        execAction = (cb) => window.steem_keychain.requestWitnessVote(currentUsername, witness, vote, cb);
+
       } else if (action === "powerUp") {
-        window.steem_keychain.requestPowerUp(currentUsername, params.to, params.amount, (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const to     = safeActionName(params.to) || currentUsername;
+        const amount = safeActionAmount(params.amount);
+        if (amount === "0") { this.notify("powerUp: invalid amount.", "error"); return; }
+        rows = [
+          { label: "Action", value: "⚡ Power Up" },
+          { label: "To",     value: "@" + to },
+          { label: "Amount", value: amount + " STEEM" }
+        ];
+        execAction = (cb) => window.steem_keychain.requestPowerUp(currentUsername, to, amount, cb);
+
       } else if (action === "powerDown") {
-        window.steem_keychain.requestPowerDown(currentUsername,  params.amount, (res) => {
-          if (res.success) {
-            this.notify(action + " succeeded", "success");
-          } else {
-            this.notify(res.error || res.message || action + " failed.", "error");
-          }
-          sendBack(res.success);
-        });
+        const amount = safeActionAmount(params.amount);
+        if (amount === "0") { this.notify("powerDown: invalid amount.", "error"); return; }
+        rows = [
+          { label: "Action", value: "🔽 Power Down" },
+          { label: "Amount", value: amount + " VESTS" }
+        ];
+        execAction = (cb) => window.steem_keychain.requestPowerDown(currentUsername, amount, cb);
+
       } else {
         console.log(action + " is unsupported.");
+        return;
       }
+
+      // ── In-page confirmation modal ────────────────────────────────────────
+      // Replaces confirm() with a styled overlay that clearly labels each
+      // field so spoofed unicode / misleading values are visually apparent.
+      const modalId = "lt-action-modal-" + Date.now();
+      const rowsHtml = rows.map(r =>
+        `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #2e2050;font-size:13px;">
+           <span style="color:#9b8db0;min-width:80px;flex-shrink:0;">${r.label}</span>
+           <span style="color:#e8e0f0;word-break:break-all;">${
+             String(r.value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+           }</span>
+         </div>`
+      ).join("");
+
+      const overlay = document.createElement("div");
+      overlay.id = modalId;
+      overlay.innerHTML = `
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9999;
+                    display:flex;align-items:center;justify-content:center;">
+          <div style="background:#1e1535;border:1px solid #a855f7;border-radius:12px;
+                      padding:20px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+              <span style="font-size:18px;">⚡</span>
+              <span style="font-weight:700;color:#c084fc;font-size:15px;">Live Twist Action Request</span>
+            </div>
+            <div style="font-size:12px;color:#9b8db0;margin-bottom:10px;">
+              This Live Twist is requesting a blockchain action on your behalf:
+            </div>
+            <div style="background:#0f0a1e;border-radius:8px;padding:10px;margin-bottom:16px;">
+              ${rowsHtml}
+            </div>
+            <div style="font-size:12px;color:#fbbf24;margin-bottom:16px;padding:8px;
+                        background:#2d1f00;border-radius:6px;border:1px solid #78350f;">
+              ⚠️ Verify all details carefully before approving. You will be asked to
+              confirm again in Steem Keychain.
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+              <button id="${modalId}-deny"
+                style="background:#2d0a0a;color:#fca5a5;border:1px solid #7f1d1d;
+                       border-radius:8px;padding:8px 20px;font-size:14px;cursor:pointer;margin:0;">
+                ✕ Deny
+              </button>
+              <button id="${modalId}-approve"
+                style="background:linear-gradient(135deg,#6d28d9,#e0187a);color:#fff;
+                       border:none;border-radius:8px;padding:8px 20px;font-size:14px;
+                       font-weight:600;cursor:pointer;margin:0;">
+                ✓ Approve
+              </button>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      const cleanup = () => { try { document.body.removeChild(overlay); } catch {} };
+
+      document.getElementById(modalId + "-deny").onclick = () => {
+        cleanup();
+        sendBack(false);
+      };
+      document.getElementById(modalId + "-approve").onclick = () => {
+        cleanup();
+        execAction((res) => {
+          if (res.success) {
+            this.notify(action + " succeeded", "success");
+          } else {
+            this.notify(res.error || res.message || action + " failed.", "error");
+          }
+          sendBack(res.success);
+        });
+      };
     }
 };
 
@@ -2375,6 +2515,8 @@ const LiveTwistComponent = {
       // We encode the user code as a JSON string so it survives
       // the srcdoc attribute escaping without any eval trickery.
       const escapedCode = JSON.stringify(this.code);
+      // Embed the shared DOMPurify config so viewer and composer use identical rules.
+      const escapedPurifyConfig = LIVE_TWIST_PURIFY_CONFIG;
       return `<!DOCTYPE html>
 <html>
 <head>
@@ -2408,22 +2550,12 @@ const purify = DOMPurify;
   window.WebSocket   = function() { throw new Error("Network blocked"); };
   window.open        = () => null;
 
+  const _purifyConfig = ${escapedPurifyConfig};
   function sanitize(html) {
     if (typeof html !== "string") return "";
-    if (purify) return purify.sanitize(html, {
-      ALLOWED_TAGS: ["div","span","p","br","b","i","strong","em","u","s",
-                     "h1","h2","h3","h4","ul","ol","li","pre","code",
-                     "table","thead","tbody","tr","th","td","button",
-                     "input","textarea","label","select","option",
-                     "hr","blockquote","a","img"],
-      ALLOWED_ATTR: ["id","class","style","type","value","placeholder",
-                     "checked","disabled","readonly","href","src","alt",
-                     "width","height","rows","cols","for","name","max",
-                     "min","step","multiple"],
-      FORBID_TAGS:  ["script","iframe","object","embed","form","frame"],
-      FORBID_ATTR:  ["onclick","onerror","onload","onmouseover","onfocus",
-                     "onblur","onchange","onsubmit"]
-    });
+    // Use the shared config injected from LIVE_TWIST_PURIFY_CONFIG so the
+    // viewer and the composer preview apply identical sanitisation rules.
+    if (purify) return purify.sanitize(html, _purifyConfig);
     // Sandbox is already fully isolated — return html as-is when DOMPurify unavailable
     return html;
   }
@@ -2488,6 +2620,34 @@ const purify = DOMPurify;
         }
       };
       window.addEventListener("message", app._onResultHandler);
+    },
+    // --- Request-ID-correlated query for concurrent use ---
+    // app.ask(type, params) returns a Promise that resolves/rejects with
+    // the result of that specific request, regardless of other in-flight
+    // requests. Use this instead of app.query()+app.onResult() when you
+    // need to fire multiple queries concurrently without callback collisions.
+    // Example: const [tags, props] = await Promise.all([
+    //            app.ask("getTrendingTags", { limit: 5 }),
+    //            app.ask("getDynamicGlobalProperties") ]);
+    ask(type, params = {}) {
+      const reqId = Math.random().toString(36).slice(2);
+      return new Promise((resolve, reject) => {
+        const handler = (e) => {
+          const d = e.data;
+          if (d.type === "QUERY_RESULT" && d._reqId === reqId) {
+            window.removeEventListener("message", handler);
+            if (d.success) resolve(d.result);
+            else reject(new Error("Query failed: " + type));
+          }
+        };
+        window.addEventListener("message", handler);
+        parent.postMessage({
+          type: "LIVE_TWIST_QUERY",
+          queryType: type,
+          params: params,
+          _reqId: reqId
+        }, PARENT_ORIGIN);
+      });
     }
   };
 
@@ -2555,7 +2715,7 @@ ${'<'}/script>
       // Capture the source window immediately — async callbacks must not
       // close over `e` directly because the event object may be recycled.
       const iframeSource = e.source;
-      const { type, height, queryType, actionType, params } = e.data || {};
+      const { type, height, queryType, actionType, params, _reqId } = e.data || {};
       const iframe = this.$refs.sandbox;
       if (!iframe || iframeSource !== iframe.contentWindow) return;
       if (type === "resize") {
@@ -2568,7 +2728,7 @@ ${'<'}/script>
         iframe.srcdoc = "<html><body>Execution terminated</body></html>";
 	  } else if (type === "LIVE_TWIST_QUERY") {
       // --- HANDLE QUERIES to the blockchain ---
-        this.handleQueryRequest(queryType, params, iframeSource);
+        this.handleQueryRequest(queryType, params, iframeSource, _reqId);
       } else if (type === "LIVE_TWIST_ACTION") {
       // --- HANDLE ACTIONS to access blockchain ---
         this.handleActionRequest(actionType, params, iframeSource);
@@ -3418,6 +3578,9 @@ const LiveTwistComposerComponent = {
     ...LIVE_TWIST_HANDLER_MIXIN,
     buildSandboxDoc(userCode) {
       const escaped = JSON.stringify(userCode);
+      // Embed the shared DOMPurify config so the composer preview uses
+      // identical sanitisation rules to what viewers see.
+      const escapedPurifyConfig = LIVE_TWIST_PURIFY_CONFIG;
       return "<!DOCTYPE html><html><head><meta charset='utf-8'>" + 
 		"<script src='https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js' integrity='sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=' crossorigin='anonymous'></script><style>" +
         "body{margin:0;padding:8px;font-family:system-ui,sans-serif;font-size:14px;" +
@@ -3438,7 +3601,8 @@ const LiveTwistComposerComponent = {
         "window.WebSocket=function(){throw new Error('Network blocked');};" +
         "window.open=()=>null;" +
         "var purify=DOMPurify;" +
-        "function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,{FORBID_TAGS:['script','iframe','object','embed'],FORBID_ATTR:['onclick','onerror','onload','onmouseover','onfocus'],ALLOW_DATA_ATTR:false,FORCE_BODY:true});return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}" +
+        "var _purifyConfig=" + escapedPurifyConfig + ";" +
+        "function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,_purifyConfig);return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}" +
         "var _log=document.getElementById('_log');" +
         "var _root=document.getElementById('_root');" +
         "var app={" +
@@ -3446,9 +3610,10 @@ const LiveTwistComposerComponent = {
         "text:function(s){_root.textContent=String(s).slice(0,2000);}," +
         "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},PARENT_ORIGIN);}," +
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}," +
-		"query:function(type,params=[]){parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params},PARENT_ORIGIN);}," + 
-        "action:function(type,params={}){parent.postMessage({type:'LIVE_TWIST_ACTION',actionType:type,params:params},PARENT_ORIGIN);}," + 
-	    "onResult:function(callback){if(app._onResultHandler)window.removeEventListener('message',app._onResultHandler);app._onResultHandler=function(e){if(e.data.type==='QUERY_RESULT'){callback(e.data.success,e.data.result);}else if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}};window.addEventListener('message',app._onResultHandler);}" + 
+		"query:function(type,params){params=params||{};parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params},PARENT_ORIGIN);}," +
+        "action:function(type,params){params=params||{};parent.postMessage({type:'LIVE_TWIST_ACTION',actionType:type,params:params},PARENT_ORIGIN);}," +
+	    "onResult:function(callback){if(app._onResultHandler)window.removeEventListener('message',app._onResultHandler);app._onResultHandler=function(e){if(e.data.type==='QUERY_RESULT'){callback(e.data.success,e.data.result);}else if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}};window.addEventListener('message',app._onResultHandler);}," +
+        "ask:function(type,params){params=params||{};var reqId=Math.random().toString(36).slice(2);return new Promise(function(resolve,reject){var h=function(e){var d=e.data;if(d.type==='QUERY_RESULT'&&d._reqId===reqId){window.removeEventListener('message',h);if(d.success)resolve(d.result);else reject(new Error('Query failed: '+type));}};window.addEventListener('message',h);parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params,_reqId:reqId},PARENT_ORIGIN);});}," +
         "};" +
         "var userCode=" + escaped + ";" +
         "try{const EXECUTION_LIMIT_MS=3000;setTimeout(()=>{parent.postMessage({type:'kill'},PARENT_ORIGIN);},EXECUTION_LIMIT_MS);var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
@@ -3462,7 +3627,7 @@ const LiveTwistComposerComponent = {
     },
     onMessage(e) {
       if (e.origin !== "null") return;
-      const { type, height, queryType, actionType, params } = e.data || {};
+      const { type, height, queryType, actionType, params, _reqId } = e.data || {};
       if (type === "resize") {
         this.iframeHeight = Math.max(height || 200, this.iframeHeight);
       }
@@ -3470,7 +3635,7 @@ const LiveTwistComposerComponent = {
       // Without this, app.query() calls in template previews hang forever because
       // the composer's iframe sends the postMessage but nothing was listening.
       if (type === "LIVE_TWIST_QUERY") {
-        this.handleQueryRequest(queryType, params, e.source);
+        this.handleQueryRequest(queryType, params, e.source, _reqId);
       }
       if (type === "LIVE_TWIST_ACTION") {
         this.handleActionRequest(actionType, params, e.source);
