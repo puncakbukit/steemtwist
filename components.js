@@ -2561,6 +2561,11 @@ ${'<'}/script>
         if (!iframe || iframeSource !== iframe.contentWindow) return;
         iframe.style.height = Math.min(height, 600) + "px";
       }
+	  if (e.data?.type === "kill") {
+        if (e.source !== iframe.contentWindow) return;
+	    console.warn("Live Twist killed due to timeout");
+		killIframeExecution();
+	  }
       // --- HANDLE QUERIES to the blockchain ---
       if (type === "LIVE_TWIST_QUERY") {
         this.handleQueryRequest(queryType, params, iframeSource);
