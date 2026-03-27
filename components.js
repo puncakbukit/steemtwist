@@ -2561,8 +2561,8 @@ ${'<'}/script>
         if (!iframe || iframeSource !== iframe.contentWindow) return;
         iframe.style.height = Math.min(height, 600) + "px";
       }
-	  if (e.data?.type === "kill") {
-        if (e.source !== iframe.contentWindow) return;
+	  if (type === "kill") {
+        if (!iframe || iframeSource !== iframe.contentWindow) return;
 	    console.warn("Live Twist killed due to timeout");
 		killIframeExecution();
 	  }
