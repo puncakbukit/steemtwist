@@ -2435,6 +2435,11 @@ const purify = DOMPurify;
   const app = {
     render(html) {
       _root.innerHTML = sanitize(String(html));
+      // Resize after a microtask so the DOM has fully settled before measuring.
+      setTimeout(function() {
+        var h = document.body.scrollHeight;
+        if (h > 40) parent.postMessage({ type: "resize", height: h + 16 }, PARENT_ORIGIN);
+      }, 0);
     },
     text(str) {
       _root.textContent = String(str).slice(0, 2000);
@@ -3429,7 +3434,7 @@ const LiveTwistComposerComponent = {
         "var _log=document.getElementById('_log');" +
         "var _root=document.getElementById('_root');" +
         "var app={" +
-        "render:function(h){_root.innerHTML=sanitize(String(h));}," +
+        "render:function(h){_root.innerHTML=sanitize(String(h));setTimeout(function(){var rh=document.body.scrollHeight;if(rh>40)parent.postMessage({type:'resize',height:rh+16},PARENT_ORIGIN);},0);}," +
         "text:function(s){_root.textContent=String(s).slice(0,2000);}," +
         "resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'resize',height:px},PARENT_ORIGIN);}," +
         "log:function(){var a=Array.prototype.slice.call(arguments);_log.style.display='block';var l=document.createElement('div');l.textContent=a.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join(' ');_log.appendChild(l);_log.scrollTop=_log.scrollHeight;}," +
@@ -3444,13 +3449,14 @@ const LiveTwistComposerComponent = {
     },
     runPreview() {
       this.activeTab = "preview";
+      this.iframeHeight = 60;   // reset so each run grows from scratch
       this.previewKey++;
     },
     onMessage(e) {
       if (e.origin !== "null") return;
       const { type, height, queryType, actionType, params } = e.data || {};
       if (type === "resize") {
-        this.iframeHeight = Math.min(height || 200, 480);
+        this.iframeHeight = Math.max(height || 200, this.iframeHeight);
       }
       // Forward blockchain queries from the preview iframe to the shared handlers.
       // Without this, app.query() calls in template previews hang forever because
