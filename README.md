@@ -74,7 +74,8 @@ Just as a blog writer is a *blogger* and a YouTube creator is a *YouTuber*, ever
 
 ### Live Twists ⚡
 - Write JavaScript that runs in an **isolated iframe sandbox** when viewers click ▶ Run
-- Full **Live Twist Editor** with Code tab, ▶ Preview tab (WYSIWYG), and Templates gallery
+- Full **Live Twist Editor** with Code tab, ▶ Preview tab (WYSIWYG, auto-resizing), and Templates gallery
+- **Templates gallery** — 40 ready-to-use examples across four categories: Simple (interactive widgets), Greetings (animated cards), Queries (read-only blockchain data), and Actions (Keychain operations)
 - **Edit** published Live Twists with the inline Live Twist editor (Card label, Body, Code fields)
 - **Blockchain queries** — call read-only Steem API methods from inside the sandbox via `app.query()`
 - **Blockchain actions** — trigger Keychain-signed operations (vote, reply, follow, transfer, etc.) via `app.action()`, each requiring explicit user confirmation
@@ -111,17 +112,19 @@ Stored in `json_metadata`. The `body` field of the Steem comment is shown on non
 
 | Method | Description |
 |---|---|
-| `app.render(html)` | Sanitise and set `body` innerHTML |
+| `app.render(html)` | Sanitise and set `body` innerHTML; automatically resizes the iframe to fit the new content |
 | `app.text(str)` | Set `body` as plain text (max 2000 chars) |
-| `app.resize(px)` | Resize the iframe height (max 600 px) |
+| `app.resize(px)` | Manually resize the iframe height (40–600 px) |
 | `app.log(...args)` | Append a line to the built-in console panel |
 | `app.query(type, params)` | Call a read-only Steem API method; result delivered via `app.onResult()` |
 | `app.action(type, params)` | Request a Keychain-signed blockchain operation; requires explicit user confirmation; result delivered via `app.onResult()` |
-| `app.onResult(callback)` | Register `callback(success, type)` to receive results from `app.query()` and `app.action()` calls |
+| `app.onResult(callback)` | Register `callback(success, data)` to receive results from `app.query()` and `app.action()` calls. Each call replaces any previously registered callback — only one listener is active at a time |
+
+> **Auto-resize:** `app.render()` fires an automatic resize postMessage after every call so the iframe always grows to show the full output. This means query templates that update their UI after receiving results will resize correctly without any manual `app.resize()` call.
 
 #### Supported `app.query()` types
 
-Read-only Steem API calls. Pass parameters as a plain object matching the steem-js argument names.
+Read-only Steem API calls. Pass parameters as a plain object matching the steem-js argument names. All `limit` parameters are capped to a maximum of 100; all string parameters are capped to 256 characters to prevent oversized RPC payloads.
 
 **Discussions:** `getDiscussionsByCreated`, `getDiscussionsByTrending30`, `getDiscussionsByActive`, `getDiscussionsByHot`, `getDiscussionsByVotes`, `getDiscussionsByChildren`, `getDiscussionsByCashout`, `getDiscussionsByPayout`, `getDiscussionsByFeed`, `getDiscussionsByBlog`, `getDiscussionsByComments`, `getDiscussionsByPromoted`, `getCommentDiscussionsByPayout`, `getPostDiscussionsByPayout`, `getDiscussionsByAuthorBeforeDate`
 
@@ -135,7 +138,7 @@ Read-only Steem API calls. Pass parameters as a plain object matching the steem-
 
 **Chain globals:** `getConfig`, `getDynamicGlobalProperties`, `getChainProperties`, `getFeedHistory`, `getCurrentMedianHistoryPrice`, `getTicker`, `getTradeHistory`, `getVolume`, `getVersion`, `getHardforkVersion`, `getNextScheduledHardfork`, `getRewardFund`, `getVestingDelegations`
 
-**Blocks:** `getBlockHeader`, `getBlock`, `getOpsInBlock`, `getStateWith`
+**Blocks:** `getBlockHeader`, `getBlock`, `getOpsInBlock`, `getStateWithPath` (uses `params.path`), `getStateWithOptions` (uses `params.options`)
 
 **Market:** `getOrderBook`, `getMarketOrderBook`, `getOpenOrders`, `getLiquidityQueue`, `getMarketHistoryBuckets`, `getRecentTrades`, `getSavingsWithdrawFrom`, `getSavingsWithdrawTo`
 
@@ -164,15 +167,29 @@ Each action triggers a Keychain confirmation popup. The user must approve before
 | `powerUp` | `to`, `amount` |
 | `powerDown` | `amount` |
 
+### Templates gallery
+
+The Live Twist composer includes a built-in gallery of 40 templates organised into four tabs. Selecting a template always replaces the current Title, Body, and Code fields.
+
+| Tab | Count | Contents |
+|---|---|---|
+| **Simple** | 10 | Poll, Quiz, Clicker, Calculator, Chart, Expandable, Story, Demo, Explorer, Prototype |
+| **Greetings** | 10 | Birthday, New Year, Congratulations, Wedding, Graduation, Eid, Christmas, Thank You, Get Well, Anniversary |
+| **Queries** | 10 | Account Info, Trending Tags, STEEM Price, Hot Posts, Follower Count, Top Witnesses, Chain Stats, Post Viewer, Order Book, Reward Pool |
+| **Actions** | 10 | Vote on a Post, Reply to a Post, Follow Account, Transfer STEEM, Delegate SP, Power Up, Vote for Witness, Retwist, Query then Vote, Query then Follow |
+
+The **Preview** tab in the composer runs the current code in a live sandbox. The preview iframe auto-resizes to show all output — including results that arrive asynchronously after blockchain queries resolve — and resets to a minimal height each time a new preview is started.
+
 ### Security layers
 
 1. `<iframe sandbox="allow-scripts">` — isolated null origin, no same-origin access
-2. Network blocked: `fetch`, `XMLHttpRequest`, `WebSocket`, `window.open` all throw
-3. DOMPurify sanitises every `app.render()` call (forbids `<script>`, `<iframe>`, `on*` attributes)
+2. Network blocked: `fetch`, `XMLHttpRequest`, `WebSocket`, `window.open` all throw inside the sandbox
+3. DOMPurify sanitises every `app.render()` call (loaded from CDN via a `<script src>` tag in the sandbox `<head>`; the parent page's CSP already includes `cdnjs.cloudflare.com` in `script-src`); forbidden tags: `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `<frame>`; forbidden attributes: all `on*` event handlers
 4. 10 KB code size limit enforced before publish
 5. User must click ▶ Run — never auto-executed
 6. Keychain is never accessible from inside the sandbox — all `app.action()` calls route through the parent page with an explicit `confirm()` firewall before reaching Keychain
-7. `postMessage` from sandbox to parent uses the hardcoded `PARENT_ORIGIN` constant; from parent to sandbox uses target origin `"null"` — wildcard `"*"` is never used
+7. `postMessage` from sandbox to parent uses the hardcoded `PARENT_ORIGIN` constant; the parent validates `e.origin === "null"` and `e.source === iframe.contentWindow` on every inbound message
+8. All `app.query()` parameters are sanitised before reaching `steem.api`: string values capped to 256 chars (`safeStr`), limit values clamped to 1–100 (`safeLimit`), integers coerced with a safe fallback (`safeInt`), array inputs validated with `Array.isArray` and sliced to 10 entries
 
 ### Minimum test code
 
@@ -355,6 +372,10 @@ steemtwist/
 
 ## `components.js` reference
 
+### Architecture note
+
+`handleQueryRequest` and `handleActionRequest` are defined once in `LIVE_TWIST_HANDLER_MIXIN` and spread into both `LiveTwistComponent` and `LiveTwistComposerComponent`. This ensures query/action behaviour is identical between the live viewer and the composer preview. The mixin resolves the active iframe via `this.$refs.sandbox || this.$refs.previewSandbox` so it works with either component's ref name.
+
 | Component | Description |
 |---|---|
 | `AppNotificationComponent` | Toast; auto-dismiss 3.5 s for non-errors |
@@ -363,9 +384,9 @@ steemtwist/
 | `LoadingSpinnerComponent` | Animated spinner |
 | `ReplyCardComponent` | Reply: Love / Retwist / Reply / Edit / Delete; Write/Preview on reply box |
 | `ThreadComponent` | Lazy-loads replies; enriches `active_votes` |
-| `LiveTwistComponent` | Renders a Live Twist card: ▶ Run / ■ Stop, sandboxed iframe, blockchain query/action bridge, security notice |
+| `LiveTwistComponent` | Renders a Live Twist card: ▶ Run / ■ Stop, sandboxed iframe (`ref="sandbox"`), blockchain query/action bridge via `LIVE_TWIST_HANDLER_MIXIN`, security notice |
 | `TwistCardComponent` | Full twist card: action bar (Love, Retwist, Replies, **Flag** for Live Twists); body; Edit; Delete; inline flag panel with reason selector |
-| `LiveTwistComposerComponent` | Live Twist editor: Card label, Body, Code textarea, ▶ Preview sandbox, Templates gallery, Publish ⚡ |
+| `LiveTwistComposerComponent` | Live Twist editor: Card label, Body, Code textarea, ▶ Preview sandbox (`ref="previewSandbox"`), auto-resizing preview iframe, Templates gallery (Simple / Greetings / Queries / Actions), Publish ⚡ |
 | `TwistComposerComponent` | 🌀 Twist / ⚡ Live Twist tabs; Write/Preview on twist pane |
 | `SignalItemComponent` | Signal row: icon, label, preview, timestamp, View link |
 | `UserRowComponent` | Twister row with optional Follow/Unfollow button |
@@ -401,6 +422,10 @@ steemtwist/
 | `understreamOn` | `ref<boolean>` | Persisted in `localStorage` |
 | `toggleUnderstream` | `function()` | Flips and persists `understreamOn` |
 
+The following are also provided and injected by `LiveTwistComposerComponent` (in addition to `LiveTwistComponent`) so that blockchain actions work correctly in the composer preview:
+
+`voteTwist`, `postTwistReply`, `retwistPost`, `followUser`, `unfollowUser`
+
 ---
 
 ## Security
@@ -416,8 +441,10 @@ All CDN scripts (`steem-js`, `vue`, `vue-router`, `marked`, `DOMPurify`) load wi
 ### Live Twist sandbox
 - Sandboxed iframe uses `sandbox="allow-scripts"` only — null origin, no same-origin, no form submission, no top navigation.
 - `fetch`, `XMLHttpRequest`, `WebSocket`, and `window.open` are all overridden to throw inside the sandbox.
-- `postMessage` from parent to sandbox uses target origin `"null"` (not `"*"`); from sandbox to parent uses the hardcoded `PARENT_ORIGIN` constant.
-- The parent validates `e.origin === "null"` on every inbound message and additionally checks `e.source === iframe.contentWindow` before acting. The source window reference is captured immediately from the event object to avoid stale-closure bugs in async callbacks.
+- DOMPurify is loaded inside the sandbox from CDN via a `<script src>` tag in the sandbox `<head>`. The parent page's CSP includes `cdnjs.cloudflare.com` in `script-src`, and sandboxed iframes inherit the parent CSP.
+- `postMessage` from sandbox to parent uses the hardcoded `PARENT_ORIGIN` constant; from parent to sandbox uses target origin `"*"` (required because the sandbox's null origin cannot be addressed with `"null"` as a postMessage target).
+- The parent validates `e.origin === "null"` and additionally checks `e.source === liveRef.contentWindow` before acting on any message. The source window reference is captured immediately from the event object to avoid stale-closure bugs in async callbacks.
+- All `app.query()` parameters are sanitised: strings capped to 256 chars, limits clamped to 1–100, integers coerced with safe fallbacks, array inputs sliced to 10 entries.
 
 ### localStorage
 - The pending-pin cache (`getPinCache`) validates `author` against `/^[a-z0-9\-.]{3,16}$/` and `permlink` against `/^[a-z0-9-]{1,255}$/` before use. Tampered or injected cache values are silently discarded.
