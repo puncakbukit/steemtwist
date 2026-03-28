@@ -1775,7 +1775,7 @@ const LIVE_TWIST_HANDLER_MIXIN = {
             success: error ? false : true,
             result: result,
             _reqId: reqId || null
-          }, "null");
+          }, "*");
         } catch (_) {
           // iframeSource may have been GC'd if the iframe was destroyed
           // before the RPC returned — ignore silently.
@@ -2258,7 +2258,7 @@ const LIVE_TWIST_HANDLER_MIXIN = {
             type: "ACTION_RESULT",
             success: success,
             action: action
-          }, "null");
+          }, "*");
         } catch (_) {
           // iframeSource GC'd — ignore.
         }
