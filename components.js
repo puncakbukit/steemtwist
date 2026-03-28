@@ -660,8 +660,8 @@ function draw() {
     "<button id='lu'>Look up</button></div>" +
     (fc ? "<div style='font-size:12px;color:#9b8db0;margin-bottom:8px;'>@"+target+" — Followers: <b style='color:#e8e0f0;'>"+fc.follower_count+"</b></div>" : "") +
     "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
-    "<button id='f' style='background:"+(mode==="follow"?"#166534":"#1e1535")+";border:1px solid "+(mode==="follow"?"#4ade80":"#2e2050")+";">Follow</button>" +
-    "<button id='u' style='background:"+(mode==="unfollow"?"#7f1d1d":"#1e1535")+";border:1px solid "+(mode==="unfollow"?"#f87171":"#2e2050")+";">Unfollow</button>" +
+    "<button id='f' style='background:"+(mode==="follow"?"#166534":"#1e1535")+";border:1px solid "+(mode==="follow"?"#4ade80":"#2e2050")+";"+"'>Follow</button>" +
+    "<button id='u' style='background:"+(mode==="unfollow"?"#7f1d1d":"#1e1535")+";border:1px solid "+(mode==="unfollow"?"#f87171":"#2e2050")+";"+"'>Unfollow</button>" +
     "</div>" +
     (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
     "<button id='go'>✓ Confirm " + mode + "</button>" +
@@ -732,7 +732,7 @@ function draw() {
     delegatee = document.getElementById("d").value.trim();
     sp = document.getElementById("sp").value.trim();
     if (!delegatee) { msg = "Enter a username."; draw(); return; }
-    app.action("delegate", { delegatee, amount: sp + ".000000 VESTS", unit: "SP" });
+    app.action("delegate", { delegatee, amount: sp, unit: "SP" });
   };
 }
 app.onResult((ok, type) => {
@@ -792,8 +792,8 @@ function draw() {
     "<button id='lu'>Look up</button></div>" +
     (wInfo ? "<div style='font-size:12px;color:#9b8db0;margin-bottom:8px;'>@"+wInfo.owner+" — Votes: <b style='color:#e8e0f0;'>"+parseInt(wInfo.votes/1e9)+"B</b></div>" : "") +
     "<div style='display:flex;gap:6px;margin-bottom:8px;'>" +
-    "<button id='vt' style='background:"+(vote?"#166534":"#1e1535")+";border:1px solid "+(vote?"#4ade80":"#2e2050")+";">✅ Vote</button>" +
-    "<button id='uv' style='background:"+(!vote?"#7f1d1d":"#1e1535")+";border:1px solid "+(!vote?"#f87171":"#2e2050")+";">❌ Unvote</button>" +
+    "<button id='vt' style='background:"+(vote?"#166534":"#1e1535")+";border:1px solid "+(vote?"#4ade80":"#2e2050")+";"+"'>✅ Vote</button>" +
+    "<button id='uv' style='background:"+(!vote?"#7f1d1d":"#1e1535")+";border:1px solid "+(!vote?"#f87171":"#2e2050")+";"+"'>❌ Unvote</button>" +
     "</div>" +
     (msg ? "<div style='font-size:12px;color:"+(done?"#4ade80":"#fca5a5")+";margin-bottom:6px;'>" + msg + "</div>" : "") +
     "<button id='go'>🗳️ Submit</button>" +
