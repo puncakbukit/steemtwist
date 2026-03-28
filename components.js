@@ -3667,10 +3667,13 @@ const LiveTwistComposerComponent = {
       this.previewKey++;
     },
     onMessage(e) {
-      if (e.origin !== "null") return;
-	  if (!iframe || iframeSource !== iframe.contentWindow) return;
+	  if (e.origin !== "null") return;
+      const iframeSource = e.source;
       const { type, height, queryType, actionType, params, _reqId } = e.data || {};
-      if (type === "resize") {
+      const iframe = this.$refs.sandbox;
+      if (!iframe || iframeSource !== iframe.contentWindow) return;
+
+	  if (type === "resize") {
         this.iframeHeight = Math.max(height || 200, this.iframeHeight);
       }
       // Forward blockchain queries from the preview iframe to the shared handlers.
