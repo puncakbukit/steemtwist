@@ -2823,6 +2823,7 @@ ${'<'}/script>
           :key="iframeKey"
           ref="sandbox"
           sandbox="allow-scripts"
+		  allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'"
           :srcdoc="sandboxDoc"
           style="
             width:100%;border:none;display:block;
