@@ -1869,7 +1869,7 @@ const App = {
     <div v-if="keychainReady && !hasKeychain" class="keychain-notice" style="text-align:center;">
       <strong style="color:#a855f7;">Read-only mode</strong> — Install the
       <a href="https://www.google.com/search?q=steem+keychain+browser+extension" target="_blank"
-         style="color:#22d3ee;">Steem Keychain</a>
+         rel="noopener" style="color:#22d3ee;">Steem Keychain</a>
       browser extension to post twists and give twist love.
     </div>
 
