@@ -2282,13 +2282,15 @@ const LIVE_TWIST_HANDLER_MIXIN = {
       // Check the global window object for Keychain
       if (!window.steem_keychain) {
         this.notify("Steem Keychain extension is not installed.", "error");
-        return;
+        sendBack(false);
+		return;
       }
       // Access injected Vue state via 'this'
       const currentUsername = this.username;
       if (!currentUsername) {
         this.notify("Please log in first to use this Live Twist feature.", "error");
-        return;
+        sendBack(false);
+		return;
       }
 
       // ── Param sanitisation ────────────────────────────────────────────────
@@ -2428,7 +2430,8 @@ const LIVE_TWIST_HANDLER_MIXIN = {
 
       } else {
         console.log(action + " is unsupported.");
-        return;
+        sendBack(false);
+		return;
       }
 
       // ── In-page confirmation modal ────────────────────────────────────────
