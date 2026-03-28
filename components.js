@@ -3752,7 +3752,7 @@ const LiveTwistComposerComponent = {
 
       <!-- Preview iframe -->
       <div v-if="activeTab === 'preview'" style="border-radius:0 8px 8px 8px;border:1px solid #2e2050;overflow:hidden;">
-        <iframe :key="previewKey" ref="previewSandbox" sandbox="allow-scripts"
+        <iframe :key="previewKey" ref="previewSandbox" sandbox="allow-scripts" allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'" 
           :srcdoc="buildSandboxDoc(code)"
           :style="{ width:'100%', border:'none', display:'block', height: iframeHeight + 'px', background:'#0f0a1e' }"
           scrolling="no"></iframe>
