@@ -3668,6 +3668,7 @@ const LiveTwistComposerComponent = {
     },
     onMessage(e) {
       if (e.origin !== "null") return;
+	  if (!iframe || iframeSource !== iframe.contentWindow) return;
       const { type, height, queryType, actionType, params, _reqId } = e.data || {};
       if (type === "resize") {
         this.iframeHeight = Math.max(height || 200, this.iframeHeight);
