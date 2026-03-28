@@ -1275,7 +1275,8 @@ const ReplyCardComponent = {
       isEditing:     false,
       showDeleteConfirm: false,
       isDeleting:    false,
-      editedBody:    null
+      editedBody:    null,
+      replyExpanded: false   // true once user clicks "Expand"
     };
   },
   computed: {
@@ -1304,6 +1305,13 @@ const ReplyCardComponent = {
       return `#/@${this.reply.author}/${this.reply.permlink}`;
     },
     bodyHtml() { return DOMPurify.sanitize(renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.reply.body))); },
+    isLong() { return stripBackLink(this.reply.body).length > PREVIEW_LENGTH; },
+    bodyPreviewHtml() {
+      return DOMPurify.sanitize(renderMarkdown(
+        stripBackLink(this.editedBody !== null ? this.editedBody : this.reply.body)
+          .slice(0, PREVIEW_LENGTH) + "…"
+      ));
+    },
     replyPreviewHtml() {
       return this.replyText.trim()
         ? DOMPurify.sanitize(renderMarkdown(this.replyText))
@@ -1439,8 +1447,16 @@ const ReplyCardComponent = {
             >{{ relativeTime }}</a>
           </div>
 
-          <!-- Body -->
-          <div class="twist-body" style="font-size:14px;" v-html="bodyHtml"></div>
+          <!-- Body — collapsed to PREVIEW_LENGTH if long, expanded on click -->
+          <div class="twist-body" style="font-size:14px;"
+            v-html="isLong && !replyExpanded ? bodyPreviewHtml : bodyHtml"
+          ></div>
+          <div v-if="isLong" style="margin-bottom:4px;">
+            <button
+              @click="replyExpanded = !replyExpanded"
+              style="background:none;border:none;padding:0;color:#a855f7;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;"
+            >{{ replyExpanded ? "▲ Collapse" : "▼ Expand" }}</button>
+          </div>
 
           <!-- Actions: love + retwist + reply + permalink -->
           <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
@@ -3574,9 +3590,20 @@ const LiveTwistComposerComponent = {
     codeBytes() { return new TextEncoder().encode(this.code).length; },
     tooBig()    { return this.codeBytes > 10240; },
     sizeLabel() { return (this.codeBytes / 1024).toFixed(1) + " / 10 KB"; },
+    // Title + body combined character count and limit.
+    // Mirrors the 280-char cap of regular twists across both fields together.
+    headerCharCount() { return this.title.length + this.body.length; },
+    headerOverLimit() { return this.headerCharCount > 280; },
+    headerLabel() {
+      const rem = 280 - this.headerCharCount;
+      return rem >= 0
+        ? `${rem} chars left (label + body)`
+        : `${Math.abs(rem)} chars over limit`;
+    },
     canPost() {
       return !!this.username && this.hasKeychain &&
-             this.code.trim().length > 0 && !this.tooBig && !this.isPosting;
+             this.code.trim().length > 0 && !this.tooBig &&
+             !this.headerOverLimit && !this.isPosting;
     }
   },
   watch: {
@@ -3693,7 +3720,7 @@ const LiveTwistComposerComponent = {
         <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">
           Card label <span style="color:#5a4e70;">(optional — shown next to &#9889; in the card)</span>
         </label>
-        <input v-model="title" type="text" placeholder="Live Twist" maxlength="80"
+        <input v-model="title" type="text" placeholder="Live Twist"
           style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;" />
       </div>
 
@@ -3702,7 +3729,7 @@ const LiveTwistComposerComponent = {
         <label style="font-size:12px;color:#9b8db0;display:block;margin-bottom:3px;">
           Body <span style="color:#5a4e70;">(shown on Steemit — max 280 chars, like a regular twist)</span>
         </label>
-        <input v-model="body" type="text" placeholder="&#9889; Live Twist — view on SteemTwist" maxlength="280"
+        <input v-model="body" type="text" placeholder="&#9889; Live Twist — view on SteemTwist"
           style="width:100%;box-sizing:border-box;padding:6px 10px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:14px;" />
       </div>
 
@@ -3780,7 +3807,10 @@ const LiveTwistComposerComponent = {
 
       <!-- Footer -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap;gap:6px;">
-        <span :style="{ fontSize:'12px', color: tooBig ? '#fca5a5' : '#5a4e70' }">{{ sizeLabel }}{{ tooBig ? ' — exceeds 10 KB limit' : '' }}</span>
+        <span style="display:flex;gap:10px;flex-wrap:wrap;">
+          <span :style="{ fontSize:'12px', color: tooBig ? '#fca5a5' : '#5a4e70' }">{{ sizeLabel }}{{ tooBig ? ' — exceeds 10 KB limit' : '' }}</span>
+          <span :style="{ fontSize:'12px', color: headerOverLimit ? '#fca5a5' : '#5a4e70' }">{{ headerLabel }}</span>
+        </span>
         <div style="display:flex;gap:6px;">
           <button v-if="activeTab !== 'preview' && activeTab !== 'templates'" @click="runPreview" :disabled="!code.trim()"
             style="background:#1e1535;border:1px solid #f97316;color:#fb923c;border-radius:20px;padding:5px 14px;font-size:12px;margin:0;">&#9654; Preview</button>
