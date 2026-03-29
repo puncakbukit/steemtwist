@@ -209,10 +209,12 @@ function fetchPostsByUser(username, limit = 50, cursor = null) {
     const page = hasMore ? posts.slice(0, limit) : posts;
     // When using a cursor the API repeats the start post — drop it.
     const trimmed = cursor ? page.slice(1) : page;
+    // Filter out resteemed posts — only keep posts authored by `username`
+    const ownPosts = trimmed.filter(p => p.author === username);
     const nextCursor = hasMore
       ? { author: page[page.length - 1].author, permlink: page[page.length - 1].permlink }
       : null;
-    return { posts: trimmed, nextCursor };
+    return { posts: ownPosts, nextCursor };
   });
 }
 
