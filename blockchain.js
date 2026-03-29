@@ -284,7 +284,10 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
           }
 
           // Stop early if a limit was requested.
-          if (limit > 0 && collected.length >= limit) return resolve();
+          if (limit > 0 && collected.length >= limit) {
+            stopSeq = history[i][0];
+            return resolve();
+          }
         }
 
         const lowestSeq = history[0][0];
@@ -311,6 +314,12 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
       .filter(p => p && p.author)
       .sort((a, b) => steemDate(b.created) - steemDate(a.created));
 
+    // If we stopped due to limit, continue from one entry older than where
+    // we stopped inside the current history batch.
+    if (stopSeq !== null) {
+      return { posts, nextCursor: stopSeq > 0 ? stopSeq - 1 : null };
+    }
+    
     // nextCursor is null when history is exhausted (lowestSeq reached 0).
     const nextCursor = (lastLowestSeq !== null && lastLowestSeq > 0)
       ? lastLowestSeq - 1

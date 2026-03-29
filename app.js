@@ -528,7 +528,7 @@ const HomeView = {
             chunk.map(u =>
               (this.understreamOn
                 ? fetchPostsByUser(u, PER_USER).then(r => r.posts)
-                : fetchTwistsByUser(u, monthlyRoot).then(r => r.posts.slice(0, PER_USER))
+                : fetchTwistsByUser(u, monthlyRoot, { limit: PER_USER }).then(r => r.posts)
               ).catch(() => [])
             )
           );
@@ -844,7 +844,7 @@ const ProfileView = {
         // Understream:  full blog (all Steem posts by this user)
         const twistsPromise = this.understreamOn
           ? fetchPostsByUser(user, 50)   // now returns { posts, nextCursor }
-          : fetchTwistsByUser(user, this.monthlyRoot);
+          : fetchTwistsByUser(user, this.monthlyRoot, { limit: 50 });
 
         const [profile, result, pinned] = await Promise.all([
           fetchAccount(user),
@@ -871,7 +871,7 @@ const ProfileView = {
         const user = this.$route.params.user;
         const result = this.understreamOn
           ? await fetchPostsByUser(user, 50, this.nextCursor)
-          : await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor });
+          : await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor, limit: 50 });
         const existingKeys = new Set(this.userTwists.map(t => t.permlink));
         const fresh = result.posts.filter(t => !existingKeys.has(t.permlink));
         if (fresh.length === 0) {
