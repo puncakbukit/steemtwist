@@ -3670,7 +3670,7 @@ const LiveTwistComposerComponent = {
 	  if (e.origin !== "null") return;
       const iframeSource = e.source;
       const { type, height, queryType, actionType, params, _reqId } = e.data || {};
-      const iframe = this.$refs.sandbox;
+      const iframe = this.$refs.previewSandbox;
       if (!iframe || iframeSource !== iframe.contentWindow) return;
 
 	  if (type === "resize") {
