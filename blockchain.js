@@ -255,7 +255,11 @@ function fetchPostsByUser(username, limit = 50, cursor = null) {
 // Returns Promise<{ posts: post[], nextCursor: number|null }>
 //   posts      — enriched posts sorted newest-first.
 //   nextCursor — sequence number for the next page, or null when exhausted.
-function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } = {}) {
+function fetchTwistsByUser(
+  username,
+  monthlyRoot,
+  { startFrom = -1, limit = 0, maxScan = 2000 } = {}
+) {
   // 100 is the maximum limit most Steem nodes allow per call.
   const BATCH = 100;
   // Hard safety cap so one slow account can never stall Home/Profile forever.
