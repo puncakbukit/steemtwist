@@ -353,7 +353,7 @@ const ExploreView = {
       </template>
 
     </div>
-  \`
+  `
 };
 
 // ---- HomeView ----
@@ -1213,7 +1213,7 @@ const SignalsView = {
       </div>
 
     </div>
-  \`
+  `
 };
 
 
