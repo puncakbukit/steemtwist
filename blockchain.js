@@ -284,7 +284,10 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
           }
 
           // Stop early if a limit was requested.
-          if (limit > 0 && collected.length >= limit) return resolve();
+          if (limit > 0 && collected.length >= limit) {
+            stopSeq = history[i][0];
+            return resolve();
+          }
         }
 
         const lowestSeq = history[0][0];
