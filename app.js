@@ -25,7 +25,6 @@ const ExploreView = {
       pinnedTwist:         null,   // logged-in user's pinned twist, shown above feed
       loading:             true,
       isPosting:           false,
-      monthlyRoot:         getMonthlyRoot(),
       sortMode:            "new",        // "new" | "hot" | "top"
       firehoseOn:          false,
       firehoseStream:      null,
@@ -39,6 +38,9 @@ const ExploreView = {
   },
 
   computed: {
+    // Always reflects the current calendar month so a tab left open across
+    // midnight on the last day of the month auto-corrects on next interaction.
+    monthlyRoot() { return getMonthlyRoot(); },
     // Apply the selected ranking formula to the raw twists array.
     // Entirely reactive — switching sortMode re-sorts instantly with no fetch.
     sortedTwists() {
@@ -59,7 +61,10 @@ const ExploreView = {
   },
 
   watch: {
-    sortMode() { this.page = 1; }
+    sortMode() { this.page = 1; },
+    // When the computed monthlyRoot flips (month rollover), reload the feed
+    // automatically so users don't stay stuck on a stale month.
+    monthlyRoot() { this.loadFeed(true); }
   },
 
   async created() {
@@ -789,7 +794,6 @@ const ProfileView = {
       userTwists:     [],
       pinnedTwist:    null,
       loading:        true,
-      monthlyRoot:    getMonthlyRoot(),
       page:           1,
       pageSize:       20,
       nextCursor:     null,   // account-history cursor for loading older twists
@@ -802,6 +806,7 @@ const ProfileView = {
   },
 
   computed: {
+    monthlyRoot() { return getMonthlyRoot(); },
     pagedTwists() {
       const list = this.pinnedTwist
         ? this.userTwists.filter(p => p.permlink !== this.pinnedTwist.permlink)
@@ -1655,10 +1660,14 @@ const SecretTwistView = {
 
   data() {
     return {
-      posts:     [],
-      loading:   true,
-      isSending: false,
-      tab:       "inbox"   // "inbox" | "sent" | "compose"
+      posts:             [],
+      loading:           true,
+      isSending:         false,
+      tab:               "inbox",  // "inbox" | "sent" | "compose"
+      page:              1,
+      pageSize:          20,
+      monthsLoaded:      1,        // how many calendar months fetched so far
+      loadingOlderMonth: false     // true while fetching an older month
     };
   },
 
@@ -1681,6 +1690,15 @@ const SecretTwistView = {
       return this.posts.filter(p =>
         (p.author || "").toLowerCase() === this.usernameLC
       );
+    },
+    activeList() {
+      return this.tab === "inbox" ? this.inbox : this.sent;
+    },
+    pagedList() {
+      return this.activeList.slice(0, this.page * this.pageSize);
+    },
+    hasMore() {
+      return this.pagedList.length < this.activeList.length;
     }
   },
 
@@ -1693,26 +1711,57 @@ const SecretTwistView = {
   // back to this page after an account switch without a full page reload.
   watch: {
     username(newVal) {
-      this.posts   = [];
-      this.tab     = "inbox";
+      this.posts        = [];
+      this.tab          = "inbox";
+      this.page         = 1;
+      this.monthsLoaded = 1;
       if (newVal) {
         this.loadPosts();
       } else {
         this.loading = false;
       }
+    },
+    tab() {
+      this.page = 1;
     }
   },
 
   methods: {
     async loadPosts() {
       if (!this.username) { this.loading = false; return; }
-      this.loading = true;
+      this.loading      = true;
+      this.page         = 1;
+      this.monthsLoaded = 1;
       try {
-        this.posts = await fetchSecretTwists(this.username);
+        // Always start with the current month only; user can load more months
+        // with the "Load older month" button.
+        this.posts = await fetchSecretTwists(this.username, 0);
       } catch {
         this.notify("Could not load Secret Twists.", "error");
       }
       this.loading = false;
+    },
+
+    async loadOlderMonth() {
+      if (this.loadingOlderMonth) return;
+      this.loadingOlderMonth = true;
+      try {
+        // Fetch one more month back (monthsLoaded is already the count
+        // already fetched, so passing it as monthsBack fetches up to that
+        // offset and deduplicates with what we have).
+        const fresh = await fetchSecretTwists(this.username, this.monthsLoaded);
+        const existingKeys = new Set(this.posts.map(p => p.permlink));
+        const added = fresh.filter(p => !existingKeys.has(p.permlink));
+        if (added.length === 0) {
+          this.notify("No older Secret Twists found.", "info");
+        } else {
+          this.posts = [...this.posts, ...added];
+        }
+        this.monthsLoaded++;
+      } catch {
+        this.notify("Could not load older Secret Twists.", "error");
+      }
+      this.loadingOlderMonth = false;
     },
 
     async handleSend({ recipient, message }) {
@@ -1789,12 +1838,30 @@ const SecretTwistView = {
           </div>
 
           <secret-twist-card-component
-            v-for="post in (tab === 'inbox' ? inbox : sent)"
+            v-for="post in pagedList"
             :key="post.permlink"
             :post="post"
             :username="username"
             :has-keychain="hasKeychain"
           ></secret-twist-card-component>
+
+          <!-- Load More (client-side page) -->
+          <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+            <button
+              @click="page++"
+              style="background:#1a1030;color:#a855f7;border:1px solid #3b1f5e;
+                     border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+            >Load more</button>
+          </div>
+          <!-- Load older month from blockchain when current pages are exhausted -->
+          <div v-else-if="activeList.length > 0" style="text-align:center;margin:16px 0;">
+            <button
+              @click="loadOlderMonth"
+              :disabled="loadingOlderMonth"
+              style="background:#1a1030;color:#a855f7;border:1px solid #3b1f5e;
+                     border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+            >{{ loadingOlderMonth ? "Loading…" : "Load older month" }}</button>
+          </div>
         </template>
 
         <!-- Privacy notice -->

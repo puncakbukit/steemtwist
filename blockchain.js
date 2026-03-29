@@ -431,6 +431,17 @@ window.getSecretMonthlyRoot = function() {
   return `${TWIST_CONFIG.SECRET_ROOT_PREFIX}${y}-${m}`;
 }
 
+// Returns the secret root permlink N months before the current one.
+// monthsBack=0 → current month, 1 → last month, etc.
+window.getSecretMonthlyRootOffset = function(monthsBack) {
+  const d = new Date();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - monthsBack);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${TWIST_CONFIG.SECRET_ROOT_PREFIX}${y}-${m}`;
+};
+
 // Returns a deterministic, collision-free permlink for a new twist.
 // Format: tw-YYYYMMDD-HHMMSS-username
 function generateTwistPermlink(username) {
@@ -454,7 +465,22 @@ function generateTwistPermlink(username) {
 // extraRoots: optional array of additional monthly root permlinks to fetch
 // (e.g. ["feed-2026-02", "feed-2026-01"]) so older months can be loaded
 // without re-fetching roots already in memory.
+//
+// Month-boundary grace period: during the first ROLLOVER_GRACE_DAYS days of
+// a new month the previous month's root is automatically included so users
+// don't see an empty or sparse feed right after rollover.
+const ROLLOVER_GRACE_DAYS = 3;
 function fetchTwistFeed(monthlyRoot, extraRoots = []) {
+  // Auto-append the previous month during the grace period, unless the
+  // caller already included it in extraRoots.
+  const prevRoot = getMonthlyRootOffset(1);
+  if (
+    new Date().getUTCDate() <= ROLLOVER_GRACE_DAYS &&
+    !extraRoots.includes(prevRoot) &&
+    prevRoot !== monthlyRoot
+  ) {
+    extraRoots = [prevRoot, ...extraRoots];
+  }
   const allRoots = [monthlyRoot, ...extraRoots];
   return Promise.all(
     allRoots.map(root =>
@@ -1525,9 +1551,8 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
 // Fetch Secret Twists for a user (both sent and received).
 //
 // Strategy: call getContentReplies on @steemtwist/secret-YYYY-MM to get
-// all Secret Twists for this month, then enrich each with fetchPost
-// (same pattern as fetchTwistFeed). The caller filters by author (sent)
-// or meta.to (inbox).
+// all Secret Twists, then enrich each with fetchPost (same pattern as
+// fetchTwistFeed). The caller filters by author (sent) or meta.to (inbox).
 //
 // Why not scan account history?
 //   getAccountHistory only contains ops the user *performed* or ops that
@@ -1536,29 +1561,47 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
 //   create a history entry for the mentioned user — Steem has no server-side
 //   mention indexing. Only the sender's own history contains the comment op.
 //
+// Parameters:
+//   username    — the logged-in user (used for filtering only by the caller).
+//   monthsBack  — number of past months to fetch in addition to the current
+//                 one. 0 = current month only, 1 = current + previous, etc.
+//                 The function always includes the current month.
+//
 // Returns Promise<post[]> sorted newest-first.
-function fetchSecretTwists(username) {
-  const secretRoot = getSecretMonthlyRoot();
-  return fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, secretRoot)
-    .then(replies =>
-      // Enrich in parallel to get populated json_metadata and active_votes
-      Promise.all(
-        replies.map(r => fetchPost(r.author, r.permlink).catch(() => r))
-      )
+function fetchSecretTwists(username, monthsBack = 0) {
+  // Build the list of roots to fetch: current month first, then older ones.
+  const roots = [];
+  for (let i = 0; i <= monthsBack; i++) {
+    roots.push(getSecretMonthlyRootOffset(i));
+  }
+
+  return Promise.all(
+    roots.map(root =>
+      fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, root)
+        .then(replies =>
+          Promise.all(
+            replies.map(r => fetchPost(r.author, r.permlink).catch(() => r))
+          )
+        )
+        .catch(() => [])
     )
-    .then(enriched =>
-      enriched
-        .filter(p => {
-          if (!p || !p.author) return false;
-          // Keep only genuine Secret Twists
-          try {
-            const raw = p.json_metadata;
-            const meta = raw
-              ? (typeof raw === "string" ? JSON.parse(raw) : raw)
-              : {};
-            return meta.type === "secret_twist";
-          } catch { return false; }
-        })
-        .sort((a, b) => steemDate(b.created) - steemDate(a.created))
-    );
+  ).then(arrays => {
+    const seen = new Set();
+    return arrays
+      .flat()
+      .filter(p => {
+        if (!p || !p.author) return false;
+        if (seen.has(p.permlink)) return false;
+        seen.add(p.permlink);
+        // Keep only genuine Secret Twists
+        try {
+          const raw = p.json_metadata;
+          const meta = raw
+            ? (typeof raw === "string" ? JSON.parse(raw) : raw)
+            : {};
+          return meta.type === "secret_twist";
+        } catch { return false; }
+      })
+      .sort((a, b) => steemDate(b.created) - steemDate(a.created));
+  });
 }
