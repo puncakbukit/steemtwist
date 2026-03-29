@@ -871,7 +871,7 @@ const ProfileView = {
         const user = this.$route.params.user;
         const result = this.understreamOn
           ? await fetchPostsByUser(user, 50, this.nextCursor)
-          : await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor });
+          : await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor, limit: 50 });
         const existingKeys = new Set(this.userTwists.map(t => t.permlink));
         const fresh = result.posts.filter(t => !existingKeys.has(t.permlink));
         if (fresh.length === 0) {
