@@ -258,8 +258,12 @@ function fetchPostsByUser(username, limit = 50, cursor = null) {
 function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } = {}) {
   // 100 is the maximum limit most Steem nodes allow per call.
   const BATCH = 100;
+  // Hard safety cap so one slow account can never stall Home/Profile forever.
+  const MAX_SCAN = 2000;
   const collected = [];
+  let scanned = 0;
   let lastLowestSeq = null;
+  let stopSeq = null;
 
   function page(from) {
     return new Promise((resolve) => {
@@ -274,10 +278,13 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
         for (let i = history.length - 1; i >= 0; i--) {
           const [, item] = history[i];
           const [type, data] = item.op;
+          scanned++;
 
           if (type !== "comment") continue;
           if (data.author !== username) continue;
           if (!data.permlink.startsWith(TWIST_CONFIG.POST_PREFIX)) continue;
+          // Understream OFF should only show Twist Stream posts (monthly root).
+          if (monthlyRoot && data.parent_permlink !== monthlyRoot) continue;
 
           if (!collected.some(c => c.data.permlink === data.permlink)) {
             collected.push({ data, timestamp: steemDate(item.timestamp) });
@@ -292,7 +299,7 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
 
         const lowestSeq = history[0][0];
         lastLowestSeq = lowestSeq;
-        if (lowestSeq <= 0) return resolve();
+        if (lowestSeq <= 0 || scanned >= MAX_SCAN) return resolve();
 
         page(lowestSeq - 1).then(resolve);
       });
