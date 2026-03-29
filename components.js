@@ -1728,10 +1728,14 @@ const ThreadComponent = {
 //   1. <iframe sandbox="allow-scripts"> — isolated null origin, no same-origin
 //   2. DOMPurify sanitises every HTML string the code tries to render
 //   3. fetch / XHR / WebSocket overridden to throw inside the iframe
-//   4. 2-second execution timeout kills runaway code
-//   5. User must click ▶ Run — never auto-executed
-//   6. Payload size limit: 10 KB (enforced before Run is allowed)
-//   7. Parent validates event.origin === "null" on every message
+//   4. User must click ▶ Run — never auto-executed
+//   5. Payload size limit: 10 KB (enforced before Run is allowed)
+//   6. Parent validates event.origin === "null" on every message
+//   7. User can manually stop execution at any time with the ⏹ Stop button
+//
+// Note: There is intentionally no auto-kill timeout. Live Twists are designed
+// for interactive apps (games, dashboards, forms) that run indefinitely. The
+// iframe sandbox already fully isolates runaway code from the parent page.
 //
 // Live Twist json_metadata shape:
 //   { type: "live_twist", version: 1, code: "<JS string>", title: "My App" }
@@ -2690,10 +2694,6 @@ const purify = DOMPurify;
   // ── Execute user code ─────────────────────────────────────────
   const userCode = ${escapedCode};
   try {
-    const EXECUTION_LIMIT_MS = 3000;
-    setTimeout(() => {
-      parent.postMessage({ type: "kill" }, PARENT_ORIGIN);
-    }, EXECUTION_LIMIT_MS);
     const fn = new Function("app", userCode);
     const result = fn(app);
     // Support async code
@@ -3657,7 +3657,7 @@ const LiveTwistComposerComponent = {
         "ask:function(type,params){params=params||{};var reqId=Math.random().toString(36).slice(2);return new Promise(function(resolve,reject){var h=function(e){var d=e.data;if(d.type==='QUERY_RESULT'&&d._reqId===reqId){window.removeEventListener('message',h);if(d.success)resolve(d.result);else reject(new Error('Query failed: '+type));}};window.addEventListener('message',h);parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params,_reqId:reqId},PARENT_ORIGIN);});}," +
         "};" +
         "var userCode=" + escaped + ";" +
-        "try{const EXECUTION_LIMIT_MS=3000;setTimeout(()=>{parent.postMessage({type:'kill'},PARENT_ORIGIN);},EXECUTION_LIMIT_MS);var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
+        "try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});parent.postMessage({type:'running'},PARENT_ORIGIN);}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}" +
         "setTimeout(function(){var h=document.body.scrollHeight;if(h>40)parent.postMessage({type:'resize',height:h+16},PARENT_ORIGIN);},150);" +
         "})();<\/script></body></html>";
     },
@@ -3667,9 +3667,13 @@ const LiveTwistComposerComponent = {
       this.previewKey++;
     },
     onMessage(e) {
-      if (e.origin !== "null") return;
+	  if (e.origin !== "null") return;
+      const iframeSource = e.source;
       const { type, height, queryType, actionType, params, _reqId } = e.data || {};
-      if (type === "resize") {
+      const iframe = this.$refs.sandbox;
+      if (!iframe || iframeSource !== iframe.contentWindow) return;
+
+	  if (type === "resize") {
         this.iframeHeight = Math.max(height || 200, this.iframeHeight);
       }
       // Forward blockchain queries from the preview iframe to the shared handlers.
