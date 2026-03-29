@@ -283,6 +283,8 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
           if (type !== "comment") continue;
           if (data.author !== username) continue;
           if (!data.permlink.startsWith(TWIST_CONFIG.POST_PREFIX)) continue;
+          // Understream OFF should only show Twist Stream posts (monthly root).
+          if (monthlyRoot && data.parent_permlink !== monthlyRoot) continue;
 
           if (!collected.some(c => c.data.permlink === data.permlink)) {
             collected.push({ data, timestamp: steemDate(item.timestamp) });
