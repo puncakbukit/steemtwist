@@ -314,16 +314,16 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
       .filter(p => p && p.author)
       .sort((a, b) => steemDate(b.created) - steemDate(a.created));
 
-    // nextCursor is null when history is exhausted (lowestSeq reached 0).
-    const nextCursor = (lastLowestSeq !== null && lastLowestSeq > 0)
-      ? lastLowestSeq - 1
-      : null;
-
     // If we stopped due to limit, continue from one entry older than where
     // we stopped inside the current history batch.
     if (stopSeq !== null) {
       return { posts, nextCursor: stopSeq > 0 ? stopSeq - 1 : null };
     }
+    
+    // nextCursor is null when history is exhausted (lowestSeq reached 0).
+    const nextCursor = (lastLowestSeq !== null && lastLowestSeq > 0)
+      ? lastLowestSeq - 1
+      : null;
 
     return { posts, nextCursor };
   });
