@@ -258,8 +258,12 @@ function fetchPostsByUser(username, limit = 50, cursor = null) {
 function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } = {}) {
   // 100 is the maximum limit most Steem nodes allow per call.
   const BATCH = 100;
+  // Hard safety cap so one slow account can never stall Home/Profile forever.
+  const MAX_SCAN = 2000;
   const collected = [];
+  let scanned = 0;
   let lastLowestSeq = null;
+  let stopSeq = null;
 
   function page(from) {
     return new Promise((resolve) => {
