@@ -299,7 +299,7 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
 
         const lowestSeq = history[0][0];
         lastLowestSeq = lowestSeq;
-        if (lowestSeq <= 0) return resolve();
+        if (lowestSeq <= 0 || scanned >= MAX_SCAN) return resolve();
 
         page(lowestSeq - 1).then(resolve);
       });
