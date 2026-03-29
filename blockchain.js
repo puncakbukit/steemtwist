@@ -278,6 +278,7 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
         for (let i = history.length - 1; i >= 0; i--) {
           const [, item] = history[i];
           const [type, data] = item.op;
+          scanned++;
 
           if (type !== "comment") continue;
           if (data.author !== username) continue;
