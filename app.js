@@ -21,17 +21,20 @@ const ExploreView = {
 
   data() {
     return {
-      twists:         [],
-      pinnedTwist:    null,   // logged-in user's pinned twist, shown above feed
-      loading:        true,
-      isPosting:      false,
-      monthlyRoot:    getMonthlyRoot(),
-      sortMode:       "new",        // "new" | "hot" | "top"
-      firehoseOn:     false,
-      firehoseStream: null,
-      firehoseError:  "",
-      page:           1,
-      pageSize:       20
+      twists:              [],
+      pinnedTwist:         null,   // logged-in user's pinned twist, shown above feed
+      loading:             true,
+      isPosting:           false,
+      monthlyRoot:         getMonthlyRoot(),
+      sortMode:            "new",        // "new" | "hot" | "top"
+      firehoseOn:          false,
+      firehoseStream:      null,
+      firehoseError:       "",
+      page:                1,
+      pageSize:            20,
+      monthsLoaded:        1,      // how many calendar months fetched (Twist Stream)
+      loadingOlderMonth:   false,  // true while fetching an older page
+      understreamCursor:   null    // { author, permlink } cursor for Understream paging
     };
   },
 
@@ -84,7 +87,13 @@ const ExploreView = {
           ? fetchPinnedTwist(this.username)
           : Promise.resolve(this.pinnedTwist);
 
-        const [fresh, pinned] = await Promise.all([feedPromise, pinPromise]);
+        const [result, pinned] = await Promise.all([feedPromise, pinPromise]);
+
+        // fetchRecentPosts returns { posts, nextCursor }; fetchTwistFeed returns array.
+        const fresh = Array.isArray(result) ? result : result.posts;
+        this.understreamCursor = Array.isArray(result) ? null : (result.nextCursor || null);
+        this.monthsLoaded = 1;
+
         const serverPermalinks = new Set(fresh.map(p => p.permlink));
         const realTimeOnly = this.twists.filter(
           p => p._firehose && !serverPermalinks.has(p.permlink)
@@ -106,23 +115,42 @@ const ExploreView = {
       setPinCache(this.username, null, null);
     },
 
-    // Fetch the next older calendar month from the blockchain and merge posts.
+    // Fetch the next older page of posts and merge.
+    // Twist Stream: fetches the previous calendar month's feed root.
+    // Understream:  fetches the next page via cursor from getDiscussionsByCreated.
     async loadOlderMonth() {
-      if (this.loadingOlderMonth || this.understreamOn) return;
+      if (this.loadingOlderMonth) return;
       this.loadingOlderMonth = true;
       try {
-        const root = getMonthlyRootOffset(this.monthsLoaded);
-        const older = await fetchTwistFeedPage(root);
-        const existingKeys = new Set(this.twists.map(t => t.permlink));
-        const fresh = older.filter(t => !existingKeys.has(t.permlink));
-        if (fresh.length === 0) {
-          this.notify("No twists found in that month.", "info");
+        if (this.understreamOn) {
+          if (this.understreamCursor === null) {
+            this.notify("No more posts to load.", "info");
+            this.loadingOlderMonth = false;
+            return;
+          }
+          const result = await fetchRecentPosts(50, this.understreamCursor);
+          const existingKeys = new Set(this.twists.map(t => t.permlink));
+          const fresh = result.posts.filter(t => !existingKeys.has(t.permlink));
+          if (fresh.length === 0) {
+            this.notify("No more posts found.", "info");
+          } else {
+            this.twists = [...this.twists, ...fresh];
+          }
+          this.understreamCursor = result.nextCursor;
         } else {
-          this.twists = [...this.twists, ...fresh];
+          const root = getMonthlyRootOffset(this.monthsLoaded);
+          const older = await fetchTwistFeedPage(root);
+          const existingKeys = new Set(this.twists.map(t => t.permlink));
+          const fresh = older.filter(t => !existingKeys.has(t.permlink));
+          if (fresh.length === 0) {
+            this.notify("No twists found in that month.", "info");
+          } else {
+            this.twists = [...this.twists, ...fresh];
+          }
+          this.monthsLoaded++;
         }
-        this.monthsLoaded++;
       } catch {
-        this.notify("Could not load older month.", "error");
+        this.notify("Could not load older posts.", "error");
       }
       this.loadingOlderMonth = false;
     },
@@ -374,7 +402,7 @@ const ExploreView = {
             :disabled="loadingOlderMonth"
             style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                    border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
-          >{{ loadingOlderMonth ? "Loading…" : "Load older month" }}</button>
+          >{{ loadingOlderMonth ? "Loading…" : (understreamOn ? "Load more posts" : "Load older month") }}</button>
         </div>
       </template>
 
@@ -405,8 +433,9 @@ const HomeView = {
       firehoseStream:      null,
       page:                1,           // current pagination page
       pageSize:            20,          // posts per page
-      monthsLoaded:        1,           // how many calendar months have been fetched
-      loadingOlderMonth:   false        // true while fetching an older month
+      monthsLoaded:        1,           // how many calendar months fetched (Twist Stream)
+      loadingOlderMonth:   false,       // true while fetching an older page
+      understreamCursor:   null         // unused for HomeView (multi-user feed)
     };
   },
 
@@ -493,8 +522,8 @@ const HomeView = {
           const chunkResults = await Promise.all(
             chunk.map(u =>
               (this.understreamOn
-                ? fetchPostsByUser(u, PER_USER)
-                : fetchTwistsByUser(u, monthlyRoot).then(p => p.slice(0, PER_USER))
+                ? fetchPostsByUser(u, PER_USER).then(r => r.posts)
+                : fetchTwistsByUser(u, monthlyRoot).then(r => r.posts.slice(0, PER_USER))
               ).catch(() => [])
             )
           );
@@ -809,7 +838,7 @@ const ProfileView = {
         // Twist Stream: account-history scan for all tw- permlinks (all time)
         // Understream:  full blog (all Steem posts by this user)
         const twistsPromise = this.understreamOn
-          ? fetchPostsByUser(user, 50).then(posts => ({ posts, nextCursor: null }))
+          ? fetchPostsByUser(user, 50)   // now returns { posts, nextCursor }
           : fetchTwistsByUser(user, this.monthlyRoot);
 
         const [profile, result, pinned] = await Promise.all([
@@ -827,23 +856,27 @@ const ProfileView = {
       this.loading = false;
     },
 
-    // Continue scanning account history backward from where loadProfile stopped.
+    // Continue loading older posts from where loadProfile stopped.
+    // Twist Stream: pages backward through account history.
+    // Understream:  pages through getDiscussionsByBlog using a cursor.
     async loadOlderTwists() {
-      if (this.loadingOlder || this.nextCursor === null || this.understreamOn) return;
+      if (this.loadingOlder || this.nextCursor === null) return;
       this.loadingOlder = true;
       try {
         const user = this.$route.params.user;
-        const result = await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor });
+        const result = this.understreamOn
+          ? await fetchPostsByUser(user, 50, this.nextCursor)
+          : await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor });
         const existingKeys = new Set(this.userTwists.map(t => t.permlink));
         const fresh = result.posts.filter(t => !existingKeys.has(t.permlink));
         if (fresh.length === 0) {
-          this.notify("No older twists found.", "info");
+          this.notify("No older posts found.", "info");
         } else {
           this.userTwists = [...this.userTwists, ...fresh];
         }
         this.nextCursor = result.nextCursor;
       } catch {
-        this.notify("Could not load older twists.", "error");
+        this.notify("Could not load older posts.", "error");
       }
       this.loadingOlder = false;
     },
@@ -944,15 +977,15 @@ const ProfileView = {
                      border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
             >Load more</button>
           </div>
-          <!-- Load older twists from blockchain when current pages are exhausted -->
-          <div v-else-if="userTwists.length > 0 && nextCursor !== null && !understreamOn"
+          <!-- Load older posts from blockchain when current pages are exhausted -->
+          <div v-else-if="userTwists.length > 0 && nextCursor !== null"
                style="text-align:center;margin:16px 0;">
             <button
               @click="loadOlderTwists"
               :disabled="loadingOlder"
               style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                      border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
-            >{{ loadingOlder ? "Loading…" : "Load older twists" }}</button>
+            >{{ loadingOlder ? "Loading…" : (understreamOn ? "Load more posts" : "Load older twists") }}</button>
           </div>
           <div v-else-if="userTwists.length > 0 && nextCursor === null"
                style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
