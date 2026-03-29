@@ -514,6 +514,13 @@ Push the four files, enable Pages on the `main` branch root. The hash router (`c
 
 ---
 
+## Assisted By 
+
+* https://chatgpt.com/
+* https://claude.ai/
+
+---
+
 ## License
 
 MIT
