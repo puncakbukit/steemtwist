@@ -3448,6 +3448,7 @@ const TwistCardComponent = {
             v-for="r in flagReasons"
             :key="r.id"
             @click="flagReason = (flagReason === r.id ? null : r.id)"
+            :title="r.desc"
             :style="{
               borderRadius: '20px', padding: '4px 12px', fontSize: '12px',
               fontWeight: flagReason === r.id ? '700' : '400',
