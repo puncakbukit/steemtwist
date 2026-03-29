@@ -239,16 +239,20 @@ Users can flag a Live Twist they believe is harmful. Flagging is only available 
 
 ### Flag reasons
 
-| ID | Label | Emoji |
-|---|---|---|
-| `spam` | Spam | 🗑️ |
-| `scam` | Scam | 💸 |
-| `phishing` | Phishing | 🎣 |
-| `spoofing` | Spoofing | 🎭 |
-| `hacking` | Hacking | 💀 |
-| `malware` | Malware | 🦠 |
-| `harassment` | Harassment | 🚫 |
-| `other` | Other | ⚠️ |
+| ID | Label | Emoji | Description |
+|---|---|---|---|
+| `session_hijacking` | Session Hijacking | 🍪 | Uses `document.cookie` to steal session IDs and impersonate the user. |
+| `web_skimming` | Web Skimming / Formjacking | 💳 | Intercepts credit card numbers and passwords at form submission and sends them to an attacker's server. |
+| `storage_theft` | Storage Theft | 🗄️ | Reads authentication tokens and personal settings from `localStorage` or `sessionStorage`. |
+| `dom_xss` | DOM-type XSS | 💉 | Uses URL parameters or other DOM inputs to dynamically execute malicious scripts in the browser. |
+| `phishing_form` | Phishing Form Insertion | 🎣 | Injects a fake login form (e.g. "Please verify your identity") into a legitimate page to steal credentials. |
+| `ui_redressing` | UI Redressing | 🪄 | Overlays transparent layers or repositions buttons to trick users into clicking ads or malware links. |
+| `cryptojacking` | Cryptojacking | ⛏️ | Silently mines cryptocurrency in the background while the page is open, consuming the device's CPU. |
+| `browser_fingerprinting` | Browser Fingerprinting | 🔍 | Collects fonts, plugins, and screen resolution via JavaScript to identify and track users without cookies. |
+| `sensor_abuse` | Sensor / Location Abuse | 📍 | Uses deceptive permission prompts to gain unauthorised access to location, camera, or other device sensors. |
+| `logic_tampering` | Client-Side Logic Tampering | 🛠️ | Attempts to bypass JavaScript-based access checks (e.g. admin guards) to access restricted content. |
+| `csrf` | CSRF | ↩️ | Sends unintended requests (transfers, posts) to other sites (banks, social media) while the user is logged in. |
+| `other` | Other | ⚠️ | Any other harmful, deceptive, or malicious behaviour not covered by the categories above. |
 
 ### Flag reply on-chain format
 
@@ -256,7 +260,7 @@ Users can flag a Live Twist they believe is harmful. Flagging is only available 
 {
   "app": "steemtwist/0.1",
   "type": "live_twist_flag",
-  "reason": "malware",
+  "reason": "cryptojacking",
   "tags": ["steemtwist", "microblog", "steem", "twist", "social", "web"]
 }
 ```
@@ -363,7 +367,7 @@ steemtwist/
 - `deleteTwist(username, post, callback)` — `delete_comment` or body-blank fallback; `res._deleted` indicates path
 
 ### Live Twist flag
-- `LIVE_TWIST_FLAG_REASONS` — array of `{ id, label, emoji }` objects; the authoritative reason list shared by both `blockchain.js` and the UI
+- `LIVE_TWIST_FLAG_REASONS` — array of `{ id, label, emoji, desc }` objects; the authoritative reason list shared by both `blockchain.js` and the UI. The `desc` field is shown as a tooltip when hovering a reason chip in the flag panel.
 - `flagLiveTwist(voter, author, permlink, reasonId, callback)` — step 1: `requestVote` at weight `-10000`; step 2 on success: `requestBroadcast` with `[comment, comment_options]` whose `json_metadata.type === "live_twist_flag"` and `json_metadata.reason === reasonId`
 
 ### Sorting, Firehose, Pin
@@ -511,13 +515,6 @@ Both use `parent_permlink: steemtwist`, `title: ""`, `parent_author: ""`.
 ## Hosting on GitHub Pages
 
 Push the four files, enable Pages on the `main` branch root. The hash router (`createWebHashHistory`) makes all routes work without server configuration.
-
----
-
-## Assisted By 
-
-* https://chatgpt.com/
-* https://claude.ai/
 
 ---
 
