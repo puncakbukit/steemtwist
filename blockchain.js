@@ -316,6 +316,12 @@ function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } 
       ? lastLowestSeq - 1
       : null;
 
+    // If we stopped due to limit, continue from one entry older than where
+    // we stopped inside the current history batch.
+    if (stopSeq !== null) {
+      return { posts, nextCursor: stopSeq > 0 ? stopSeq - 1 : null };
+    }
+
     return { posts, nextCursor };
   });
 }
