@@ -344,12 +344,20 @@ const HomeView = {
       emptyFeed:      false,
       followingSet:   new Set(),   // kept for firehose filtering
       firehoseOn:     false,
-      firehoseStream: null
+      firehoseStream: null,
+      page:           1,           // current pagination page
+      pageSize:       20           // posts per page
     };
   },
 
   computed: {
-    sortedTwists() { return sortTwists(this.twists, this.sortMode); }
+    sortedTwists() { return sortTwists(this.twists, this.sortMode); },
+    pagedTwists()  { return this.sortedTwists.slice(0, this.page * this.pageSize); },
+    hasMore()      { return this.pagedTwists.length < this.sortedTwists.length; }
+  },
+
+  watch: {
+    sortMode() { this.page = 1; }
   },
 
   async created() {
@@ -372,6 +380,7 @@ const HomeView = {
       this.loading   = true;
       this.emptyFeed = false;
       this.twists    = [];
+      this.page      = 1;
       this.followingSet = new Set();
 
       if (!this.username) { this.loading = false; return; }
@@ -621,7 +630,7 @@ const HomeView = {
         </div>
 
         <twist-card-component
-          v-for="post in sortedTwists"
+          v-for="post in pagedTwists"
           :key="post.permlink"
           :post="post"
           :username="username"
@@ -631,6 +640,19 @@ const HomeView = {
           @voted="loadFeed()"
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
+
+        <!-- Load More -->
+        <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+          <button
+            @click="page++"
+            style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                   border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+          >Load more</button>
+        </div>
+        <div v-else-if="sortedTwists.length > 0"
+             style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
+          — end of feed —
+        </div>
       </template>
 
     </div>
