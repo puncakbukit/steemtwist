@@ -844,7 +844,7 @@ const ProfileView = {
         // Understream:  full blog (all Steem posts by this user)
         const twistsPromise = this.understreamOn
           ? fetchPostsByUser(user, 50)   // now returns { posts, nextCursor }
-          : fetchTwistsByUser(user, this.monthlyRoot);
+          : fetchTwistsByUser(user, this.monthlyRoot, { limit: 50 });
 
         const [profile, result, pinned] = await Promise.all([
           fetchAccount(user),
