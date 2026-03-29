@@ -106,6 +106,27 @@ const ExploreView = {
       setPinCache(this.username, null, null);
     },
 
+    // Fetch the next older calendar month from the blockchain and merge posts.
+    async loadOlderMonth() {
+      if (this.loadingOlderMonth || this.understreamOn) return;
+      this.loadingOlderMonth = true;
+      try {
+        const root = getMonthlyRootOffset(this.monthsLoaded);
+        const older = await fetchTwistFeedPage(root);
+        const existingKeys = new Set(this.twists.map(t => t.permlink));
+        const fresh = older.filter(t => !existingKeys.has(t.permlink));
+        if (fresh.length === 0) {
+          this.notify("No twists found in that month.", "info");
+        } else {
+          this.twists = [...this.twists, ...fresh];
+        }
+        this.monthsLoaded++;
+      } catch {
+        this.notify("Could not load older month.", "error");
+      }
+      this.loadingOlderMonth = false;
+    },
+
     async handlePost(message) {
       if (!message) return;
       this.isPosting = true;
@@ -338,7 +359,7 @@ const ExploreView = {
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
 
-        <!-- Load More -->
+        <!-- Load More (client-side page through already-fetched month) -->
         <div v-if="hasMore" style="text-align:center;margin:16px 0;">
           <button
             @click="page++"
@@ -346,9 +367,14 @@ const ExploreView = {
                    border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
           >Load more</button>
         </div>
-        <div v-else-if="sortedTwists.length > 0"
-             style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
-          — end of feed —
+        <!-- Load older month from blockchain when current page is exhausted -->
+        <div v-else-if="sortedTwists.length > 0" style="text-align:center;margin:16px 0;">
+          <button
+            @click="loadOlderMonth"
+            :disabled="loadingOlderMonth"
+            style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                   border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+          >{{ loadingOlderMonth ? "Loading…" : "Load older month" }}</button>
         </div>
       </template>
 
@@ -369,16 +395,18 @@ const HomeView = {
 
   data() {
     return {
-      twists:         [],
-      loading:        true,
-      isPosting:      false,
-      sortMode:       "new",
-      emptyFeed:      false,
-      followingSet:   new Set(),   // kept for firehose filtering
-      firehoseOn:     false,
-      firehoseStream: null,
-      page:           1,           // current pagination page
-      pageSize:       20           // posts per page
+      twists:              [],
+      loading:             true,
+      isPosting:           false,
+      sortMode:            "new",
+      emptyFeed:           false,
+      followingSet:        new Set(),   // kept for firehose filtering
+      firehoseOn:          false,
+      firehoseStream:      null,
+      page:                1,           // current pagination page
+      pageSize:            20,          // posts per page
+      monthsLoaded:        1,           // how many calendar months have been fetched
+      loadingOlderMonth:   false        // true while fetching an older month
     };
   },
 
@@ -408,6 +436,27 @@ const HomeView = {
   },
 
   methods: {
+    // Fetch the next older calendar month from the blockchain and merge posts.
+    async loadOlderMonth() {
+      if (this.loadingOlderMonth || this.understreamOn) return;
+      this.loadingOlderMonth = true;
+      try {
+        const root = getMonthlyRootOffset(this.monthsLoaded);
+        const older = await fetchTwistFeedPage(root);
+        const existingKeys = new Set(this.twists.map(t => t.permlink));
+        const fresh = older.filter(t => !existingKeys.has(t.permlink));
+        if (fresh.length === 0) {
+          this.notify("No twists found in that month.", "info");
+        } else {
+          this.twists = [...this.twists, ...fresh];
+        }
+        this.monthsLoaded++;
+      } catch {
+        this.notify("Could not load older month.", "error");
+      }
+      this.loadingOlderMonth = false;
+    },
+
     async loadFeed() {
       this.loading   = true;
       this.emptyFeed = false;
@@ -673,7 +722,7 @@ const HomeView = {
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
 
-        <!-- Load More -->
+        <!-- Load More (client-side page through already-fetched months) -->
         <div v-if="hasMore" style="text-align:center;margin:16px 0;">
           <button
             @click="page++"
@@ -681,9 +730,14 @@ const HomeView = {
                    border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
           >Load more</button>
         </div>
-        <div v-else-if="sortedTwists.length > 0"
-             style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
-          — end of feed —
+        <!-- Load older month from blockchain when current pages are exhausted -->
+        <div v-else-if="sortedTwists.length > 0" style="text-align:center;margin:16px 0;">
+          <button
+            @click="loadOlderMonth"
+            :disabled="loadingOlderMonth"
+            style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                   border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+          >{{ loadingOlderMonth ? "Loading…" : "Load older month" }}</button>
         </div>
       </template>
 
@@ -702,13 +756,15 @@ const ProfileView = {
 
   data() {
     return {
-      profileData:  null,
-      userTwists:   [],
-      pinnedTwist:  null,
-      loading:      true,
-      monthlyRoot:  getMonthlyRoot(),
-      page:         1,
-      pageSize:     20
+      profileData:    null,
+      userTwists:     [],
+      pinnedTwist:    null,
+      loading:        true,
+      monthlyRoot:    getMonthlyRoot(),
+      page:           1,
+      pageSize:       20,
+      nextCursor:     null,   // account-history cursor for loading older twists
+      loadingOlder:   false   // true while fetching older history
     };
   },
 
@@ -750,24 +806,46 @@ const ProfileView = {
           ? fetchPinnedTwist(user)
           : Promise.resolve(this.pinnedTwist);
 
-        // Twist Stream: account-history scan for tw- permlinks this month
+        // Twist Stream: account-history scan for all tw- permlinks (all time)
         // Understream:  full blog (all Steem posts by this user)
         const twistsPromise = this.understreamOn
-          ? fetchPostsByUser(user, 50)
+          ? fetchPostsByUser(user, 50).then(posts => ({ posts, nextCursor: null }))
           : fetchTwistsByUser(user, this.monthlyRoot);
 
-        const [profile, twists, pinned] = await Promise.all([
+        const [profile, result, pinned] = await Promise.all([
           fetchAccount(user),
           twistsPromise,
           pinPromise
         ]);
         this.profileData = profile;
-        this.userTwists  = twists;
+        this.userTwists  = result.posts;
+        this.nextCursor  = result.nextCursor;
         this.pinnedTwist = pinned;
       } catch {
         this.notify("Failed to load profile.", "error");
       }
       this.loading = false;
+    },
+
+    // Continue scanning account history backward from where loadProfile stopped.
+    async loadOlderTwists() {
+      if (this.loadingOlder || this.nextCursor === null || this.understreamOn) return;
+      this.loadingOlder = true;
+      try {
+        const user = this.$route.params.user;
+        const result = await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor });
+        const existingKeys = new Set(this.userTwists.map(t => t.permlink));
+        const fresh = result.posts.filter(t => !existingKeys.has(t.permlink));
+        if (fresh.length === 0) {
+          this.notify("No older twists found.", "info");
+        } else {
+          this.userTwists = [...this.userTwists, ...fresh];
+        }
+        this.nextCursor = result.nextCursor;
+      } catch {
+        this.notify("Could not load older twists.", "error");
+      }
+      this.loadingOlder = false;
     },
 
     handlePin(post) {
@@ -858,7 +936,7 @@ const ProfileView = {
             @deleted="p => userTwists = userTwists.filter(t => t.permlink !== p.permlink)"
           ></twist-card-component>
 
-          <!-- Load More -->
+          <!-- Load More (client-side page) -->
           <div v-if="hasMore" style="text-align:center;margin:16px 0;">
             <button
               @click="page++"
@@ -866,7 +944,17 @@ const ProfileView = {
                      border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
             >Load more</button>
           </div>
-          <div v-else-if="userTwists.length > 0"
+          <!-- Load older twists from blockchain when current pages are exhausted -->
+          <div v-else-if="userTwists.length > 0 && nextCursor !== null && !understreamOn"
+               style="text-align:center;margin:16px 0;">
+            <button
+              @click="loadOlderTwists"
+              :disabled="loadingOlder"
+              style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                     border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+            >{{ loadingOlder ? "Loading…" : "Load older twists" }}</button>
+          </div>
+          <div v-else-if="userTwists.length > 0 && nextCursor === null"
                style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
             — end of posts —
           </div>
@@ -1055,11 +1143,13 @@ const SignalsView = {
 
   data() {
     return {
-      signals:  [],
-      loading:  true,
-      filter:   "all",
-      page:     1,
-      pageSize: 30
+      signals:      [],
+      loading:      true,
+      filter:       "all",
+      page:         1,
+      pageSize:     30,
+      nextCursor:   null,   // account-history cursor for loading older signals
+      loadingOlder: false   // true while fetching older history
     };
   },
 
@@ -1104,7 +1194,9 @@ const SignalsView = {
   async created() {
     if (!this.username) { this.loading = false; return; }
     try {
-      this.signals = await fetchSignals(this.username);
+      const result = await fetchSignals(this.username);
+      this.signals    = result.signals;
+      this.nextCursor = result.nextCursor;
     } catch {
       this.notify("Could not load signals.", "error");
     }
@@ -1113,6 +1205,27 @@ const SignalsView = {
   },
 
   methods: {
+    // Scan further back in account history for older signals.
+    async loadOlderSignals() {
+      if (this.loadingOlder || this.nextCursor === null) return;
+      this.loadingOlder = true;
+      try {
+        const result = await fetchSignals(this.username, this.nextCursor);
+        const existingIds = new Set(this.signals.map(s => s.id));
+        const fresh = result.signals.filter(s => !existingIds.has(s.id));
+        if (fresh.length === 0) {
+          this.notify("No older signals found.", "info");
+        } else {
+          this.signals = [...this.signals, ...fresh];
+          this.markAllRead();
+        }
+        this.nextCursor = result.nextCursor;
+      } catch {
+        this.notify("Could not load older signals.", "error");
+      }
+      this.loadingOlder = false;
+    },
+
     markAllRead() {
       const ids = this.signals.map(s => s.id);
       try {
@@ -1199,7 +1312,7 @@ const SignalsView = {
         ></signal-item-component>
       </div>
 
-      <!-- Load More -->
+      <!-- Load More (client-side page through already-fetched signals) -->
       <div v-if="hasMore" style="text-align:center;margin:16px 0;">
         <button
           @click="page++"
@@ -1207,7 +1320,17 @@ const SignalsView = {
                  border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
         >Load more</button>
       </div>
-      <div v-else-if="filteredSignals.length > 0 && username && !loading"
+      <!-- Load older signals from blockchain when current pages are exhausted -->
+      <div v-else-if="filteredSignals.length > 0 && username && !loading && nextCursor !== null"
+           style="text-align:center;margin:16px 0;">
+        <button
+          @click="loadOlderSignals"
+          :disabled="loadingOlder"
+          style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                 border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+        >{{ loadingOlder ? "Loading…" : "Load older signals" }}</button>
+      </div>
+      <div v-else-if="filteredSignals.length > 0 && username && !loading && nextCursor === null"
            style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
         — end of signals —
       </div>

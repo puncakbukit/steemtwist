@@ -209,15 +209,27 @@ function fetchPostsByUser(username, limit = 50) {
 //      objects returned by fetchTwistFeed.
 //
 // Returns a Promise<post[]> sorted newest-first.
-function fetchTwistsByUser(username, monthlyRoot) {
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-
-  // -1 tells the node to start from the latest sequence number.
+// Fetch twists posted by a user by scanning their account history.
+//
+// Parameters:
+//   username    — Steem username to scan.
+//   monthlyRoot — kept for API compatibility but no longer used as a cutoff;
+//                 we now scan the full history so older months are included.
+//   options     — { startFrom, limit }
+//                   startFrom : sequence number to begin from (-1 = latest).
+//                               Pass the cursor returned by a previous call
+//                               to continue paging backward.
+//                   limit     : stop after collecting this many twists
+//                               (0 / undefined = no limit, scan everything).
+//
+// Returns Promise<{ posts: post[], nextCursor: number|null }>
+//   posts      — enriched posts sorted newest-first.
+//   nextCursor — sequence number for the next page, or null when exhausted.
+function fetchTwistsByUser(username, monthlyRoot, { startFrom = -1, limit = 0 } = {}) {
   // 100 is the maximum limit most Steem nodes allow per call.
-  const START_FROM = -1;
   const BATCH = 100;
   const collected = [];
+  let lastLowestSeq = null;
 
   function page(from) {
     return new Promise((resolve) => {
@@ -229,37 +241,24 @@ function fetchTwistsByUser(username, monthlyRoot) {
 
         if (!history || history.length === 0) return resolve();
 
-        let hitOldEntry = false;
-
         for (let i = history.length - 1; i >= 0; i--) {
           const [, item] = history[i];
           const [type, data] = item.op;
-          const ts = steemDate(item.timestamp);
-
-          if (ts < monthStart) {
-            hitOldEntry = true;
-            break;
-          }
 
           if (type !== "comment") continue;
           if (data.author !== username) continue;
           if (!data.permlink.startsWith(TWIST_CONFIG.POST_PREFIX)) continue;
 
           if (!collected.some(c => c.data.permlink === data.permlink)) {
-            collected.push({
-              data,
-              timestamp: ts
-            });
+            collected.push({ data, timestamp: steemDate(item.timestamp) });
           }
+
+          // Stop early if a limit was requested.
+          if (limit > 0 && collected.length >= limit) return resolve();
         }
 
-        // Stop when we've passed the month start.
-        if (hitOldEntry) return resolve();
-
-        // Continue paging if there may be more history.
-        // Only stop when the batch is empty (handled above) or sequence
-        // numbers reach zero.
         const lowestSeq = history[0][0];
+        lastLowestSeq = lowestSeq;
         if (lowestSeq <= 0) return resolve();
 
         page(lowestSeq - 1).then(resolve);
@@ -267,22 +266,27 @@ function fetchTwistsByUser(username, monthlyRoot) {
     });
   }
 
-  return page(START_FROM).then(async () => {
-    if (collected.length === 0) return [];
+  return page(startFrom).then(async () => {
+    if (collected.length === 0) return { posts: [], nextCursor: null };
 
     // Enrich each raw op with a full getContent call to get vote counts,
     // children count, and all other fields TwistCardComponent expects.
     const enriched = await Promise.all(
-      collected.map(({
-          data
-        }) =>
+      collected.map(({ data }) =>
         fetchPost(data.author, data.permlink).catch(() => null)
       )
     );
 
-    return enriched
+    const posts = enriched
       .filter(p => p && p.author)
       .sort((a, b) => steemDate(b.created) - steemDate(a.created));
+
+    // nextCursor is null when history is exhausted (lowestSeq reached 0).
+    const nextCursor = (lastLowestSeq !== null && lastLowestSeq > 0)
+      ? lastLowestSeq - 1
+      : null;
+
+    return { posts, nextCursor };
   });
 }
 
@@ -416,18 +420,60 @@ function generateTwistPermlink(username) {
 // post with getContent in parallel so active_votes is always populated —
 // giving accurate upvote counts consistent with the twist-specific page.
 // Resolves to an array sorted newest-first.
-function fetchTwistFeed(monthlyRoot) {
-  return fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, monthlyRoot).then(replies => {
-    // Enrich all posts in parallel to get active_votes, net_votes, children.
-    return Promise.all(
-      replies.map(r => fetchPost(r.author, r.permlink).catch(() => r))
-    );
-  }).then(enriched =>
-    enriched
-    .filter(p => p && p.author)
-    .sort((a, b) => steemDate(b.created) - steemDate(a.created))
-  );
+//
+// extraRoots: optional array of additional monthly root permlinks to fetch
+// (e.g. ["feed-2026-02", "feed-2026-01"]) so older months can be loaded
+// without re-fetching roots already in memory.
+function fetchTwistFeed(monthlyRoot, extraRoots = []) {
+  const allRoots = [monthlyRoot, ...extraRoots];
+  return Promise.all(
+    allRoots.map(root =>
+      fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, root)
+        .then(replies =>
+          Promise.all(replies.map(r => fetchPost(r.author, r.permlink).catch(() => r)))
+        )
+        .catch(() => [])
+    )
+  ).then(arrays => {
+    const seen = new Set();
+    return arrays
+      .flat()
+      .filter(p => {
+        if (!p || !p.author) return false;
+        if (seen.has(p.permlink)) return false;
+        seen.add(p.permlink);
+        return true;
+      })
+      .sort((a, b) => steemDate(b.created) - steemDate(a.created));
+  });
 }
+
+// Fetch one older monthly feed root, appending its posts to an existing list.
+// Returns Promise<post[]> — only the newly fetched posts (caller merges them).
+// root: permlink string e.g. "feed-2026-02"
+function fetchTwistFeedPage(root) {
+  return fetchReplies(TWIST_CONFIG.ROOT_ACCOUNT, root)
+    .then(replies =>
+      Promise.all(replies.map(r => fetchPost(r.author, r.permlink).catch(() => r)))
+    )
+    .then(enriched =>
+      enriched
+        .filter(p => p && p.author)
+        .sort((a, b) => steemDate(b.created) - steemDate(a.created))
+    )
+    .catch(() => []);
+}
+
+// Return the permlink for a monthly feed root N months before the current one.
+// monthsBack=0 → current month, 1 → last month, etc.
+window.getMonthlyRootOffset = function(monthsBack) {
+  const d = new Date();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - monthsBack);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${TWIST_CONFIG.ROOT_PREFIX}${y}-${m}`;
+};
 
 // Build a [comment, comment_options] operation pair with payouts disabled.
 // max_accepted_payout = "0.000 SBD" prevents any monetary reward.
@@ -1004,9 +1050,10 @@ function fetchPinnedTwist(username) {
 // STEEMTWIST — Signals (Notifications)
 // ============================================================
 
-// How many history entries to scan per Signals fetch.
-// 500 covers roughly a few weeks of activity for active accounts.
-const SIGNALS_SCAN_LIMIT = 500;
+// How many history entries to scan per Signals page.
+// 1000 covers several months for most accounts. The SignalsView can call
+// fetchSignals with a startFrom cursor to load even older entries on demand.
+const SIGNALS_SCAN_LIMIT = 1000;
 
 // Classify one account-history entry into a signal object, or return null
 // if the entry is not a relevant notification for the given username.
@@ -1138,15 +1185,25 @@ function stripSignalBody(body) {
     .slice(0, 100);
 }
 
-// Fetch the latest signals for a user by scanning their account history.
-// Scans up to SIGNALS_SCAN_LIMIT entries newest-first and returns all
-// recognised signal objects sorted newest-first.
+// Fetch signals for a user by scanning their account history.
+// Scans up to SIGNALS_SCAN_LIMIT entries starting from startFrom and returns
+// all recognised signal objects sorted newest-first, plus a cursor for the
+// next page.
 //
-// Returns Promise<signal[]>.
-function fetchSignals(username) {
+// Parameters:
+//   username  — Steem username.
+//   startFrom — sequence number to start scanning from (-1 = latest).
+//               Pass nextCursor from a previous result to load older signals.
+//
+// Returns Promise<{ signals: signal[], nextCursor: number|null }>
+//   signals    — sorted newest-first.
+//   nextCursor — pass as startFrom to fetch the next (older) page,
+//                or null when account history is fully exhausted.
+function fetchSignals(username, startFrom = -1) {
   const BATCH = 100;
   const collected = [];
   let scanned = 0;
+  let lastLowestSeq = null;
 
   function page(from) {
     return new Promise((resolve) => {
@@ -1164,15 +1221,21 @@ function fetchSignals(username) {
         }
 
         const lowestSeq = history[0][0];
+        lastLowestSeq = lowestSeq;
         if (lowestSeq <= 0 || scanned >= SIGNALS_SCAN_LIMIT) return resolve();
         page(lowestSeq - 1).then(resolve);
       });
     });
   }
 
-  return page(-1).then(() =>
-    collected.sort((a, b) => b.ts - a.ts)
-  );
+  return page(startFrom).then(() => {
+    const signals = collected.sort((a, b) => b.ts - a.ts);
+    // If we hit the scan limit and history is not exhausted, expose a cursor.
+    const exhausted = lastLowestSeq === null || lastLowestSeq <= 0;
+    const hitLimit = scanned >= SIGNALS_SCAN_LIMIT;
+    const nextCursor = (!exhausted && hitLimit) ? lastLowestSeq - 1 : null;
+    return { signals, nextCursor };
+  });
 }
 
 // ============================================================
