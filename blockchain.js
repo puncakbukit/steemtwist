@@ -209,12 +209,10 @@ function fetchPostsByUser(username, limit = 50, cursor = null) {
     const page = hasMore ? posts.slice(0, limit) : posts;
     // When using a cursor the API repeats the start post — drop it.
     const trimmed = cursor ? page.slice(1) : page;
-    // Filter out resteemed posts — only keep posts authored by `username`
-    const ownPosts = trimmed.filter(p => p.author === username);
     const nextCursor = hasMore
       ? { author: page[page.length - 1].author, permlink: page[page.length - 1].permlink }
       : null;
-    return { posts: ownPosts, nextCursor };
+    return { posts: trimmed, nextCursor };
   });
 }
 
@@ -676,14 +674,28 @@ function voteTwist(voter, author, permlink, weight, callback) {
 // Stored verbatim in the flag-reply's json_metadata so third-party
 // tools can index them without parsing free text.
 const LIVE_TWIST_FLAG_REASONS = [
-  { id: "spam",        label: "Spam",        emoji: "🗑️" },
-  { id: "scam",        label: "Scam",        emoji: "💸" },
-  { id: "phishing",    label: "Phishing",    emoji: "🎣" },
-  { id: "spoofing",    label: "Spoofing",    emoji: "🎭" },
-  { id: "hacking",     label: "Hacking",     emoji: "💀" },
-  { id: "malware",     label: "Malware",     emoji: "🦠" },
-  { id: "harassment",  label: "Harassment",  emoji: "🚫" },
-  { id: "other",       label: "Other",       emoji: "⚠️" }
+  { id: "session_hijacking",      label: "Session Hijacking",           emoji: "🍪",
+    desc: "Uses document.cookie to steal session IDs and impersonate the user." },
+  { id: "web_skimming",           label: "Web Skimming / Formjacking",  emoji: "💳",
+    desc: "Intercepts credit card numbers and passwords at form submission and sends them to an attacker\'s server." },
+  { id: "storage_theft",          label: "Storage Theft",               emoji: "🗄️",
+    desc: "Reads authentication tokens and personal settings from localStorage or sessionStorage." },
+  { id: "dom_xss",                label: "DOM-type XSS",                emoji: "💉",
+    desc: "Uses URL parameters or other DOM inputs to dynamically execute malicious scripts in the browser." },
+  { id: "phishing_form",          label: "Phishing Form Insertion",     emoji: "🎣",
+    desc: "Injects a fake login form (e.g. \"Please verify your identity\") into a legitimate page to steal credentials." },
+  { id: "ui_redressing",          label: "UI Redressing",               emoji: "🪄",
+    desc: "Overlays transparent layers or repositions buttons to trick users into clicking ads or malware links." },
+  { id: "cryptojacking",          label: "Cryptojacking",               emoji: "⛏️",
+    desc: "Silently mines cryptocurrency in the background while the page is open, consuming the device\'s CPU." },
+  { id: "browser_fingerprinting", label: "Browser Fingerprinting",      emoji: "🔍",
+    desc: "Collects fonts, plugins, and screen resolution via JavaScript to identify and track users without cookies." },
+  { id: "sensor_abuse",           label: "Sensor / Location Abuse",     emoji: "📍",
+    desc: "Uses deceptive permission prompts to gain unauthorised access to location, camera, or other device sensors." },
+  { id: "logic_tampering",        label: "Client-Side Logic Tampering", emoji: "🛠️",
+    desc: "Attempts to bypass JavaScript-based access checks (e.g. admin guards) to access restricted content." },
+  { id: "csrf",                   label: "CSRF",                        emoji: "↩️",
+    desc: "Sends unintended requests (transfers, posts) to other sites (banks, social media) while the user is logged in." }
 ];
 
 // Flag a Live Twist with a two-step Keychain sequence:
