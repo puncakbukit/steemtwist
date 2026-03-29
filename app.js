@@ -528,7 +528,7 @@ const HomeView = {
             chunk.map(u =>
               (this.understreamOn
                 ? fetchPostsByUser(u, PER_USER).then(r => r.posts)
-                : fetchTwistsByUser(u, monthlyRoot, { limit: PER_USER }).then(r => r.posts)
+                : fetchTwistsByUser(u, monthlyRoot, { limit: PER_USER, maxScan: 300 }).then(r => r.posts)
               ).catch(() => [])
             )
           );
