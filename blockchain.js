@@ -695,7 +695,9 @@ const LIVE_TWIST_FLAG_REASONS = [
   { id: "logic_tampering",        label: "Client-Side Logic Tampering", emoji: "🛠️",
     desc: "Attempts to bypass JavaScript-based access checks (e.g. admin guards) to access restricted content." },
   { id: "csrf",                   label: "CSRF",                        emoji: "↩️",
-    desc: "Sends unintended requests (transfers, posts) to other sites (banks, social media) while the user is logged in." }
+    desc: "Sends unintended requests (transfers, posts) to other sites (banks, social media) while the user is logged in." },
+  { id: "other",                  label: "Other",                       emoji: "⚠️",
+    desc: "Any other harmful, deceptive, or malicious behaviour not covered by the categories above." }
 ];
 
 // Flag a Live Twist with a two-step Keychain sequence:
