@@ -388,15 +388,28 @@ const HomeView = {
         // Twist Stream: tw- permlinks this month per followed user
         // Understream:  full blog (all Steem posts) per followed user
         const PER_USER = 10;
+        // Cap the number of accounts fetched to avoid overwhelming the RPC
+        // node and the browser's connection pool when following thousands of users.
+        const MAX_USERS = 100;
+        const fetchList = following.slice(0, MAX_USERS);
         const monthlyRoot = getMonthlyRoot();
-        const results = await Promise.all(
-          following.map(u =>
-            (this.understreamOn
-              ? fetchPostsByUser(u, PER_USER)
-              : fetchTwistsByUser(u, monthlyRoot).then(p => p.slice(0, PER_USER))
-            ).catch(() => [])
-          )
-        );
+
+        // Fetch in small concurrent batches to keep the UI responsive and
+        // avoid hammering the node with thousands of simultaneous RPC calls.
+        const BATCH = 10;
+        const results = [];
+        for (let i = 0; i < fetchList.length; i += BATCH) {
+          const chunk = fetchList.slice(i, i + BATCH);
+          const chunkResults = await Promise.all(
+            chunk.map(u =>
+              (this.understreamOn
+                ? fetchPostsByUser(u, PER_USER)
+                : fetchTwistsByUser(u, monthlyRoot).then(p => p.slice(0, PER_USER))
+              ).catch(() => [])
+            )
+          );
+          results.push(...chunkResults);
+        }
 
         const seen = new Set();
         const merged = [];
