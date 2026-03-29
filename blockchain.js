@@ -164,26 +164,56 @@ function fetchPostsByTag(tag, limit = 20) {
 }
 
 // Fetch the most recent posts across all of Steem (no tag filter).
-// Used by HomeView Understream mode.
-function fetchRecentPosts(limit = 50) {
+// Used by ExploreView and HomeView Understream mode.
+//
+// cursor: { author, permlink } of the last post from the previous page,
+//         or null/undefined for the first page.
+// Returns Promise<{ posts: post[], nextCursor: { author, permlink } | null }>
+function fetchRecentPosts(limit = 50, cursor = null) {
+  const query = { tag: "", limit: limit + 1 };  // fetch one extra to detect more
+  if (cursor) {
+    query.start_author  = cursor.author;
+    query.start_permlink = cursor.permlink;
+  }
   return callWithFallbackAsync(
     steem.api.getDiscussionsByCreated,
-    [{
-      tag: "",
-      limit
-    }]
-  );
+    [query]
+  ).then(posts => {
+    if (!posts || posts.length === 0) return { posts: [], nextCursor: null };
+    const hasMore = posts.length > limit;
+    const page = hasMore ? posts.slice(0, limit) : posts;
+    // When using a cursor the API repeats the start post — drop it.
+    const trimmed = cursor ? page.slice(1) : page;
+    const nextCursor = hasMore
+      ? { author: page[page.length - 1].author, permlink: page[page.length - 1].permlink }
+      : null;
+    return { posts: trimmed, nextCursor };
+  });
 }
 
 // Fetch recent posts from a user's blog.
-function fetchPostsByUser(username, limit = 50) {
+// cursor: { author, permlink } for the next page, or null for first page.
+// Returns Promise<{ posts: post[], nextCursor: { author, permlink } | null }>
+function fetchPostsByUser(username, limit = 50, cursor = null) {
+  const query = { tag: username, limit: limit + 1 };
+  if (cursor) {
+    query.start_author  = cursor.author;
+    query.start_permlink = cursor.permlink;
+  }
   return callWithFallbackAsync(
     steem.api.getDiscussionsByBlog,
-    [{
-      tag: username,
-      limit
-    }]
-  );
+    [query]
+  ).then(posts => {
+    if (!posts || posts.length === 0) return { posts: [], nextCursor: null };
+    const hasMore = posts.length > limit;
+    const page = hasMore ? posts.slice(0, limit) : posts;
+    // When using a cursor the API repeats the start post — drop it.
+    const trimmed = cursor ? page.slice(1) : page;
+    const nextCursor = hasMore
+      ? { author: page[page.length - 1].author, permlink: page[page.length - 1].permlink }
+      : null;
+    return { posts: trimmed, nextCursor };
+  });
 }
 
 // ---- Account-history twist scanner ----
