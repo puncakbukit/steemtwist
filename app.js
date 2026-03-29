@@ -29,7 +29,9 @@ const ExploreView = {
       sortMode:       "new",        // "new" | "hot" | "top"
       firehoseOn:     false,
       firehoseStream: null,
-      firehoseError:  ""
+      firehoseError:  "",
+      page:           1,
+      pageSize:       20
     };
   },
 
@@ -38,7 +40,23 @@ const ExploreView = {
     // Entirely reactive — switching sortMode re-sorts instantly with no fetch.
     sortedTwists() {
       return sortTwists(this.twists, this.sortMode);
+    },
+    pagedTwists() {
+      const list = this.pinnedTwist
+        ? this.sortedTwists.filter(p => p.permlink !== this.pinnedTwist.permlink)
+        : this.sortedTwists;
+      return list.slice(0, this.page * this.pageSize);
+    },
+    hasMore() {
+      const total = this.pinnedTwist
+        ? this.sortedTwists.filter(p => p.permlink !== this.pinnedTwist.permlink).length
+        : this.sortedTwists.length;
+      return this.pagedTwists.length < total;
     }
+  },
+
+  watch: {
+    sortMode() { this.page = 1; }
   },
 
   async created() {
@@ -55,6 +73,7 @@ const ExploreView = {
     // overwritten before the node has indexed it.
     async loadFeed(refreshPin = false) {
       this.loading = true;
+      this.page    = 1;
       try {
         // Twist Stream: replies to monthly root (SteemTwist-only)
         // Understream:  all recent Steem posts regardless of tags
@@ -307,7 +326,7 @@ const ExploreView = {
         </div>
 
         <twist-card-component
-          v-for="post in sortedTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink)"
+          v-for="post in pagedTwists"
           :key="post.permlink"
           :post="post"
           :username="username"
@@ -318,10 +337,23 @@ const ExploreView = {
           @pin="handlePin"
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
+
+        <!-- Load More -->
+        <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+          <button
+            @click="page++"
+            style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                   border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+          >Load more</button>
+        </div>
+        <div v-else-if="sortedTwists.length > 0"
+             style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
+          — end of feed —
+        </div>
       </template>
 
     </div>
-  `
+  \`
 };
 
 // ---- HomeView ----
@@ -674,12 +706,29 @@ const ProfileView = {
       userTwists:   [],
       pinnedTwist:  null,
       loading:      true,
-      monthlyRoot:  getMonthlyRoot()
+      monthlyRoot:  getMonthlyRoot(),
+      page:         1,
+      pageSize:     20
     };
   },
 
   async created() {
     await this.loadProfile();
+  },
+
+  computed: {
+    pagedTwists() {
+      const list = this.pinnedTwist
+        ? this.userTwists.filter(p => p.permlink !== this.pinnedTwist.permlink)
+        : this.userTwists;
+      return list.slice(0, this.page * this.pageSize);
+    },
+    hasMore() {
+      const total = this.pinnedTwist
+        ? this.userTwists.filter(p => p.permlink !== this.pinnedTwist.permlink).length
+        : this.userTwists.length;
+      return this.pagedTwists.length < total;
+    }
   },
 
   // Reload when navigating between profiles without unmounting the view
@@ -692,6 +741,7 @@ const ProfileView = {
     async loadProfile(refreshPin = true) {
       const user    = this.$route.params.user;
       this.loading  = true;
+      this.page     = 1;
       this.userTwists  = [];
       this.profileData = null;
       if (refreshPin) this.pinnedTwist = null;
@@ -797,7 +847,7 @@ const ProfileView = {
           </div>
 
           <twist-card-component
-            v-for="post in userTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink)"
+            v-for="post in pagedTwists"
             :key="post.permlink"
             :post="post"
             :username="username"
@@ -807,6 +857,19 @@ const ProfileView = {
             @unpin="handleUnpin"
             @deleted="p => userTwists = userTwists.filter(t => t.permlink !== p.permlink)"
           ></twist-card-component>
+
+          <!-- Load More -->
+          <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+            <button
+              @click="page++"
+              style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                     border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+            >Load more</button>
+          </div>
+          <div v-else-if="userTwists.length > 0"
+               style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
+            — end of posts —
+          </div>
         </div>
       </template>
     </div>
@@ -992,9 +1055,11 @@ const SignalsView = {
 
   data() {
     return {
-      signals: [],
-      loading: true,
-      filter:  "all"   // "all" | "unread"
+      signals:  [],
+      loading:  true,
+      filter:   "all",
+      page:     1,
+      pageSize: 30
     };
   },
 
@@ -1022,7 +1087,18 @@ const SignalsView = {
     },
     unreadCount() {
       return this.streamSignals.filter(s => !this.readIds.has(s.id)).length;
+    },
+    pagedSignals() {
+      return this.filteredSignals.slice(0, this.page * this.pageSize);
+    },
+    hasMore() {
+      return this.pagedSignals.length < this.filteredSignals.length;
     }
+  },
+
+  watch: {
+    filter()        { this.page = 1; },
+    understreamOn() { this.page = 1; }
   },
 
   async created() {
@@ -1116,15 +1192,28 @@ const SignalsView = {
         background:#1e1535;border:1px solid #2e2050;border-radius:12px;overflow:hidden;
       ">
         <signal-item-component
-          v-for="signal in filteredSignals"
+          v-for="signal in pagedSignals"
           :key="signal.id"
           :signal="signal"
           :read="isRead(signal)"
         ></signal-item-component>
       </div>
 
+      <!-- Load More -->
+      <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+        <button
+          @click="page++"
+          style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
+                 border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+        >Load more</button>
+      </div>
+      <div v-else-if="filteredSignals.length > 0 && username && !loading"
+           style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
+        — end of signals —
+      </div>
+
     </div>
-  `
+  \`
 };
 
 
