@@ -394,6 +394,133 @@ function keychainLogin(username, callback) {
   );
 }
 
+// Upload a single image to Steemit ImageHoster using a Keychain posting-key signature.
+// callback receives: { success: true, url } or { success: false, error }
+async function uploadImageToSteemit(username, file, callback) {
+  if (!username) return callback({ success: false, error: "Please sign in first." });
+  if (!file) return callback({ success: false, error: "Please choose an image file." });
+  if (!window.steem_keychain) return callback({ success: false, error: "Steem Keychain not installed." });
+  if (!String(file.type || "").startsWith("image/")) {
+    return callback({ success: false, error: "Only image files are allowed." });
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return callback({ success: false, error: "Image too large. Max size is 5 MB." });
+  }
+
+  // ImageHoster expects a signature over:
+  // sha256("ImageSigningChallenge" + <raw file bytes>)
+  // Keychain's requestSignBuffer internally signs sha256(message), so we pass
+  // a Buffer-like JSON string of the exact concatenated bytes.
+  let signableBufferJson = "";
+  try {
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const prefix = new TextEncoder().encode("ImageSigningChallenge");
+    const merged = new Uint8Array(prefix.length + fileBytes.length);
+    merged.set(prefix, 0);
+    merged.set(fileBytes, prefix.length);
+    signableBufferJson = JSON.stringify({ type: "Buffer", data: Array.from(merged) });
+  } catch (e) {
+    return callback({ success: false, error: "Could not read image bytes for signing." });
+  }
+
+  steem_keychain.requestSignBuffer(username, signableBufferJson, "Posting", async (signRes) => {
+    if (!signRes || !signRes.success || !signRes.result) {
+      return callback({ success: false, error: (signRes && (signRes.error || signRes.message)) || "Signature failed." });
+    }
+    try {
+      const formData = new FormData();
+      formData.append("image", file, file.name || "image");
+
+      const uploadUrl = "https://steemitimages.com/" + encodeURIComponent(username) + "/" + encodeURIComponent(signRes.result);
+      const response  = await fetch(uploadUrl, { method: "POST", body: formData });
+      const rawBody   = await response.text();
+      let payload = null;
+      try { payload = rawBody ? JSON.parse(rawBody) : null; } catch {}
+
+      // Steemit ImageHoster response shape can vary by deploy/version.
+      // Try common keys first, then recursively scan for the first image-like URL.
+      function scanForUrl(value, depth = 0) {
+        if (depth > 6 || value == null) return "";
+        if (typeof value === "string") {
+          const direct = value.match(/https?:\/\/[^\s"'<>]+/i)?.[0] || "";
+          if (direct) return direct;
+          const schemeless = value.match(/\bsteemitimages\.com\/[^\s"'<>]+/i)?.[0] || "";
+          if (schemeless) return "https://" + schemeless.replace(/^https?:\/\//i, "");
+          const relativeImg = value.match(/\/[A-Za-z0-9/_\-\.]+?\.(?:png|jpe?g|gif|webp|bmp|svg)/i)?.[0] || "";
+          if (relativeImg) return "https://steemitimages.com" + relativeImg;
+          const md = value.match(/\((https?:\/\/[^)\s]+)\)/i)?.[1] || "";
+          if (md) return md;
+          const mdSchemeless = value.match(/\((steemitimages\.com\/[^)\s]+)\)/i)?.[1] || "";
+          if (mdSchemeless) return "https://" + mdSchemeless;
+          const mdRelative = value.match(/\((\/[^)\s]+\.(?:png|jpe?g|gif|webp|bmp|svg))\)/i)?.[1] || "";
+          if (mdRelative) return "https://steemitimages.com" + mdRelative;
+          return "";
+        }
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            const found = scanForUrl(item, depth + 1);
+            if (found) return found;
+          }
+          return "";
+        }
+        if (typeof value === "object") {
+          const preferredKeys = ["url", "secure_url", "link", "src", "href", "image", "original", "large", "medium", "small"];
+          for (const key of preferredKeys) {
+            if (key in value) {
+              const found = scanForUrl(value[key], depth + 1);
+              if (found) return found;
+            }
+          }
+          for (const key of Object.keys(value)) {
+            const found = scanForUrl(value[key], depth + 1);
+            if (found) return found;
+          }
+        }
+        return "";
+      }
+
+      function scanForError(value, depth = 0) {
+        if (depth > 6 || value == null) return "";
+        if (typeof value === "string") return value.trim();
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            const found = scanForError(item, depth + 1);
+            if (found) return found;
+          }
+          return "";
+        }
+        if (typeof value === "object") {
+          const errorKeys = ["error", "message", "msg", "detail", "details", "reason"];
+          for (const key of errorKeys) {
+            if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
+          }
+          for (const key of Object.keys(value)) {
+            const found = scanForError(value[key], depth + 1);
+            if (found) return found;
+          }
+        }
+        return "";
+      }
+
+      const extractedUrl = scanForUrl(payload) || scanForUrl(rawBody);
+      const extractedError = scanForError(payload);
+
+      if (!response.ok) {
+        return callback({ success: false, error: (payload && (payload.error || payload.message)) || ("Upload failed (" + response.status + ").") });
+      }
+      if (extractedUrl) {
+        return callback({ success: true, url: extractedUrl });
+      }
+      if (extractedError) {
+        return callback({ success: false, error: "Upload failed: " + extractedError });
+      }
+      return callback({ success: false, error: "Upload failed: no image URL returned by server." });
+    } catch (e) {
+      return callback({ success: false, error: e && e.message ? e.message : "Error uploading image." });
+    }
+  });
+}
+
 // ---- Utility ----
 
 // Build a unique permlink from a title string + timestamp suffix.
@@ -654,6 +781,29 @@ function postTwistReply(username, message, parentAuthor, parentPermlink, callbac
       app: "steemtwist/0.1",
       type: "micro-reply",
       tags: TWIST_CONFIG.TAGS
+    }
+  );
+
+  steem_keychain.requestBroadcast(username, ops, "Posting", callback);
+}
+
+// Post a Live Twist reply to an existing twist/reply.
+// Stores executable JS in json_metadata, same as top-level Live Twists.
+function postLiveTwistReply(username, title, body, code, parentAuthor, parentPermlink, callback) {
+  const replyPermlink = generateTwistPermlink(username);
+
+  const ops = buildZeroPayoutOps(
+    username,
+    body || "⚡ Live Twist — view on SteemTwist",
+    parentAuthor,
+    parentPermlink,
+    replyPermlink,
+    {
+      app:     "steemtwist/0.1",
+      type:    "live_twist",
+      version: 1,
+      title:   title || "Live Twist",
+      code
     }
   );
 
