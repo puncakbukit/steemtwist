@@ -1227,6 +1227,8 @@ const LoadingSpinnerComponent = {
 // twists never collapse.
 const PREVIEW_LENGTH       = 280;
 const THREAD_REPLY_THRESHOLD = 3;
+const REGULAR_TWIST_MEDIA_LIMIT = 4;
+const IMAGE_ALT_TEXT_MAX_LENGTH = 80;
 
 // Shared markdown renderer — configured once, reused everywhere.
 // marked.parse() is synchronous and returns sanitised HTML.
@@ -1251,6 +1253,10 @@ function stripBackLink(text) {
 // so the two can reference each other via the global component registry.
 const ReplyCardComponent = {
   name: "ReplyCardComponent",
+  liveTemplates: LIVE_TWIST_TEMPLATES,
+  liveGreetings: LIVE_TWIST_GREETINGS,
+  liveQueries: LIVE_TWIST_QUERIES,
+  liveActions: LIVE_TWIST_ACTIONS,
   inject: ["username", "hasKeychain"],
   props: {
     reply: { type: Object, required: true },
@@ -1259,10 +1265,20 @@ const ReplyCardComponent = {
   data() {
     return {
       showReplyBox:     false,
+      replyMode:        draftStorage.load("reply_mode_" + this.reply.permlink, "twist"),
       replyPreviewMode: false,
       // Auto-expand the first two nesting levels (depth 0 and 1).
       showChildren:  this.depth < 2,
       replyText:     draftStorage.load("reply_" + this.reply.permlink, ""),
+      liveReplyTitle: draftStorage.load("live_reply_title_" + this.reply.permlink, ""),
+      liveReplyBody:  draftStorage.load("live_reply_body_" + this.reply.permlink, ""),
+      liveReplyCode:  draftStorage.load("live_reply_code_" + this.reply.permlink, ""),
+      liveReplyTab:   "code",
+      liveReplyTemplateSubTab: "simple",
+      liveReplyPreviewKey: 0,
+      liveReplyIframeHeight: 200,
+      isUploadingReplyImage: false,
+      replyUploadError: "",
       isReplying:    false,
       isVoting:      false,
       hasVoted:      false,
@@ -1305,6 +1321,13 @@ const ReplyCardComponent = {
       return `#/@${this.reply.author}/${this.reply.permlink}`;
     },
     bodyHtml() { return DOMPurify.sanitize(renderMarkdown(stripBackLink(this.editedBody !== null ? this.editedBody : this.reply.body))); },
+    isLiveTwist() {
+      try {
+        const raw = this.reply.json_metadata;
+        const meta = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
+        return meta.type === "live_twist" && !!meta.code;
+      } catch { return false; }
+    },
     isLong() { return stripBackLink(this.reply.body).length > PREVIEW_LENGTH; },
     bodyPreviewHtml() {
       return DOMPurify.sanitize(renderMarkdown(
@@ -1317,6 +1340,18 @@ const ReplyCardComponent = {
         ? DOMPurify.sanitize(renderMarkdown(this.replyText))
         : "<em style='color:#5a4e70'>Nothing to preview.</em>";
     },
+    replyCharCount() { return countTwistCharsExcludingMedia(this.replyText); },
+    replyOverLimit() { return this.replyCharCount > 280; },
+    replyMediaCount() { return countMediaEmbeds(this.replyText); },
+    replyMediaLimitExceeded() { return this.replyMediaCount > REGULAR_TWIST_MEDIA_LIMIT; },
+    mediaLimit() { return REGULAR_TWIST_MEDIA_LIMIT; },
+    canSubmitReply() {
+      return !!this.replyText.trim() && !this.isReplying && !this.replyOverLimit && !this.replyMediaLimitExceeded;
+    },
+    canSubmitLiveReply() {
+      return !!this.liveReplyCode.trim() && !this.isReplying;
+    },
+    canUploadReplyImage() { return this.replyMediaCount < this.mediaLimit; },
     canAct()   { return !!this.username && this.hasKeychain; },
     indent()   { return Math.min(this.depth, 4) * 16; },
     
@@ -1331,7 +1366,11 @@ const ReplyCardComponent = {
 }
   },
   watch: {
-    replyText(v) { draftStorage.save("reply_" + this.reply.permlink, v); }
+    replyText(v) { draftStorage.save("reply_" + this.reply.permlink, v); },
+    replyMode(v) { draftStorage.save("reply_mode_" + this.reply.permlink, v); },
+    liveReplyTitle(v) { draftStorage.save("live_reply_title_" + this.reply.permlink, v); },
+    liveReplyBody(v)  { draftStorage.save("live_reply_body_" + this.reply.permlink, v); },
+    liveReplyCode(v)  { draftStorage.save("live_reply_code_" + this.reply.permlink, v); }
   },
     methods: {
     vote() {
@@ -1366,9 +1405,109 @@ const ReplyCardComponent = {
       if (this.replyCount > 0) this.showChildren = !this.showChildren;
       if (this.canAct)         this.showReplyBox  = !this.showReplyBox;
     },
+    insertReplyAtCursor(text) {
+      const ta = this.$refs.replyTextarea;
+      if (!ta) {
+        this.replyText = (this.replyText ? this.replyText + "\n" : "") + text;
+        return;
+      }
+      const start = ta.selectionStart ?? this.replyText.length;
+      const end   = ta.selectionEnd ?? this.replyText.length;
+      this.replyText = this.replyText.slice(0, start) + text + this.replyText.slice(end);
+      this.$nextTick(() => {
+        ta.focus();
+        const pos = start + text.length;
+        ta.selectionStart = pos;
+        ta.selectionEnd = pos;
+      });
+    },
+    onReplyImageSelected(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+      this.uploadReplyImage(file);
+    },
+    uploadReplyImage(file) {
+      if (this.isUploadingReplyImage || !this.canAct) return;
+      if (!this.canUploadReplyImage) {
+        this.lastError = `Reply can include up to ${this.mediaLimit} images/videos.`;
+        return;
+      }
+      this.replyUploadError = "";
+      this.isUploadingReplyImage = true;
+      uploadImageToSteemit(this.username, file, (res) => {
+        this.isUploadingReplyImage = false;
+        if (!res.success) {
+          this.replyUploadError = res.error || "Image upload failed.";
+          this.lastError = this.replyUploadError;
+          return;
+        }
+        const alt = makeImageAltText(file.name);
+        this.insertReplyAtCursor(`![${alt}](${res.url})`);
+      });
+    },
+    runLiveReplyPreview() {
+      this.liveReplyTab = "preview";
+      this.liveReplyIframeHeight = 80;
+      this.liveReplyPreviewKey++;
+    },
+    useLiveReplyTemplate(tpl) {
+      this.liveReplyCode = tpl.code;
+      this.liveReplyTitle = tpl.name;
+      this.liveReplyBody = tpl.desc || "";
+      this.liveReplyTab = "code";
+    },
+    buildLiveReplySandboxDoc(code) {
+      return buildLiveTwistSandboxDoc(code);
+    },
+    onLiveReplyPreviewMessage(e) {
+      const iframe = this.$refs.liveReplyPreview;
+      if (!iframe || e.source !== iframe.contentWindow) return;
+      if (e?.data?.type === "LIVE_REPLY_PREVIEW_RESIZE") {
+        this.liveReplyIframeHeight = Math.max(e.data.height || 80, 80);
+      }
+    },
     submitReply() {
+      if (this.replyMode === "live") {
+        const code = this.liveReplyCode.trim();
+        if (!code || !this.canAct) return;
+        this.isReplying = true;
+        postLiveTwistReply(
+          this.username,
+          this.liveReplyTitle.trim() || "Live Twist",
+          this.liveReplyBody.trim() || "⚡ Live Twist — view on SteemTwist",
+          code,
+          this.reply.author,
+          this.reply.permlink,
+          (res) => {
+            this.isReplying = false;
+            if (res.success) {
+              this.liveReplyTitle  = "";
+              this.liveReplyBody   = "";
+              this.liveReplyCode   = "";
+              this.showChildren    = true;
+              this.replyCount++;
+              draftStorage.clear("live_reply_title_" + this.reply.permlink);
+              draftStorage.clear("live_reply_body_" + this.reply.permlink);
+              draftStorage.clear("live_reply_code_" + this.reply.permlink);
+            } else {
+              this.lastError = res.error || res.message || "Live reply failed.";
+            }
+          }
+        );
+        return;
+      }
+
       const text = this.replyText.trim();
       if (!text || !this.canAct) return;
+      if (this.replyOverLimit) {
+        this.lastError = "Reply text exceeds 280 characters (media excluded).";
+        return;
+      }
+      if (this.replyMediaLimitExceeded) {
+        this.lastError = `Reply can include up to ${REGULAR_TWIST_MEDIA_LIMIT} images/videos.`;
+        return;
+      }
       this.isReplying = true;
       postTwistReply(this.username, text, this.reply.author, this.reply.permlink, (res) => {
         this.isReplying = false;
@@ -1417,6 +1556,12 @@ const ReplyCardComponent = {
       });
     }
   },
+  mounted() {
+    window.addEventListener("message", this.onLiveReplyPreviewMessage);
+  },
+  unmounted() {
+    window.removeEventListener("message", this.onLiveReplyPreviewMessage);
+  },
   template: `
     <div :style="{ paddingLeft: indent + 'px' }">
       <div style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #2e2050;">
@@ -1447,11 +1592,16 @@ const ReplyCardComponent = {
             >{{ relativeTime }}</a>
           </div>
 
-          <!-- Body — collapsed to PREVIEW_LENGTH if long, expanded on click -->
-          <div class="twist-body" style="font-size:14px;"
+          <!-- Body -->
+          <live-twist-component
+            v-if="isLiveTwist"
+            :post="reply"
+            style="margin-bottom:8px;"
+          ></live-twist-component>
+          <div v-else class="twist-body" style="font-size:14px;"
             v-html="isLong && !replyExpanded ? bodyPreviewHtml : bodyHtml"
           ></div>
-          <div v-if="isLong" style="margin-bottom:4px;">
+          <div v-if="isLong && !isLiveTwist" style="margin-bottom:4px;">
             <button
               @click="replyExpanded = !replyExpanded"
               style="background:none;border:none;padding:0;color:#a855f7;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;"
@@ -1576,6 +1726,28 @@ const ReplyCardComponent = {
 
           <!-- Compose box -->
           <div v-if="showReplyBox && canAct" style="margin-top:8px;">
+            <div style="display:flex;gap:4px;margin-bottom:6px;">
+              <button
+                @click="replyMode = 'twist'"
+                :style="{
+                  background: replyMode === 'twist' ? '#2e2050' : '#0f0a1e',
+                  color:      replyMode === 'twist' ? '#e8e0f0' : '#9b8db0',
+                  border:'1px solid #2e2050', borderRadius:'999px',
+                  padding:'2px 10px', fontSize:'11px', margin:0, cursor:'pointer'
+                }"
+              >🌀 Reply</button>
+              <button
+                @click="replyMode = 'live'"
+                :style="{
+                  background: replyMode === 'live' ? '#3b1a07' : '#0f0a1e',
+                  color:      replyMode === 'live' ? '#fdba74' : '#9b8db0',
+                  border:'1px solid #2e2050', borderRadius:'999px',
+                  padding:'2px 10px', fontSize:'11px', margin:0, cursor:'pointer'
+                }"
+              >⚡ Live Reply</button>
+            </div>
+
+            <template v-if="replyMode === 'twist'">
             <div style="display:flex;gap:4px;margin-bottom:4px;">
               <button
                 @click="replyPreviewMode = false"
@@ -1598,6 +1770,7 @@ const ReplyCardComponent = {
             </div>
             <textarea
               v-show="!replyPreviewMode"
+              ref="replyTextarea"
               v-model="replyText"
               placeholder="Write a reply… (markdown supported)"
               maxlength="1000"
@@ -1607,6 +1780,15 @@ const ReplyCardComponent = {
                 font-size:13px;resize:vertical;min-height:52px;
               "
             ></textarea>
+            <div v-show="!replyPreviewMode" style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;">
+              <input ref="replyImageInput" type="file" accept="image/*" style="display:none;" @change="onReplyImageSelected" />
+              <button
+                @click="$refs.replyImageInput.click()"
+                :disabled="isUploadingReplyImage || !canUploadReplyImage"
+                style="padding:3px 10px;margin:0;background:#1a1030;border:1px solid #3b1f5e;color:#c084fc;font-size:11px;"
+              >{{ isUploadingReplyImage ? "Uploading…" : "📷 Upload image" }}</button>
+              <span v-if="replyUploadError" style="font-size:11px;color:#fca5a5;">{{ replyUploadError }}</span>
+            </div>
             <div
               v-show="replyPreviewMode"
               class="twist-body"
@@ -1617,13 +1799,79 @@ const ReplyCardComponent = {
                 font-size:13px;color:#e8e0f0;line-height:1.6;word-break:break-word;
               "
             ></div>
-            <div style="text-align:right;margin-top:4px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+              <span :style="{ fontSize:'11px', color: (replyOverLimit || replyMediaLimitExceeded) ? '#fca5a5' : '#5a4e70' }">
+                {{ replyCharCount }} / 280 (media excluded) · media {{ replyMediaCount }}/{{ mediaLimit }}
+              </span>
               <button
                 @click="submitReply"
-                :disabled="!replyText.trim() || isReplying"
+                :disabled="!canSubmitReply"
                 style="font-size:12px;padding:4px 12px;"
               >{{ isReplying ? "Posting…" : "Reply" }}</button>
             </div>
+            </template>
+
+            <template v-else>
+              <input
+                v-model="liveReplyTitle"
+                type="text"
+                maxlength="80"
+                placeholder="Live Twist"
+                style="width:100%;box-sizing:border-box;padding:6px 8px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:12px;margin-bottom:6px;"
+              />
+              <input
+                v-model="liveReplyBody"
+                type="text"
+                maxlength="280"
+                placeholder="⚡ Live Twist — view on SteemTwist"
+                style="width:100%;box-sizing:border-box;padding:6px 8px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:12px;margin-bottom:6px;"
+              />
+              <div style="display:flex;gap:4px;margin-bottom:0;">
+                <button @click="liveReplyTab = 'code'"
+                  :style="{ background: liveReplyTab==='code' ? '#2e2050' : 'none', color: liveReplyTab==='code' ? '#e8e0f0' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'2px 10px', fontSize:'11px', margin:0, cursor:'pointer' }">Code</button>
+                <button @click="runLiveReplyPreview"
+                  :style="{ background: liveReplyTab==='preview' ? '#2e2050' : 'none', color: liveReplyTab==='preview' ? '#fb923c' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'2px 10px', fontSize:'11px', margin:0, cursor:'pointer' }">▶ Preview</button>
+                <button @click="liveReplyTab = 'templates'"
+                  :style="{ background: liveReplyTab==='templates' ? '#2e2050' : 'none', color: liveReplyTab==='templates' ? '#22d3ee' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'2px 10px', fontSize:'11px', margin:0, cursor:'pointer' }">📄 Templates</button>
+              </div>
+              <textarea
+                v-show="liveReplyTab === 'code'"
+                v-model="liveReplyCode"
+                spellcheck="false"
+                placeholder="app.render('Hello from a Live Reply!')"
+                style="width:100%;box-sizing:border-box;padding:7px;border-radius:0 8px 8px 8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:12px;font-family:monospace;resize:vertical;min-height:90px;line-height:1.5;"
+              ></textarea>
+              <div v-if="liveReplyTab === 'preview'" style="border-radius:0 8px 8px 8px;border:1px solid #2e2050;overflow:hidden;">
+                <iframe :key="liveReplyPreviewKey" ref="liveReplyPreview" sandbox="allow-scripts"
+                  :srcdoc="buildLiveReplySandboxDoc(liveReplyCode)"
+                  :style="{ width:'100%', border:'none', display:'block', height: liveReplyIframeHeight + 'px', background:'#0f0a1e' }"
+                  scrolling="no"></iframe>
+              </div>
+              <div v-if="liveReplyTab === 'templates'" style="border:1px solid #2e2050;border-radius:0 8px 8px 8px;background:#0a0616;padding:8px;">
+                <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">
+                  <button v-for="st in [{k:'simple',label:'🔧 Simple'},{k:'greetings',label:'🎉 Greetings'},{k:'queries',label:'🔍 Queries'},{k:'actions',label:'⚡ Actions'}]"
+                    :key="st.k" @click="liveReplyTemplateSubTab = st.k"
+                    :style="{ borderRadius:'20px', padding:'2px 8px', fontSize:'10px', border:'1px solid', background: liveReplyTemplateSubTab===st.k ? '#2e2050' : 'none', color: liveReplyTemplateSubTab===st.k ? '#e8e0f0' : '#9b8db0', borderColor: liveReplyTemplateSubTab===st.k ? '#a855f7' : '#2e2050', margin:0, cursor:'pointer' }"
+                  >{{ st.label }}</button>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                  <div v-for="tpl in (liveReplyTemplateSubTab==='simple' ? $options.liveTemplates : liveReplyTemplateSubTab==='greetings' ? $options.liveGreetings : liveReplyTemplateSubTab==='queries' ? $options.liveQueries : $options.liveActions)"
+                    :key="tpl.id" @click="useLiveReplyTemplate(tpl)"
+                    style="background:#1a1030;border:1px solid #2e2050;border-radius:8px;padding:8px;cursor:pointer;">
+                    <div style="font-size:14px;">{{ tpl.icon }}</div>
+                    <div style="font-size:11px;color:#e8e0f0;font-weight:600;">{{ tpl.name }}</div>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+                <span style="font-size:11px;color:#5a4e70;">Code {{ liveReplyCode.length }} / 10000</span>
+                <button
+                  @click="submitReply"
+                  :disabled="!canSubmitLiveReply"
+                  style="font-size:12px;padding:4px 12px;"
+                >{{ isReplying ? "Posting…" : "Publish ⚡" }}</button>
+              </div>
+            </template>
           </div>
 
           <!-- Error -->
@@ -2869,6 +3117,10 @@ ${'<'}/script>
 // fixing the case where short posts with replies never showed them.
 const TwistCardComponent = {
   name: "TwistCardComponent",
+  liveTemplates: LIVE_TWIST_TEMPLATES,
+  liveGreetings: LIVE_TWIST_GREETINGS,
+  liveQueries: LIVE_TWIST_QUERIES,
+  liveActions: LIVE_TWIST_ACTIONS,
   components: { ThreadComponent, LiveTwistComponent },
   props: {
     post:        { type: Object,  required: true },
@@ -2880,10 +3132,20 @@ const TwistCardComponent = {
   data() {
     return {
       showReplyBox:     false,
+      replyMode:        draftStorage.load("reply_mode_" + this.post.permlink, "twist"),
       replyPreviewMode: false,
       // Auto-expand replies if the post already has some.
       showReplies:     (this.post.children || 0) > 0,
       replyText:       draftStorage.load("reply_" + this.post.permlink, ""),
+      liveReplyTitle:  draftStorage.load("live_reply_title_" + this.post.permlink, ""),
+      liveReplyBody:   draftStorage.load("live_reply_body_" + this.post.permlink, ""),
+      liveReplyCode:   draftStorage.load("live_reply_code_" + this.post.permlink, ""),
+      liveReplyTab:    "code",
+      liveReplyTemplateSubTab: "simple",
+      liveReplyPreviewKey: 0,
+      liveReplyIframeHeight: 200,
+      isUploadingReplyImage: false,
+      replyUploadError: "",
       isReplying:      false,
       isVoting:        false,
       hasVoted:        false,
@@ -2998,12 +3260,28 @@ const TwistCardComponent = {
         ? DOMPurify.sanitize(renderMarkdown(this.replyText))
         : "<em style='color:#5a4e70'>Nothing to preview.</em>";
     },
+    replyCharCount() { return countTwistCharsExcludingMedia(this.replyText); },
+    replyOverLimit() { return this.replyCharCount > 280; },
+    replyMediaCount() { return countMediaEmbeds(this.replyText); },
+    replyMediaLimitExceeded() { return this.replyMediaCount > REGULAR_TWIST_MEDIA_LIMIT; },
+    mediaLimit() { return REGULAR_TWIST_MEDIA_LIMIT; },
+    canSubmitReply() {
+      return !!this.replyText.trim() && !this.isReplying && !this.replyOverLimit && !this.replyMediaLimitExceeded;
+    },
+    canSubmitLiveReply() {
+      return !!this.liveReplyCode.trim() && !this.isReplying;
+    },
+    canUploadReplyImage() { return this.replyMediaCount < this.mediaLimit; },
     showThread() {
       return this.threadExpanded || this.showReplies;
     }
   },
   watch: {
     replyText(v) { draftStorage.save("reply_" + this.post.permlink, v); },
+    replyMode(v) { draftStorage.save("reply_mode_" + this.post.permlink, v); },
+    liveReplyTitle(v) { draftStorage.save("live_reply_title_" + this.post.permlink, v); },
+    liveReplyBody(v)  { draftStorage.save("live_reply_body_" + this.post.permlink, v); },
+    liveReplyCode(v)  { draftStorage.save("live_reply_code_" + this.post.permlink, v); },
     editText(v)  { if (this.showEditBox) draftStorage.save("edit_" + this.post.permlink, { editText: v }); },
     editCode(v)  { if (this.isLiveEditBox) draftStorage.save("live_edit_" + this.post.permlink, { editCode: v, editTitle: this.editTitle, editBody: this.editBody }); },
     editTitle(v) { if (this.isLiveEditBox) draftStorage.save("live_edit_" + this.post.permlink, { editCode: this.editCode, editTitle: v, editBody: this.editBody }); },
@@ -3049,6 +3327,68 @@ const TwistCardComponent = {
         this.showReplyBox = !this.showReplyBox;
       }
     },
+    insertReplyAtCursor(text) {
+      const ta = this.$refs.replyTextarea;
+      if (!ta) {
+        this.replyText = (this.replyText ? this.replyText + "\n" : "") + text;
+        return;
+      }
+      const start = ta.selectionStart ?? this.replyText.length;
+      const end   = ta.selectionEnd ?? this.replyText.length;
+      this.replyText = this.replyText.slice(0, start) + text + this.replyText.slice(end);
+      this.$nextTick(() => {
+        ta.focus();
+        const pos = start + text.length;
+        ta.selectionStart = pos;
+        ta.selectionEnd = pos;
+      });
+    },
+    onReplyImageSelected(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+      this.uploadReplyImage(file);
+    },
+    uploadReplyImage(file) {
+      if (this.isUploadingReplyImage || !this.canAct) return;
+      if (!this.canUploadReplyImage) {
+        this.lastError = `Reply can include up to ${this.mediaLimit} images/videos.`;
+        return;
+      }
+      this.replyUploadError = "";
+      this.isUploadingReplyImage = true;
+      uploadImageToSteemit(this.username, file, (res) => {
+        this.isUploadingReplyImage = false;
+        if (!res.success) {
+          this.replyUploadError = res.error || "Image upload failed.";
+          this.lastError = this.replyUploadError;
+          return;
+        }
+        const alt = makeImageAltText(file.name);
+        this.insertReplyAtCursor(`![${alt}](${res.url})`);
+      });
+    },
+    runLiveReplyPreview() {
+      this.liveReplyTab = "preview";
+      this.liveReplyIframeHeight = 80;
+      this.liveReplyPreviewKey++;
+    },
+    useLiveReplyTemplate(tpl) {
+      this.liveReplyCode = tpl.code;
+      this.liveReplyTitle = tpl.name;
+      this.liveReplyBody = tpl.desc || "";
+      this.liveReplyTab = "code";
+    },
+    buildLiveReplySandboxDoc(code) {
+      return buildLiveTwistSandboxDoc(code);
+    },
+    onLiveReplyPreviewMessage(e) {
+      const iframe = this.$refs.liveReplyPreview;
+      if (!iframe || e.source !== iframe.contentWindow) return;
+      if (e?.data?.type === "LIVE_REPLY_PREVIEW_RESIZE") {
+        this.liveReplyIframeHeight = Math.max(e.data.height || 80, 80);
+      }
+    },
     pinPost() {
       if (!this.isOwnPost || this.isPinning) return;
       this.isPinning = true;
@@ -3068,8 +3408,47 @@ const TwistCardComponent = {
       });
     },
     submitReply() {
+      if (this.replyMode === "live") {
+        const code = this.liveReplyCode.trim();
+        if (!code || !this.canAct) return;
+        this.isReplying = true;
+        postLiveTwistReply(
+          this.username,
+          this.liveReplyTitle.trim() || "Live Twist",
+          this.liveReplyBody.trim() || "⚡ Live Twist — view on SteemTwist",
+          code,
+          this.post.author,
+          this.post.permlink,
+          (res) => {
+            this.isReplying = false;
+            if (res.success) {
+              this.liveReplyTitle  = "";
+              this.liveReplyBody   = "";
+              this.liveReplyCode   = "";
+              this.showReplies     = true;
+              this.replyCount++;
+              draftStorage.clear("live_reply_title_" + this.post.permlink);
+              draftStorage.clear("live_reply_body_" + this.post.permlink);
+              draftStorage.clear("live_reply_code_" + this.post.permlink);
+              this.$emit("replied", this.post);
+            } else {
+              this.lastError = res.error || res.message || "Live reply failed.";
+            }
+          }
+        );
+        return;
+      }
+
       const text = this.replyText.trim();
       if (!text || !this.canAct) return;
+      if (this.replyOverLimit) {
+        this.lastError = "Reply text exceeds 280 characters (media excluded).";
+        return;
+      }
+      if (this.replyMediaLimitExceeded) {
+        this.lastError = `Reply can include up to ${REGULAR_TWIST_MEDIA_LIMIT} images/videos.`;
+        return;
+      }
       this.isReplying = true;
       postTwistReply(this.username, text, this.post.author, this.post.permlink, (res) => {
         this.isReplying = false;
@@ -3191,6 +3570,12 @@ const TwistCardComponent = {
         }
       });
     }
+  },
+  mounted() {
+    window.addEventListener("message", this.onLiveReplyPreviewMessage);
+  },
+  unmounted() {
+    window.removeEventListener("message", this.onLiveReplyPreviewMessage);
   },
   template: `
     <div style="
@@ -3483,6 +3868,27 @@ const TwistCardComponent = {
 
       <!-- Inline reply compose box -->
       <div v-if="showReplyBox && canAct" style="margin-top:12px;">
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button
+            @click="replyMode = 'twist'"
+            :style="{
+              background: replyMode === 'twist' ? '#2e2050' : '#0f0a1e',
+              color:      replyMode === 'twist' ? '#e8e0f0' : '#9b8db0',
+              border:'1px solid #2e2050', borderRadius:'999px',
+              padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer'
+            }"
+          >🌀 Reply</button>
+          <button
+            @click="replyMode = 'live'"
+            :style="{
+              background: replyMode === 'live' ? '#3b1a07' : '#0f0a1e',
+              color:      replyMode === 'live' ? '#fdba74' : '#9b8db0',
+              border:'1px solid #2e2050', borderRadius:'999px',
+              padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer'
+            }"
+          >⚡ Live Reply</button>
+        </div>
+        <template v-if="replyMode === 'twist'">
         <div style="display:flex;gap:4px;margin-bottom:4px;">
           <button
             @click="replyPreviewMode = false"
@@ -3505,6 +3911,7 @@ const TwistCardComponent = {
         </div>
         <textarea
           v-show="!replyPreviewMode"
+          ref="replyTextarea"
           v-model="replyText"
           placeholder="Write a reply… (markdown supported)"
           maxlength="1000"
@@ -3515,6 +3922,15 @@ const TwistCardComponent = {
             color:#e8e0f0;font-size:14px;resize:vertical;min-height:60px;
           "
         ></textarea>
+        <div v-show="!replyPreviewMode" style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <input ref="replyImageInput" type="file" accept="image/*" style="display:none;" @change="onReplyImageSelected" />
+          <button
+            @click="$refs.replyImageInput.click()"
+            :disabled="isUploadingReplyImage || !canUploadReplyImage"
+            style="padding:5px 12px;margin:0;background:#1a1030;border:1px solid #3b1f5e;color:#c084fc;font-size:12px;"
+          >{{ isUploadingReplyImage ? "Uploading…" : "📷 Upload image" }}</button>
+          <span v-if="replyUploadError" style="font-size:12px;color:#fca5a5;">{{ replyUploadError }}</span>
+        </div>
         <div
           v-show="replyPreviewMode"
           class="twist-body"
@@ -3525,13 +3941,78 @@ const TwistCardComponent = {
             font-size:14px;color:#e8e0f0;line-height:1.6;word-break:break-word;
           "
         ></div>
-        <div style="text-align:right;margin-top:4px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+          <span :style="{ fontSize:'12px', color: (replyOverLimit || replyMediaLimitExceeded) ? '#fca5a5' : '#5a4e70' }">
+            {{ replyCharCount }} / 280 (media excluded) · media {{ replyMediaCount }}/{{ mediaLimit }}
+          </span>
           <button
             @click="submitReply"
-            :disabled="!replyText.trim() || isReplying"
+            :disabled="!canSubmitReply"
             style="font-size:13px;padding:5px 14px;"
           >{{ isReplying ? "Posting…" : "Reply" }}</button>
         </div>
+        </template>
+        <template v-else>
+          <input
+            v-model="liveReplyTitle"
+            type="text"
+            maxlength="80"
+            placeholder="Live Twist"
+            style="width:100%;box-sizing:border-box;padding:7px 9px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:13px;margin-bottom:6px;"
+          />
+          <input
+            v-model="liveReplyBody"
+            type="text"
+            maxlength="280"
+            placeholder="⚡ Live Twist — view on SteemTwist"
+            style="width:100%;box-sizing:border-box;padding:7px 9px;border-radius:8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:13px;margin-bottom:6px;"
+          />
+          <div style="display:flex;gap:4px;margin-bottom:0;">
+            <button @click="liveReplyTab = 'code'"
+              :style="{ background: liveReplyTab==='code' ? '#2e2050' : 'none', color: liveReplyTab==='code' ? '#e8e0f0' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer' }">Code</button>
+            <button @click="runLiveReplyPreview"
+              :style="{ background: liveReplyTab==='preview' ? '#2e2050' : 'none', color: liveReplyTab==='preview' ? '#fb923c' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer' }">▶ Preview</button>
+            <button @click="liveReplyTab = 'templates'"
+              :style="{ background: liveReplyTab==='templates' ? '#2e2050' : 'none', color: liveReplyTab==='templates' ? '#22d3ee' : '#9b8db0', border:'1px solid #2e2050', borderRadius:'6px 6px 0 0', padding:'3px 12px', fontSize:'12px', margin:0, cursor:'pointer' }">📄 Templates</button>
+          </div>
+          <textarea
+            v-show="liveReplyTab === 'code'"
+            v-model="liveReplyCode"
+            spellcheck="false"
+            placeholder="app.render('Hello from a Live Reply!')"
+            style="width:100%;box-sizing:border-box;padding:8px;border-radius:0 8px 8px 8px;border:1px solid #2e2050;background:#0f0a1e;color:#e8e0f0;font-size:12px;font-family:monospace;resize:vertical;min-height:110px;line-height:1.5;"
+          ></textarea>
+          <div v-if="liveReplyTab === 'preview'" style="border-radius:0 8px 8px 8px;border:1px solid #2e2050;overflow:hidden;">
+            <iframe :key="liveReplyPreviewKey" ref="liveReplyPreview" sandbox="allow-scripts"
+              :srcdoc="buildLiveReplySandboxDoc(liveReplyCode)"
+              :style="{ width:'100%', border:'none', display:'block', height: liveReplyIframeHeight + 'px', background:'#0f0a1e' }"
+              scrolling="no"></iframe>
+          </div>
+          <div v-if="liveReplyTab === 'templates'" style="border:1px solid #2e2050;border-radius:0 8px 8px 8px;background:#0a0616;padding:10px;">
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">
+              <button v-for="st in [{k:'simple',label:'🔧 Simple'},{k:'greetings',label:'🎉 Greetings'},{k:'queries',label:'🔍 Queries'},{k:'actions',label:'⚡ Actions'}]"
+                :key="st.k" @click="liveReplyTemplateSubTab = st.k"
+                :style="{ borderRadius:'20px', padding:'3px 10px', fontSize:'11px', border:'1px solid', background: liveReplyTemplateSubTab===st.k ? '#2e2050' : 'none', color: liveReplyTemplateSubTab===st.k ? '#e8e0f0' : '#9b8db0', borderColor: liveReplyTemplateSubTab===st.k ? '#a855f7' : '#2e2050', margin:0, cursor:'pointer' }"
+              >{{ st.label }}</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div v-for="tpl in (liveReplyTemplateSubTab==='simple' ? $options.liveTemplates : liveReplyTemplateSubTab==='greetings' ? $options.liveGreetings : liveReplyTemplateSubTab==='queries' ? $options.liveQueries : $options.liveActions)"
+                :key="tpl.id" @click="useLiveReplyTemplate(tpl)"
+                style="background:#1a1030;border:1px solid #2e2050;border-radius:8px;padding:8px;cursor:pointer;">
+                <div style="font-size:16px;">{{ tpl.icon }}</div>
+                <div style="font-size:12px;color:#e8e0f0;font-weight:600;">{{ tpl.name }}</div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+            <span style="font-size:12px;color:#5a4e70;">Code {{ liveReplyCode.length }} / 10000</span>
+            <button
+              @click="submitReply"
+              :disabled="!canSubmitLiveReply"
+              style="font-size:13px;padding:5px 14px;"
+            >{{ isReplying ? "Posting…" : "Publish ⚡" }}</button>
+          </div>
+        </template>
       </div>
 
       <!-- Blockchain error -->
@@ -3837,9 +4318,60 @@ const LiveTwistComposerComponent = {
 };
 
 
+function countTwistCharsExcludingMedia(message) {
+  if (!message) return 0;
+  let text = String(message);
+
+  // Markdown image syntax: ![alt](url)
+  text = text.replace(/!\[[^\]]*]\([^)]+\)/g, "");
+  // HTML media tags: <img ...>, <video ...>, <source ...>
+  text = text.replace(/<(img|video|source)\b[^>]*>/gi, "");
+  // Bare media URLs on their own line: image/GIF/video file extensions.
+  text = text.replace(
+    /^\s*https?:\/\/\S+\.(?:gif|png|jpe?g|webp|bmp|svg|mp4|webm|mov|m4v)(?:\?\S*)?\s*$/gim,
+    ""
+  );
+
+  return text.length;
+}
+
+function countMediaEmbeds(message) {
+  if (!message) return 0;
+  const text = String(message);
+  const patterns = [
+    /!\[[^\]]*]\([^)]+\)/g, // Markdown image
+    /<(img|video|source)\b[^>]*>/gi, // HTML media tags
+    /^\s*https?:\/\/\S+\.(?:gif|png|jpe?g|webp|bmp|svg|mp4|webm|mov|m4v)(?:\?\S*)?\s*$/gim // bare media URL
+  ];
+  return patterns.reduce((sum, pattern) => sum + ((text.match(pattern) || []).length), 0);
+}
+
+function makeImageAltText(fileName) {
+  const base = String(fileName || "image")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[\r\n\t]+/g, " ")
+    .trim();
+  return (base || "image").slice(0, IMAGE_ALT_TEXT_MAX_LENGTH);
+}
+
+function buildLiveTwistSandboxDoc(userCode) {
+  const escaped = JSON.stringify(userCode || "");
+  const escapedPurifyConfig = LIVE_TWIST_PURIFY_CONFIG;
+  return "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+    "<script src='https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js' integrity='sha256-wIRQlqfEpnQfNirFBslMHH0n3GA7zBv2Slh/dvLb46E=' crossorigin='anonymous'></script><style>" +
+    "body{margin:0;padding:8px;font-family:system-ui,sans-serif;font-size:14px;background:#0f0a1e;color:#e8e0f0;box-sizing:border-box;word-break:break-word}" +
+    "*{box-sizing:border-box}" +
+    "button{cursor:pointer;padding:5px 12px;border-radius:6px;background:#6d28d9;color:#fff;border:none;font-size:13px}" +
+    "input,textarea{background:#1a1030;color:#e8e0f0;border:1px solid #3b1f5e;border-radius:6px;padding:5px 8px;font-size:13px;width:100%}" +
+    "#_root{min-height:32px}" +
+    "</style></head><body><div id='_root'></div>" +
+    "<script>(function(){window.fetch=()=>Promise.reject(new Error('Network blocked'));window.XMLHttpRequest=function(){throw new Error('Network blocked');};window.WebSocket=function(){throw new Error('Network blocked');};window.open=()=>null;var purify=DOMPurify;var _purifyConfig=" + escapedPurifyConfig + ";function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,_purifyConfig);return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}var _root=document.getElementById('_root');var app={render:function(h){_root.innerHTML=sanitize(String(h));setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},0);},text:function(s){_root.textContent=String(s).slice(0,2000);setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},0);},resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:px},'*');},log:function(){}};var userCode=" + escaped + ";try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},150);})();<\/script></body></html>";
+}
+
 const TwistComposerComponent = {
   name: "TwistComposerComponent",
   components: { LiveTwistComposerComponent },
+  inject: ["notify"],
   props: {
     username:    { type: String,  default: "" },
     hasKeychain: { type: Boolean, default: false },
@@ -3851,13 +4383,25 @@ const TwistComposerComponent = {
     return {
       composerMode: draft.composerMode || "twist",
       message:      draft.message      || "",
-      previewMode:  false
+      previewMode:  false,
+      isUploadingImage: false,
+      uploadError: ""
     };
   },
   computed: {
-    charCount()   { return this.message.length; },
+    charCount()   { return countTwistCharsExcludingMedia(this.message); },
     overLimit()   { return this.charCount > 280; },
-    canPost()     { return !!this.username && this.hasKeychain && this.charCount > 0 && !this.overLimit && !this.isPosting; },
+    mediaCount()  { return countMediaEmbeds(this.message); },
+    mediaLimitExceeded() { return this.mediaCount > REGULAR_TWIST_MEDIA_LIMIT; },
+    mediaLimit()  { return REGULAR_TWIST_MEDIA_LIMIT; },
+    canUploadImage() { return this.mediaCount < this.mediaLimit; },
+    canPost()     {
+      return !!this.username && this.hasKeychain &&
+             this.charCount > 0 &&
+             !this.overLimit &&
+             !this.mediaLimitExceeded &&
+             !this.isPosting;
+    },
     previewHtml() {
       return this.message.trim()
         ? DOMPurify.sanitize(renderMarkdown(this.message))
@@ -3869,7 +4413,57 @@ const TwistComposerComponent = {
     composerMode(v) { draftStorage.save("twist_composer", { composerMode: v, message: this.message }); }
   },
   methods: {
+    insertAtCursor(text) {
+      const ta = this.$refs.twistTextarea;
+      if (!ta) {
+        this.message = (this.message ? this.message + "\n" : "") + text;
+        return;
+      }
+      const start = ta.selectionStart ?? this.message.length;
+      const end   = ta.selectionEnd ?? this.message.length;
+      this.message = this.message.slice(0, start) + text + this.message.slice(end);
+      this.$nextTick(() => {
+        ta.focus();
+        const pos = start + text.length;
+        ta.selectionStart = pos;
+        ta.selectionEnd   = pos;
+      });
+    },
+    onImageSelected(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+      this.uploadImage(file);
+    },
+    uploadImage(file) {
+      if (this.isUploadingImage) return;
+      if (!this.canUploadImage) {
+        this.notify(`A twist can include up to ${this.mediaLimit} images/videos.`, "error");
+        return;
+      }
+      this.uploadError = "";
+      this.isUploadingImage = true;
+      uploadImageToSteemit(this.username, file, (res) => {
+        this.isUploadingImage = false;
+        if (!res.success) {
+          this.uploadError = res.error || "Image upload failed.";
+          this.notify(this.uploadError, "error");
+          return;
+        }
+        const alt = makeImageAltText(file.name);
+        this.insertAtCursor(`![${alt}](${res.url})`);
+        this.notify("Image uploaded and inserted.", "success");
+      });
+    },
     submit() {
+      if (this.overLimit) {
+        this.notify("Twist text exceeds 280 characters (media excluded).", "error");
+        return;
+      }
+      if (this.mediaLimitExceeded) {
+        this.notify(`A twist can include up to ${this.mediaLimit} images/videos.`, "error");
+        return;
+      }
       if (!this.canPost) return;
       this.$emit("post", this.message.trim());
       this.message     = "";
@@ -3941,6 +4535,7 @@ const TwistComposerComponent = {
 
         <textarea
           v-show="!previewMode"
+          ref="twistTextarea"
           v-model="message"
           placeholder="What's your twist? (markdown supported)"
           maxlength="500"
@@ -3954,6 +4549,23 @@ const TwistComposerComponent = {
           @keydown.ctrl.enter="submit"
         ></textarea>
 
+        <div v-show="!previewMode" style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <input
+            ref="imageInput"
+            type="file"
+            accept="image/*"
+            style="display:none;"
+            @change="onImageSelected"
+          />
+          <button
+            @click="$refs.imageInput.click()"
+            :disabled="!username || !hasKeychain || isUploadingImage || !canUploadImage"
+            :title="!canUploadImage ? ('Image limit reached (' + mediaLimit + ').') : ''"
+            style="padding:6px 12px;margin:0;background:#1a1030;border:1px solid #3b1f5e;color:#c084fc;font-size:12px;"
+          >{{ isUploadingImage ? "Uploading…" : "📷 Upload image" }}</button>
+          <span v-if="uploadError" style="font-size:12px;color:#fca5a5;">{{ uploadError }}</span>
+        </div>
+
         <div
           v-show="previewMode"
           class="twist-body"
@@ -3966,8 +4578,8 @@ const TwistComposerComponent = {
         ></div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-          <span :style="{ fontSize:'13px', color: overLimit ? '#fca5a5' : '#5a4e70' }">
-            {{ charCount }} / 280
+          <span :style="{ fontSize:'13px', color: (overLimit || mediaLimitExceeded) ? '#fca5a5' : '#5a4e70' }">
+            {{ charCount }} / 280 (media excluded) · media {{ mediaCount }}/{{ mediaLimit }}
           </span>
           <button @click="submit" :disabled="!canPost" style="padding:7px 20px;margin:0;">
             {{ isPosting ? "Posting..." : "Twist 🌀" }}
@@ -4208,6 +4820,7 @@ const UserRowComponent = {
 // Supports markdown with a Write / Preview tab toggle.
 const SecretTwistComposerComponent = {
   name: "SecretTwistComposerComponent",
+  inject: ["notify"],
   props: {
     username:    { type: String,  default: "" },
     hasKeychain: { type: Boolean, default: false },
@@ -4220,11 +4833,16 @@ const SecretTwistComposerComponent = {
     return {
       recipient:   this.toUsername || draft.recipient || "",
       message:     draft.message   || "",
-      previewMode: false
+      previewMode: false,
+      isUploadingImage: false,
+      uploadError: ""
     };
   },
   computed: {
     charCount()   { return this.message.length; },
+    mediaCount()  { return countMediaEmbeds(this.message); },
+    mediaLimit()  { return REGULAR_TWIST_MEDIA_LIMIT; },
+    canUploadImage() { return this.mediaCount < this.mediaLimit; },
     previewHtml() {
       return this.message.trim()
         ? DOMPurify.sanitize(renderMarkdown(this.message))
@@ -4242,6 +4860,48 @@ const SecretTwistComposerComponent = {
     message(v)   { draftStorage.save("secret_composer", { recipient: this.recipient, message: v }); }
   },
   methods: {
+    insertAtCursor(text) {
+      const ta = this.$refs.secretTextarea;
+      if (!ta) {
+        this.message = (this.message ? this.message + "\n" : "") + text;
+        return;
+      }
+      const start = ta.selectionStart ?? this.message.length;
+      const end   = ta.selectionEnd ?? this.message.length;
+      this.message = this.message.slice(0, start) + text + this.message.slice(end);
+      this.$nextTick(() => {
+        ta.focus();
+        const pos = start + text.length;
+        ta.selectionStart = pos;
+        ta.selectionEnd   = pos;
+      });
+    },
+    onImageSelected(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+      this.uploadImage(file);
+    },
+    uploadImage(file) {
+      if (this.isUploadingImage) return;
+      if (!this.canUploadImage) {
+        this.notify(`A secret twist can include up to ${this.mediaLimit} images/videos.`, "error");
+        return;
+      }
+      this.uploadError = "";
+      this.isUploadingImage = true;
+      uploadImageToSteemit(this.username, file, (res) => {
+        this.isUploadingImage = false;
+        if (!res.success) {
+          this.uploadError = res.error || "Image upload failed.";
+          this.notify(this.uploadError, "error");
+          return;
+        }
+        const alt = makeImageAltText(file.name);
+        this.insertAtCursor(`![${alt}](${res.url})`);
+        this.notify("Image uploaded and inserted.", "success");
+      });
+    },
     submit() {
       if (!this.canSend) return;
       this.$emit("send", {
@@ -4312,6 +4972,7 @@ const SecretTwistComposerComponent = {
       <!-- Write mode -->
       <textarea
         v-show="!previewMode"
+        ref="secretTextarea"
         v-model="message"
         placeholder="Write your secret message… (markdown supported)"
         style="
@@ -4323,6 +4984,23 @@ const SecretTwistComposerComponent = {
         "
         @keydown.ctrl.enter="submit"
       ></textarea>
+
+      <div v-show="!previewMode" style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <input
+          ref="imageInput"
+          type="file"
+          accept="image/*"
+          style="display:none;"
+          @change="onImageSelected"
+        />
+        <button
+          @click="$refs.imageInput.click()"
+          :disabled="!username || !hasKeychain || isUploadingImage || !canUploadImage"
+          :title="!canUploadImage ? ('Image limit reached (' + mediaLimit + ').') : ''"
+          style="padding:6px 12px;margin:0;background:#0f0a1e;border:1px solid #3b1f5e;color:#c084fc;font-size:12px;"
+        >{{ isUploadingImage ? "Uploading…" : "📷 Upload image" }}</button>
+        <span v-if="uploadError" style="font-size:12px;color:#fca5a5;">{{ uploadError }}</span>
+      </div>
 
       <!-- Preview mode -->
       <div
@@ -4370,6 +5048,8 @@ const SecretTwistCardComponent = {
       showReplyBox:    false,
       replyMessage:    draftStorage.load("secret_reply_" + this.post.permlink, ""),
       replyPreviewMode: false,
+      isUploadingReplyImage: false,
+      replyUploadError: "",
       isReplying:      false,
       replyError:      "",
       replies:        [],      // decrypted nested replies
@@ -4398,6 +5078,10 @@ const SecretTwistCardComponent = {
     otherParty()   { return this.isSender ? this.recipient : this.post.author; },
     avatarUrl()    { return `https://steemitimages.com/u/${this.post.author}/avatar/small`; },
     replyCount()      { return this.post.children || 0; },
+    replyMediaCount() { return countMediaEmbeds(this.replyMessage); },
+    mediaLimit()      { return REGULAR_TWIST_MEDIA_LIMIT; },
+    replyMediaLimitExceeded() { return this.replyMediaCount > this.mediaLimit; },
+    canUploadReplyImage() { return this.replyMediaCount < this.mediaLimit; },
     replyPreviewHtml() {
       return this.replyMessage.trim()
         ? DOMPurify.sanitize(renderMarkdown(this.replyMessage))
@@ -4421,7 +5105,48 @@ const SecretTwistCardComponent = {
   watch: {
     replyMessage(v) { draftStorage.save("secret_reply_" + this.post.permlink, v); }
   },
-    methods: {
+  methods: {
+    insertReplyAtCursor(text) {
+      const ta = this.$refs.secretReplyTextarea;
+      if (!ta) {
+        this.replyMessage = (this.replyMessage ? this.replyMessage + "\n" : "") + text;
+        return;
+      }
+      const start = ta.selectionStart ?? this.replyMessage.length;
+      const end   = ta.selectionEnd ?? this.replyMessage.length;
+      this.replyMessage = this.replyMessage.slice(0, start) + text + this.replyMessage.slice(end);
+      this.$nextTick(() => {
+        ta.focus();
+        const pos = start + text.length;
+        ta.selectionStart = pos;
+        ta.selectionEnd   = pos;
+      });
+    },
+    onReplyImageSelected(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+      this.uploadReplyImage(file);
+    },
+    uploadReplyImage(file) {
+      if (this.isUploadingReplyImage) return;
+      if (!this.canUploadReplyImage) {
+        this.replyError = `A secret twist reply can include up to ${this.mediaLimit} images/videos.`;
+        return;
+      }
+      this.replyUploadError = "";
+      this.isUploadingReplyImage = true;
+      uploadImageToSteemit(this.username, file, (res) => {
+        this.isUploadingReplyImage = false;
+        if (!res.success) {
+          this.replyUploadError = res.error || "Image upload failed.";
+          this.replyError = this.replyUploadError;
+          return;
+        }
+        const alt = makeImageAltText(file.name);
+        this.insertReplyAtCursor(`![${alt}](${res.url})`);
+      });
+    },
     decrypt() {
       if (!this.canDecrypt || this.isDecrypting) return;
       this.isDecrypting = true;
@@ -4461,6 +5186,10 @@ const SecretTwistCardComponent = {
     sendReply() {
       const text = this.replyMessage.trim();
       if (!text || !this.isParticipant || !this.hasKeychain || this.isReplying) return;
+      if (this.replyMediaLimitExceeded) {
+        this.replyError = `A secret twist reply can include up to ${this.mediaLimit} images/videos.`;
+        return;
+      }
       this.isReplying  = true;
       this.replyError  = "";
       replySecretTwist(
@@ -4472,6 +5201,7 @@ const SecretTwistCardComponent = {
             this.replyMessage     = "";
             this.showReplyBox     = false;
             this.replyPreviewMode = false;
+            this.replyUploadError = "";
             draftStorage.clear("secret_reply_" + this.post.permlink);
             // Reload replies after a short delay for indexing
             setTimeout(() => {
@@ -4597,6 +5327,7 @@ const SecretTwistCardComponent = {
 
         <textarea
           v-show="!replyPreviewMode"
+          ref="secretReplyTextarea"
           v-model="replyMessage"
           placeholder="Write an encrypted reply… (markdown supported)"
           style="
@@ -4607,6 +5338,23 @@ const SecretTwistCardComponent = {
           "
           @keydown.ctrl.enter="sendReply"
         ></textarea>
+
+        <div v-show="!replyPreviewMode" style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <input
+            ref="replyImageInput"
+            type="file"
+            accept="image/*"
+            style="display:none;"
+            @change="onReplyImageSelected"
+          />
+          <button
+            @click="$refs.replyImageInput.click()"
+            :disabled="!username || !hasKeychain || isUploadingReplyImage || !canUploadReplyImage"
+            :title="!canUploadReplyImage ? ('Image limit reached (' + mediaLimit + ').') : ''"
+            style="padding:6px 12px;margin:0;background:#0f0a1e;border:1px solid #3b1f5e;color:#c084fc;font-size:12px;"
+          >{{ isUploadingReplyImage ? "Uploading…" : "📷 Upload image" }}</button>
+          <span v-if="replyUploadError" style="font-size:12px;color:#fca5a5;">{{ replyUploadError }}</span>
+        </div>
 
         <div
           v-show="replyPreviewMode"
@@ -4620,10 +5368,12 @@ const SecretTwistCardComponent = {
         ></div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
-          <span style="font-size:12px;color:#5a4e70;">{{ replyMessage.length }} chars</span>
+          <span :style="{ fontSize:'12px', color: replyMediaLimitExceeded ? '#fca5a5' : '#5a4e70' }">
+            {{ replyMessage.length }} chars · media {{ replyMediaCount }}/{{ mediaLimit }}
+          </span>
           <button
             @click="sendReply"
-            :disabled="!replyMessage.trim() || isReplying"
+            :disabled="!replyMessage.trim() || isReplying || replyMediaLimitExceeded"
             style="background:linear-gradient(135deg,#6d28d9,#a21caf);padding:5px 14px;font-size:12px;margin:0;"
           >{{ isReplying ? "Sending…" : "Send 🔒" }}</button>
         </div>
