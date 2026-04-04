@@ -1247,6 +1247,27 @@ function stripBackLink(text) {
   return text.replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "").trimEnd();
 }
 
+// Live Twist posts are broadcast with a body that starts with the label
+// for Steemit-style UIs: "**Label**\n\nDescription". In SteemTwist we already
+// render the label in the card header, so remove that duplicated first line.
+function stripLiveTwistLabelPrefix(text, label) {
+  let cleaned = stripBackLink(text || "").trim();
+  const title = (label || "").trim();
+  if (!cleaned || !title) return cleaned;
+
+  const esc = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  cleaned = cleaned
+    .replace(new RegExp(`^\\*\\*${esc}\\*\\*\\s*\\n+`, "i"), "")
+    .replace(new RegExp(`^#\\s*${esc}\\s*\\n+`, "i"), "");
+
+  if (
+    cleaned === `**${title}**` ||
+    cleaned.toLowerCase() === `# ${title}`.toLowerCase()
+  ) return "";
+
+  return cleaned.trim();
+}
+
 // ---- ReplyCardComponent ----
 // Renders a single reply with its own compose box and a recursive
 // ThreadComponent for its children. Declared before ThreadComponent
@@ -1257,7 +1278,7 @@ const ReplyCardComponent = {
   liveGreetings: LIVE_TWIST_GREETINGS,
   liveQueries: LIVE_TWIST_QUERIES,
   liveActions: LIVE_TWIST_ACTIONS,
-  inject: ["username", "hasKeychain"],
+  inject: ["username", "hasKeychain", "notify"],
   props: {
     reply: { type: Object, required: true },
     depth: { type: Number, default: 0 }
@@ -1373,6 +1394,12 @@ const ReplyCardComponent = {
     liveReplyCode(v)  { draftStorage.save("live_reply_code_" + this.reply.permlink, v); }
   },
     methods: {
+    handleLivePreviewQuery(queryType, params, iframeSource, reqId) {
+      return LIVE_TWIST_HANDLER_MIXIN.handleQueryRequest.call(this, queryType, params, iframeSource, reqId);
+    },
+    handleLivePreviewAction(actionType, params, iframeSource) {
+      return LIVE_TWIST_HANDLER_MIXIN.handleActionRequest.call(this, actionType, params, iframeSource);
+    },
     vote() {
       if (!this.canAct || this.isVoting || this.hasVoted) return;
       this.isVoting = true;
@@ -1465,6 +1492,12 @@ const ReplyCardComponent = {
       if (!iframe || e.source !== iframe.contentWindow) return;
       if (e?.data?.type === "LIVE_REPLY_PREVIEW_RESIZE") {
         this.liveReplyIframeHeight = Math.max(e.data.height || 80, 80);
+      }
+      if (e?.data?.type === "LIVE_TWIST_QUERY") {
+        this.handleLivePreviewQuery(e.data.queryType, e.data.params, e.source, e.data._reqId);
+      }
+      if (e?.data?.type === "LIVE_TWIST_ACTION") {
+        this.handleLivePreviewAction(e.data.actionType, e.data.params, e.source);
       }
     },
     submitReply() {
@@ -1912,33 +1945,67 @@ const ThreadComponent = {
   props: {
     author:   { type: String,  required: true },
     permlink: { type: String,  required: true },
-    depth:    { type: Number,  default: 0 }
+    depth:    { type: Number,  default: 0 },
+    // Bumped by parent after posting a reply so this component re-fetches.
+    refreshKey: { type: Number, default: 0 }
   },
   data() {
     return {
       replies:   [],
-      loading:   true,
+      loading:   false,
       loadError: ""
     };
   },
   async created() {
-    try {
-      const replies = await fetchReplies(this.author, this.permlink);
-      // getContentReplies returns empty active_votes (a Steem node quirk that
-      // affects both the feed root and individual posts). Enrich active_votes
-      // only via a parallel getContent call so the Love count is correct.
-      // All other fields (body, children, etc.) are already populated.
-      this.replies = await Promise.all(
-        replies.map(r =>
-          fetchPost(r.author, r.permlink)
-            .then(full => ({ ...r, active_votes: full.active_votes || [] }))
-            .catch(() => r)
-        )
-      );
-    } catch (e) {
-      this.loadError = "Could not load replies.";
+    await this.loadReplies();
+  },
+  watch: {
+    // Re-fetch replies when parent signals new activity.
+    async refreshKey() {
+      await this.loadReplies({ force: true, retry: true });
     }
-    this.loading = false;
+  },
+  methods: {
+    async loadReplies(options = {}) {
+      const force = !!options.force;
+      const retry = !!options.retry;
+      if (this.loading && !force) return;
+      this.loading = true;
+      this.loadError = "";
+      try {
+        const hydrateReplies = async (items) => Promise.all(
+          items.map(r =>
+            fetchPost(r.author, r.permlink)
+              .then(full => ({ ...r, active_votes: full.active_votes || [] }))
+              .catch(() => r)
+          )
+        );
+        const replies = await fetchReplies(this.author, this.permlink);
+        // getContentReplies returns empty active_votes (a Steem node quirk that
+        // affects both the feed root and individual posts). Enrich active_votes
+        // only via a parallel getContent call so the Love count is correct.
+        // All other fields (body, children, etc.) are already populated.
+        const hydrated = await hydrateReplies(replies);
+        this.replies = hydrated;
+
+        // Steem nodes can lag briefly after a successful broadcast; retry a
+        // few times so the new reply appears without requiring a full refresh.
+        if (retry && this.refreshKey > 0 && hydrated.length < this.refreshKey) {
+          let attempts = 0;
+          const maxAttempts = 4;
+          const retryDelayMs = 1200;
+          while (attempts < maxAttempts && this.replies.length < this.refreshKey) {
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+            const later = await fetchReplies(this.author, this.permlink);
+            this.replies = await hydrateReplies(later);
+          }
+        }
+      } catch (e) {
+        this.loadError = "Could not load replies.";
+      }
+      this.loading = false;
+    }
   },
   template: `
     <div style="margin-top:8px;border-top:2px solid #2e2050;padding-top:8px;">
@@ -2783,10 +2850,15 @@ const LiveTwistComponent = {
     // Body is the human-readable description written by the author.
     // Strip the SteemTwist back-link appended by buildZeroPayoutOps before display.
     bodyText() {
-      const raw = (this.post.body || "").replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/i, "").trimEnd();
+      const raw = stripLiveTwistLabelPrefix(this.post.body || "", this.title);
       // Also skip the generic placeholder that means "no real description was provided"
       const placeholder = "\u26a1 Live Twist \u2014 view on SteemTwist";
       return (raw === placeholder || raw === "\u26a1 Live Twist - view on SteemTwist") ? "" : raw;
+    },
+    bodyHtml() {
+      return this.bodyText
+        ? DOMPurify.sanitize(renderMarkdown(this.bodyText))
+        : "";
     },
     codeSize(){ return new TextEncoder().encode(this.code).length; },
     tooBig()  { return this.codeSize > 10240; },   // 10 KB limit
@@ -3066,7 +3138,7 @@ ${'<'}/script>
       <div v-if="bodyText" style="
         padding:8px 10px;font-size:13px;color:#c0b0e0;line-height:1.6;
         border-bottom:1px solid #1a0a30;background:#120820;word-break:break-word;
-      ">{{ bodyText }}</div>
+      " v-html="bodyHtml"></div>
 
       <!-- Sandbox iframe (only mounted when running) -->
       <div v-if="running" style="padding:0;">
@@ -3121,6 +3193,7 @@ const TwistCardComponent = {
   liveGreetings: LIVE_TWIST_GREETINGS,
   liveQueries: LIVE_TWIST_QUERIES,
   liveActions: LIVE_TWIST_ACTIONS,
+  inject: ["notify"],
   components: { ThreadComponent, LiveTwistComponent },
   props: {
     post:        { type: Object,  required: true },
@@ -3288,6 +3361,7 @@ const TwistCardComponent = {
     editBody(v)  { if (this.isLiveEditBox) draftStorage.save("live_edit_" + this.post.permlink, { editCode: this.editCode, editTitle: this.editTitle, editBody: v }); }
   },
   methods: {
+    ...LIVE_TWIST_HANDLER_MIXIN,
     vote() {
       if (!this.canAct || this.isVoting || this.hasVoted) return;
       this.isVoting = true;
@@ -3388,6 +3462,12 @@ const TwistCardComponent = {
       if (e?.data?.type === "LIVE_REPLY_PREVIEW_RESIZE") {
         this.liveReplyIframeHeight = Math.max(e.data.height || 80, 80);
       }
+      if (e?.data?.type === "LIVE_TWIST_QUERY") {
+        this.handleQueryRequest(e.data.queryType, e.data.params, e.source, e.data._reqId);
+      }
+      if (e?.data?.type === "LIVE_TWIST_ACTION") {
+        this.handleActionRequest(e.data.actionType, e.data.params, e.source);
+      }
     },
     pinPost() {
       if (!this.isOwnPost || this.isPinning) return;
@@ -3425,6 +3505,8 @@ const TwistCardComponent = {
               this.liveReplyTitle  = "";
               this.liveReplyBody   = "";
               this.liveReplyCode   = "";
+              this.showReplyBox    = false;
+              this.threadExpanded  = true;
               this.showReplies     = true;
               this.replyCount++;
               draftStorage.clear("live_reply_title_" + this.post.permlink);
@@ -3455,6 +3537,8 @@ const TwistCardComponent = {
         if (res.success) {
           this.replyText        = "";
           this.replyPreviewMode = false;
+          this.showReplyBox     = false;
+          this.threadExpanded   = true;
           this.showReplies      = true;
           this.replyCount++;
           draftStorage.clear("reply_" + this.post.permlink);
@@ -4034,6 +4118,7 @@ const TwistCardComponent = {
         v-if="showThread"
         :author="post.author"
         :permlink="post.permlink"
+        :refresh-key="replyCount"
       ></thread-component>
 
     </div>
@@ -4365,7 +4450,7 @@ function buildLiveTwistSandboxDoc(userCode) {
     "input,textarea{background:#1a1030;color:#e8e0f0;border:1px solid #3b1f5e;border-radius:6px;padding:5px 8px;font-size:13px;width:100%}" +
     "#_root{min-height:32px}" +
     "</style></head><body><div id='_root'></div>" +
-    "<script>(function(){window.fetch=()=>Promise.reject(new Error('Network blocked'));window.XMLHttpRequest=function(){throw new Error('Network blocked');};window.WebSocket=function(){throw new Error('Network blocked');};window.open=()=>null;var purify=DOMPurify;var _purifyConfig=" + escapedPurifyConfig + ";function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,_purifyConfig);return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}var _root=document.getElementById('_root');var app={render:function(h){_root.innerHTML=sanitize(String(h));setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},0);},text:function(s){_root.textContent=String(s).slice(0,2000);setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},0);},resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:px},'*');},log:function(){}};var userCode=" + escaped + ";try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},150);})();<\/script></body></html>";
+    "<script>(function(){window.fetch=()=>Promise.reject(new Error('Network blocked'));window.XMLHttpRequest=function(){throw new Error('Network blocked');};window.WebSocket=function(){throw new Error('Network blocked');};window.open=()=>null;var purify=DOMPurify;var _purifyConfig=" + escapedPurifyConfig + ";function sanitize(h){if(typeof h!=='string')return '';if(purify)return purify.sanitize(h,_purifyConfig);return h.replace(/<script[\\s\\S]*?<\\/script>/gi,'');}var _root=document.getElementById('_root');var app={render:function(h){_root.innerHTML=sanitize(String(h));setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},0);},text:function(s){_root.textContent=String(s).slice(0,2000);setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},0);},resize:function(h){var px=Math.min(Math.max(parseInt(h)||200,40),600);parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:px},'*');},log:function(){},query:function(type,params){params=params||{};parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params},'*');},action:function(type,params){params=params||{};parent.postMessage({type:'LIVE_TWIST_ACTION',actionType:type,params:params},'*');},onResult:function(callback){if(app._onResultHandler)window.removeEventListener('message',app._onResultHandler);app._onResultHandler=function(e){if(e.data.type==='QUERY_RESULT'){callback(e.data.success,e.data.result);}else if(e.data.type==='ACTION_RESULT'){callback(e.data.success,e.data.action);}};window.addEventListener('message',app._onResultHandler);},ask:function(type,params){params=params||{};var reqId=Math.random().toString(36).slice(2);return new Promise(function(resolve,reject){var h=function(e){var d=e.data;if(d.type==='QUERY_RESULT'&&d._reqId===reqId){window.removeEventListener('message',h);if(d.success)resolve(d.result);else reject(new Error('Query failed: '+type));}};window.addEventListener('message',h);parent.postMessage({type:'LIVE_TWIST_QUERY',queryType:type,params:params,_reqId:reqId},'*');});}};var userCode=" + escaped + ";try{var fn=new Function('app',userCode);var r=fn(app);if(r&&typeof r.catch==='function')r.catch(function(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';});}catch(e){_root.innerHTML='<em style=\"color:#fca5a5\">Error: '+String(e)+'</em>';}setTimeout(function(){parent.postMessage({type:'LIVE_REPLY_PREVIEW_RESIZE',height:document.body.scrollHeight+16},'*');},150);})();<\/script></body></html>";
 }
 
 const TwistComposerComponent = {
