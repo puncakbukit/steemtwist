@@ -6,6 +6,10 @@
 const { createApp, ref, computed, onMounted, provide, inject, watch } = Vue;
 const { createRouter, createWebHashHistory, useRoute }                = VueRouter;
 
+function postKey(post) {
+  return `${post.author}/${post.permlink}`;
+}
+
 // ============================================================
 // ROUTE VIEWS
 // ============================================================
@@ -57,6 +61,10 @@ const ExploreView = {
         ? this.sortedTwists.filter(p => p.permlink !== this.pinnedTwist.permlink).length
         : this.sortedTwists.length;
       return this.pagedTwists.length < total;
+    },
+    canLoadOlder() {
+      if (this.understreamOn) return this.understreamCursor !== null;
+      return true;
     }
   },
 
@@ -99,9 +107,9 @@ const ExploreView = {
         this.understreamCursor = Array.isArray(result) ? null : (result.nextCursor || null);
         this.monthsLoaded = 1;
 
-        const serverPermalinks = new Set(fresh.map(p => p.permlink));
+        const serverPostKeys = new Set(fresh.map(p => postKey(p)));
         const realTimeOnly = this.twists.filter(
-          p => p._firehose && !serverPermalinks.has(p.permlink)
+          p => p._firehose && !serverPostKeys.has(postKey(p))
         );
         this.twists      = [...realTimeOnly, ...fresh];
         this.pinnedTwist = pinned;
@@ -134,8 +142,8 @@ const ExploreView = {
             return;
           }
           const result = await fetchRecentPosts(50, this.understreamCursor);
-          const existingKeys = new Set(this.twists.map(t => t.permlink));
-          const fresh = result.posts.filter(t => !existingKeys.has(t.permlink));
+          const existingKeys = new Set(this.twists.map(t => postKey(t)));
+          const fresh = result.posts.filter(t => !existingKeys.has(postKey(t)));
           if (fresh.length === 0) {
             this.notify("No more posts found.", "info");
           } else {
@@ -145,8 +153,8 @@ const ExploreView = {
         } else {
           const root = getMonthlyRootOffset(this.monthsLoaded);
           const older = await fetchTwistFeedPage(root);
-          const existingKeys = new Set(this.twists.map(t => t.permlink));
-          const fresh = older.filter(t => !existingKeys.has(t.permlink));
+          const existingKeys = new Set(this.twists.map(t => postKey(t)));
+          const fresh = older.filter(t => !existingKeys.has(postKey(t)));
           if (fresh.length === 0) {
             this.notify("No twists found in that month.", "info");
           } else {
@@ -392,22 +400,22 @@ const ExploreView = {
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
 
-        <!-- Load More (client-side page through already-fetched month) -->
-        <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+        <!-- Pagination controls -->
+        <div v-if="sortedTwists.length > 0 || canLoadOlder"
+             style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin:16px 0;">
           <button
+            v-if="hasMore"
             @click="page++"
             style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                    border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
           >Load more</button>
-        </div>
-        <!-- Load older month from blockchain when current page is exhausted -->
-        <div v-else-if="sortedTwists.length > 0" style="text-align:center;margin:16px 0;">
           <button
+            v-if="canLoadOlder"
             @click="loadOlderMonth"
             :disabled="loadingOlderMonth"
             style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                    border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
-          >{{ loadingOlderMonth ? "Loading…" : (understreamOn ? "Load more posts" : "Load older month") }}</button>
+          >{{ loadingOlderMonth ? "Loading…" : (understreamOn ? "Load more posts" : "Load older months") }}</button>
         </div>
       </template>
 
@@ -447,11 +455,8 @@ const HomeView = {
   computed: {
     sortedTwists() { return sortTwists(this.twists, this.sortMode); },
     pagedTwists()  { return this.sortedTwists.slice(0, this.page * this.pageSize); },
-    hasMore()      { return this.pagedTwists.length < this.sortedTwists.length; }
-  },
-
-  watch: {
-    sortMode() { this.page = 1; }
+    hasMore()      { return this.pagedTwists.length < this.sortedTwists.length; },
+    canLoadOlder() { return !this.understreamOn; }
   },
 
   async created() {
@@ -463,6 +468,7 @@ const HomeView = {
   },
 
   watch: {
+    sortMode() { this.page = 1; },
     username() {
       this.stopFirehose();
       this.loadFeed();
@@ -477,8 +483,9 @@ const HomeView = {
       try {
         const root = getMonthlyRootOffset(this.monthsLoaded);
         const older = await fetchTwistFeedPage(root);
-        const existingKeys = new Set(this.twists.map(t => t.permlink));
-        const fresh = older.filter(t => !existingKeys.has(t.permlink));
+        const olderFromFollowing = older.filter(p => this.followingSet.has(p.author));
+        const existingKeys = new Set(this.twists.map(t => postKey(t)));
+        const fresh = olderFromFollowing.filter(t => !existingKeys.has(postKey(t)));
         if (fresh.length === 0) {
           this.notify("No twists found in that month.", "info");
         } else {
@@ -539,7 +546,8 @@ const HomeView = {
         const merged = [];
         for (const posts of results) {
           for (const p of posts) {
-            if (!seen.has(p.permlink)) { seen.add(p.permlink); merged.push(p); }
+            const key = postKey(p);
+            if (!seen.has(key)) { seen.add(key); merged.push(p); }
           }
         }
         this.twists = merged;
@@ -756,22 +764,22 @@ const HomeView = {
           @deleted="p => twists = twists.filter(t => t.permlink !== p.permlink)"
         ></twist-card-component>
 
-        <!-- Load More (client-side page through already-fetched months) -->
-        <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+        <!-- Pagination controls -->
+        <div v-if="sortedTwists.length > 0 || canLoadOlder"
+             style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin:16px 0;">
           <button
+            v-if="hasMore"
             @click="page++"
             style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                    border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
           >Load more</button>
-        </div>
-        <!-- Load older month from blockchain when current pages are exhausted -->
-        <div v-else-if="sortedTwists.length > 0" style="text-align:center;margin:16px 0;">
           <button
+            v-if="canLoadOlder"
             @click="loadOlderMonth"
             :disabled="loadingOlderMonth"
             style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                    border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
-          >{{ loadingOlderMonth ? "Loading…" : "Load older month" }}</button>
+          >{{ loadingOlderMonth ? "Loading…" : "Load older months" }}</button>
         </div>
       </template>
 
@@ -818,6 +826,9 @@ const ProfileView = {
         ? this.userTwists.filter(p => p.permlink !== this.pinnedTwist.permlink).length
         : this.userTwists.length;
       return this.pagedTwists.length < total;
+    },
+    canLoadOlder() {
+      return this.nextCursor !== null;
     }
   },
 
@@ -844,7 +855,7 @@ const ProfileView = {
         // Understream:  full blog (all Steem posts by this user)
         const twistsPromise = this.understreamOn
           ? fetchPostsByUser(user, 50)   // now returns { posts, nextCursor }
-          : fetchTwistsByUser(user, this.monthlyRoot, { limit: 50 });
+          : fetchTwistsByUser(user, null, { limit: 50 });
 
         const [profile, result, pinned] = await Promise.all([
           fetchAccount(user),
@@ -871,9 +882,9 @@ const ProfileView = {
         const user = this.$route.params.user;
         const result = this.understreamOn
           ? await fetchPostsByUser(user, 50, this.nextCursor)
-          : await fetchTwistsByUser(user, this.monthlyRoot, { startFrom: this.nextCursor, limit: 50 });
-        const existingKeys = new Set(this.userTwists.map(t => t.permlink));
-        const fresh = result.posts.filter(t => !existingKeys.has(t.permlink));
+          : await fetchTwistsByUser(user, null, { startFrom: this.nextCursor, limit: 50 });
+        const existingKeys = new Set(this.userTwists.map(t => postKey(t)));
+        const fresh = result.posts.filter(t => !existingKeys.has(postKey(t)));
         if (fresh.length === 0) {
           this.notify("No older posts found.", "info");
         } else {
@@ -920,7 +931,7 @@ const ProfileView = {
             display:flex;align-items:center;justify-content:space-between;
           ">
             <h3 style="margin:0;color:#e8e0f0;">
-              {{ understreamOn ? '🌊 All posts' : '🌀 Twists this month' }}
+              {{ understreamOn ? '🌊 All posts' : '🌀 Twists' }}
             </h3>
             <div style="display:flex;gap:6px;">
               <button
@@ -959,7 +970,7 @@ const ProfileView = {
 
           <div v-if="userTwists.filter(p => !pinnedTwist || p.permlink !== pinnedTwist.permlink).length === 0"
                style="color:#5a4e70;padding:20px;font-size:14px;">
-            {{ understreamOn ? 'No posts found.' : 'No twists from @' + $route.params.user + ' this month.' }}
+            {{ understreamOn ? 'No posts found.' : 'No twists found for @' + $route.params.user + '.' }}
           </div>
 
           <twist-card-component
@@ -974,23 +985,22 @@ const ProfileView = {
             @deleted="p => userTwists = userTwists.filter(t => t.permlink !== p.permlink)"
           ></twist-card-component>
 
-          <!-- Load More (client-side page) -->
-          <div v-if="hasMore" style="text-align:center;margin:16px 0;">
+          <!-- Pagination controls -->
+          <div v-if="userTwists.length > 0 || canLoadOlder"
+               style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin:16px 0;">
             <button
+              v-if="hasMore"
               @click="page++"
               style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                      border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
             >Load more</button>
-          </div>
-          <!-- Load older posts from blockchain when current pages are exhausted -->
-          <div v-else-if="userTwists.length > 0 && nextCursor !== null"
-               style="text-align:center;margin:16px 0;">
             <button
+              v-if="canLoadOlder"
               @click="loadOlderTwists"
               :disabled="loadingOlder"
               style="background:#1e1535;color:#a855f7;border:1px solid #2e2050;
                      border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
-            >{{ loadingOlder ? "Loading…" : (understreamOn ? "Load more posts" : "Load older twists") }}</button>
+            >{{ loadingOlder ? "Loading…" : (understreamOn ? "Load more posts" : "Load older months") }}</button>
           </div>
           <div v-else-if="userTwists.length > 0 && nextCursor === null"
                style="text-align:center;color:#5a4e70;font-size:12px;padding:12px 0;">
@@ -1668,7 +1678,8 @@ const SecretTwistView = {
       pageSize:          20,
       historyMonthsBack: 0,        // 0=current month, 2=last 3 months, etc.
       monthsLoaded:      1,        // how many calendar months fetched so far
-      loadingOlderMonth: false     // true while fetching an older month
+      loadingOlderMonth: false,    // true while fetching an older month
+      highlightedParentKey: ""
     };
   },
 
@@ -1725,6 +1736,7 @@ const SecretTwistView = {
     },
     tab() {
       this.page = 1;
+      if (this.tab !== "sent") this.highlightedParentKey = "";
     }
   },
 
@@ -1741,7 +1753,18 @@ const SecretTwistView = {
       this.historyMonthsBack = Math.max(0, Number(monthsBack) || 0);
       this.monthsLoaded = this.historyMonthsBack + 1;
       try {
-        this.posts = await fetchSecretTwists(this.username, this.historyMonthsBack);
+        let posts = await fetchSecretTwistsWithNested(this.username, this.historyMonthsBack);
+        // If the current month is empty, automatically widen to recent history
+        // so users with older Secret Twists don't land on a blank inbox.
+        if (posts.length === 0 && this.historyMonthsBack === 0) {
+          posts = await fetchSecretTwistsWithNested(this.username, 2);
+          if (posts.length > 0) {
+            this.historyMonthsBack = 2;
+            this.monthsLoaded = 3;
+            this.notify("No Secret Twists this month — showing last 3 months.", "info");
+          }
+        }
+        this.posts = posts;
       } catch {
         this.notify("Could not load Secret Twists.", "error");
       }
@@ -1754,9 +1777,9 @@ const SecretTwistView = {
       try {
         // Fetch one more month back and merge (without resetting scroll/page).
         const nextMonthsBack = this.historyMonthsBack + 1;
-        const fresh = await fetchSecretTwists(this.username, nextMonthsBack);
-        const existingKeys = new Set(this.posts.map(p => p.permlink));
-        const added = fresh.filter(p => !existingKeys.has(p.permlink));
+        const fresh = await fetchSecretTwistsWithNested(this.username, nextMonthsBack);
+        const existingKeys = new Set(this.posts.map(p => postKey(p)));
+        const added = fresh.filter(p => !existingKeys.has(postKey(p)));
         if (added.length === 0) {
           this.notify("No older Secret Twists found.", "info");
         } else {
@@ -1791,6 +1814,21 @@ const SecretTwistView = {
           this.notify(res.error || res.message || "Failed to send Secret Twist.", "error");
         }
       });
+    },
+
+    jumpToParentInSent(parent) {
+      if (!parent || !parent.key) return;
+      const idx = this.sent.findIndex(p => postKey(p) === parent.key);
+      if (idx === -1) {
+        this.notify("Original Secret Twist not found in loaded Sent history.", "info");
+        return;
+      }
+      this.tab = "sent";
+      this.page = Math.max(1, Math.ceil((idx + 1) / this.pageSize));
+      this.highlightedParentKey = parent.key;
+      setTimeout(() => {
+        if (this.highlightedParentKey === parent.key) this.highlightedParentKey = "";
+      }, 5000);
     }
   },
 
@@ -1886,6 +1924,9 @@ const SecretTwistView = {
             :post="post"
             :username="username"
             :has-keychain="hasKeychain"
+            :show-parent-link="tab === 'inbox'"
+            :highlight-key="highlightedParentKey"
+            @jump-to-parent="jumpToParentInSent"
           ></secret-twist-card-component>
 
           <!-- Load More (client-side page) -->
@@ -1896,15 +1937,15 @@ const SecretTwistView = {
                      border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
             >Load more</button>
           </div>
-          <!-- Load older month from blockchain when current pages are exhausted -->
-          <div v-else-if="activeList.length > 0" style="text-align:center;margin:16px 0;">
-            <button
-              @click="loadOlderMonth"
-              :disabled="loadingOlderMonth"
-              style="background:#1a1030;color:#a855f7;border:1px solid #3b1f5e;
-                     border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
-            >{{ loadingOlderMonth ? "Loading…" : "Load older month" }}</button>
-          </div>
+	          <!-- Load older month from blockchain -->
+	          <div v-else style="text-align:center;margin:16px 0;">
+	            <button
+	              @click="loadOlderMonth"
+	              :disabled="loadingOlderMonth"
+	              style="background:#1a1030;color:#a855f7;border:1px solid #3b1f5e;
+	                     border-radius:20px;padding:6px 24px;font-size:13px;cursor:pointer;"
+	            >{{ loadingOlderMonth ? "Loading…" : "Load older month" }}</button>
+	          </div>
         </template>
 
         <!-- Privacy notice -->

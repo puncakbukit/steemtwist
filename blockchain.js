@@ -170,7 +170,11 @@ function fetchPostsByTag(tag, limit = 20) {
 //         or null/undefined for the first page.
 // Returns Promise<{ posts: post[], nextCursor: { author, permlink } | null }>
 function fetchRecentPosts(limit = 50, cursor = null) {
-  const query = { tag: "", limit: limit + 1 };  // fetch one extra to detect more
+  // Cursor-based pages include the anchor post again; fetch two extras so we
+  // can drop the anchor and still keep a full `limit` page while preserving a
+  // reliable hasMore signal.
+  const extra = cursor ? 2 : 1;
+  const query = { tag: "", limit: limit + extra };
   if (cursor) {
     query.start_author  = cursor.author;
     query.start_permlink = cursor.permlink;
@@ -180,14 +184,14 @@ function fetchRecentPosts(limit = 50, cursor = null) {
     [query]
   ).then(posts => {
     if (!posts || posts.length === 0) return { posts: [], nextCursor: null };
-    const hasMore = posts.length > limit;
-    const page = hasMore ? posts.slice(0, limit) : posts;
-    // When using a cursor the API repeats the start post — drop it.
-    const trimmed = cursor ? page.slice(1) : page;
+    // When using a cursor the API repeats the start post — drop it first.
+    const normalized = cursor ? posts.slice(1) : posts;
+    const hasMore = normalized.length > limit;
+    const page = hasMore ? normalized.slice(0, limit) : normalized;
     const nextCursor = hasMore
       ? { author: page[page.length - 1].author, permlink: page[page.length - 1].permlink }
       : null;
-    return { posts: trimmed, nextCursor };
+    return { posts: page, nextCursor };
   });
 }
 
@@ -195,7 +199,11 @@ function fetchRecentPosts(limit = 50, cursor = null) {
 // cursor: { author, permlink } for the next page, or null for first page.
 // Returns Promise<{ posts: post[], nextCursor: { author, permlink } | null }>
 function fetchPostsByUser(username, limit = 50, cursor = null) {
-  const query = { tag: username, limit: limit + 1 };
+  // Cursor-based pages include the anchor post again; fetch two extras so we
+  // can drop the anchor and still keep a full `limit` page while preserving a
+  // reliable hasMore signal.
+  const extra = cursor ? 2 : 1;
+  const query = { tag: username, limit: limit + extra };
   if (cursor) {
     query.start_author  = cursor.author;
     query.start_permlink = cursor.permlink;
@@ -205,14 +213,14 @@ function fetchPostsByUser(username, limit = 50, cursor = null) {
     [query]
   ).then(posts => {
     if (!posts || posts.length === 0) return { posts: [], nextCursor: null };
-    const hasMore = posts.length > limit;
-    const page = hasMore ? posts.slice(0, limit) : posts;
-    // When using a cursor the API repeats the start post — drop it.
-    const trimmed = cursor ? page.slice(1) : page;
+    // When using a cursor the API repeats the start post — drop it first.
+    const normalized = cursor ? posts.slice(1) : posts;
+    const hasMore = normalized.length > limit;
+    const page = hasMore ? normalized.slice(0, limit) : normalized;
     const nextCursor = hasMore
       ? { author: page[page.length - 1].author, permlink: page[page.length - 1].permlink }
       : null;
-    return { posts: trimmed, nextCursor };
+    return { posts: page, nextCursor };
   });
 }
 
@@ -545,6 +553,10 @@ function steemDate(ts) {
   return new Date(ts);
 }
 
+function postKey(post) {
+  return `${post.author}/${post.permlink}`;
+}
+
 // ============================================================
 // STEEMTWIST — blockchain helpers
 // ============================================================
@@ -644,8 +656,9 @@ function fetchTwistFeed(monthlyRoot, extraRoots = []) {
       .flat()
       .filter(p => {
         if (!p || !p.author) return false;
-        if (seen.has(p.permlink)) return false;
-        seen.add(p.permlink);
+        const key = postKey(p);
+        if (seen.has(key)) return false;
+        seen.add(key);
         return true;
       })
       .sort((a, b) => steemDate(b.created) - steemDate(a.created));
@@ -1497,8 +1510,10 @@ function fetchFollowersPage(username, startFrom = "", limit = 50) {
       if (err || !result || result.length === 0) {
         return resolve({ users: [], nextCursor: "", hasMore: false });
       }
-      const users = result.map(r => r.follower);
-      const hasMore = result.length === limit;
+      const rawUsers = result.map(r => r.follower);
+      // When startFrom is provided the API may include that same account again.
+      const users = startFrom ? rawUsers.filter(u => u !== startFrom) : rawUsers;
+      const hasMore = users.length > 0 && result.length === limit;
       const nextCursor = hasMore ? users[users.length - 1] : "";
       resolve({ users, nextCursor, hasMore });
     });
@@ -1513,8 +1528,10 @@ function fetchFollowingPage(username, startFrom = "", limit = 50) {
       if (err || !result || result.length === 0) {
         return resolve({ users: [], nextCursor: "", hasMore: false });
       }
-      const users = result.map(r => r.following);
-      const hasMore = result.length === limit;
+      const rawUsers = result.map(r => r.following);
+      // When startFrom is provided the API may include that same account again.
+      const users = startFrom ? rawUsers.filter(u => u !== startFrom) : rawUsers;
+      const hasMore = users.length > 0 && result.length === limit;
       const nextCursor = hasMore ? users[users.length - 1] : "";
       resolve({ users, nextCursor, hasMore });
     });
@@ -1530,9 +1547,12 @@ function fetchFollowers(username) {
     return new Promise((resolve) => {
       steem.api.getFollowers(username, startFrom, "blog", LIMIT, (err, result) => {
         if (err || !result || result.length === 0) return resolve();
-        for (const row of result) collected.push(row.follower);
-        if (result.length < LIMIT) return resolve();
-        page(result[result.length - 1].follower).then(resolve);
+        const rows = startFrom
+          ? result.filter(r => r.follower !== startFrom)
+          : result;
+        for (const row of rows) collected.push(row.follower);
+        if (result.length < LIMIT || rows.length === 0) return resolve();
+        page(rows[rows.length - 1].follower).then(resolve);
       });
     });
   }
@@ -1548,9 +1568,12 @@ function fetchFollowing(username) {
     return new Promise((resolve) => {
       steem.api.getFollowing(username, startFrom, "blog", LIMIT, (err, result) => {
         if (err || !result || result.length === 0) return resolve();
-        for (const row of result) collected.push(row.following);
-        if (result.length < LIMIT) return resolve();
-        page(result[result.length - 1].following).then(resolve);
+        const rows = startFrom
+          ? result.filter(r => r.following !== startFrom)
+          : result;
+        for (const row of rows) collected.push(row.following);
+        if (result.length < LIMIT || rows.length === 0) return resolve();
+        page(rows[rows.length - 1].following).then(resolve);
       });
     });
   }
@@ -1735,11 +1758,77 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
   );
 }
 
-// Fetch Secret Twists for a user (both sent and received).
+// Parse json_metadata safely and return {} on invalid JSON.
+function parseSecretMeta(post) {
+  try {
+    const raw = post?.json_metadata;
+    if (!raw) return {};
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return {};
+  }
+}
+
+// True only for valid secret twist posts.
+function isSecretTwistPost(post) {
+  return parseSecretMeta(post).type === "secret_twist";
+}
+
+// Fetch all nested secret replies for a parent secret twist.
 //
-// Strategy: call getContentReplies on @steemtwist/secret-YYYY-MM to get
-// all Secret Twists, then enrich each with fetchPost (same pattern as
-// fetchTwistFeed). The caller filters by author (sent) or meta.to (inbox).
+// Guards:
+// - maxDepth: hard cap on recursion depth.
+// - maxNodes: hard cap on total nodes traversed, across the whole thread walk.
+//
+// Returns Promise<post[]> (flat, deduped newest-first not guaranteed).
+function fetchSecretTwistThreadReplies(author, permlink, options = {}) {
+  const maxDepth = Number.isFinite(options.maxDepth) ? Math.max(0, options.maxDepth) : 8;
+  const maxNodes = Number.isFinite(options.maxNodes) ? Math.max(1, options.maxNodes) : 300;
+  const seen     = options.seen || new Set();
+  let visited    = Number.isFinite(options.visited) ? options.visited : 0;
+
+  async function walk(parentAuthor, parentPermlink, depth) {
+    if (depth > maxDepth || visited >= maxNodes) return [];
+    let replies = [];
+    try {
+      replies = await fetchReplies(parentAuthor, parentPermlink);
+    } catch {
+      replies = [];
+    }
+
+    const collected = [];
+    for (const reply of replies) {
+      if (visited >= maxNodes) break;
+      visited++;
+      if (!reply || !reply.author || !reply.permlink) continue;
+      if (!isSecretTwistPost(reply)) continue;
+
+      const key = postKey(reply);
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      collected.push(reply);
+
+      if (depth < maxDepth && visited < maxNodes) {
+        const nested = await walk(reply.author, reply.permlink, depth + 1);
+        if (nested.length) collected.push(...nested);
+      }
+    }
+
+    return collected;
+  }
+
+  return walk(author, permlink, 1);
+}
+
+// Fetch Secret Twists for a user (both sent and received), including
+// nested replies in each conversation thread.
+//
+// Strategy:
+//   1) call getContentReplies on @steemtwist/secret-YYYY-MM roots;
+//   2) enrich each root with fetchPost (same pattern as fetchTwistFeed);
+//   3) recursively load nested secret replies under each root;
+//   4) flatten + dedupe + sort newest-first.
 //
 // Why not scan account history?
 //   getAccountHistory only contains ops the user *performed* or ops that
@@ -1755,7 +1844,7 @@ function decryptSecretTwist(recipient, sender, encodedPayload, callback) {
 //                 The function always includes the current month.
 //
 // Returns Promise<post[]> sorted newest-first.
-function fetchSecretTwists(username, monthsBack = 0) {
+function fetchSecretTwistsWithNested(username, monthsBack = 0, options = {}) {
   // Build the list of roots to fetch: current month first, then older ones.
   const roots = [];
   for (let i = 0; i <= monthsBack; i++) {
@@ -1772,23 +1861,38 @@ function fetchSecretTwists(username, monthsBack = 0) {
         )
         .catch(() => [])
     )
-  ).then(arrays => {
-    const seen = new Set();
-    return arrays
+  ).then(async arrays => {
+    const rootPosts = arrays
       .flat()
+      .filter(p => !!p && !!p.author && !!p.permlink && isSecretTwistPost(p));
+
+    const nestedArrays = await Promise.all(
+      rootPosts.map(p =>
+        fetchSecretTwistThreadReplies(
+          p.author,
+          p.permlink,
+          {
+            maxDepth: options.maxDepth,
+            maxNodes: options.maxNodes
+          }
+        ).catch(() => [])
+      )
+    );
+
+    const seen = new Set();
+    return [...rootPosts, ...nestedArrays.flat()]
       .filter(p => {
-        if (!p || !p.author) return false;
-        if (seen.has(p.permlink)) return false;
-        seen.add(p.permlink);
-        // Keep only genuine Secret Twists
-        try {
-          const raw = p.json_metadata;
-          const meta = raw
-            ? (typeof raw === "string" ? JSON.parse(raw) : raw)
-            : {};
-          return meta.type === "secret_twist";
-        } catch { return false; }
+        if (!p || !p.author || !p.permlink) return false;
+        const key = postKey(p);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return isSecretTwistPost(p);
       })
       .sort((a, b) => steemDate(b.created) - steemDate(a.created));
   });
+}
+
+// Backward-compatible alias for existing call sites.
+function fetchSecretTwists(username, monthsBack = 0) {
+  return fetchSecretTwistsWithNested(username, monthsBack);
 }
