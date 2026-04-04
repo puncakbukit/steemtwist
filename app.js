@@ -3,7 +3,7 @@
 // Vue 3 + Vue Router 4 application entry point.
 // ============================================================
 
-const { createApp, ref, computed, onMounted, provide, inject, watch } = Vue;
+const { createApp, ref, onMounted, provide } = Vue;
 const { createRouter, createWebHashHistory, useRoute }                = VueRouter;
 
 function postKey(post) {
@@ -175,8 +175,7 @@ const ExploreView = {
         this.isPosting = false;
         if (res.success) {
           this.notify("Twist posted! 🌀", "success");
-          await new Promise(r => setTimeout(r, 2000));
-          await this.loadFeed();
+          await this.$router.push(`/@${res.author}/${res.permlink}`);
         } else {
           this.notify(res.error || res.message || "Failed to post twist.", "error");
         }
@@ -192,8 +191,7 @@ const ExploreView = {
           this.notify("Live Twist published! ⚡", "success");
           // Clear the live composer draft now that it's on-chain
           try { localStorage.removeItem("st_draft_live_composer"); } catch {}
-          await new Promise(r => setTimeout(r, 2000));
-          await this.loadFeed();
+          await this.$router.push(`/@${res.author}/${res.permlink}`);
         } else {
           this.notify(res.error || res.message || "Failed to publish Live Twist.", "error");
         }
@@ -564,8 +562,7 @@ const HomeView = {
         this.isPosting = false;
         if (res.success) {
           this.notify("Twist posted! 🌀", "success");
-          await new Promise(r => setTimeout(r, 2000));
-          await this.loadFeed();
+          await this.$router.push(`/@${res.author}/${res.permlink}`);
         } else {
           this.notify(res.error || res.message || "Failed to post twist.", "error");
         }
@@ -581,8 +578,7 @@ const HomeView = {
           this.notify("Live Twist published! ⚡", "success");
           // Clear the live composer draft now that it's on-chain
           try { localStorage.removeItem("st_draft_live_composer"); } catch {}
-          await new Promise(r => setTimeout(r, 2000));
-          await this.loadFeed();
+          await this.$router.push(`/@${res.author}/${res.permlink}`);
         } else {
           this.notify(res.error || res.message || "Failed to publish Live Twist.", "error");
         }
@@ -2334,6 +2330,7 @@ vueApp.component("UserProfileComponent",     UserProfileComponent);
 vueApp.component("LoadingSpinnerComponent",  LoadingSpinnerComponent);
 vueApp.component("ReplyCardComponent",       ReplyCardComponent);
 vueApp.component("ThreadComponent",          ThreadComponent);
+vueApp.component("LiveTwistComponent",       LiveTwistComponent);
 vueApp.component("TwistCardComponent",       TwistCardComponent);
 vueApp.component("TwistComposerComponent",   TwistComposerComponent);
 
