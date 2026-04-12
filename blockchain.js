@@ -1919,12 +1919,13 @@ function fetchSecretTwists(username, monthsBack = 0) {
 //   • Naturally drops to zero as time passes without new occurrences.
 //
 // Usage:
-//   const td = new TrendDetector();
+//   const td = new TrendDetector({ context: "profile:alice" });
 //   td.ingestPosts(arrayOfPostObjects);   // batch ingest (also decays)
 //   td.ingestSignals(arrayOfSignalObjects);
 //   td.decay();                           // call on a timer for Firehose
 //   const top10 = td.getTrends(10);       // [{ word, score, count, recent }, …]
-//   td.reset();                           // clear all state (e.g. on feed reload)
+//   td.reset();                           // clear in-memory state (IDB baseline kept)
+//   td.destroy();                         // call from beforeUnmount to clean up
 
 // Words excluded from trend detection — common Steem boilerplate,
 // markdown noise, stopwords, and single-character tokens.
@@ -1961,42 +1962,51 @@ const TREND_STOPWORDS = new Set([
   "actually","basically","simply","usually","probably","maybe","really",
 ]);
 
+const TREND_DB_NAME    = "SteemTwistTrendDB";
+const TREND_DB_STORE   = "words";
+const TREND_DB_INDEX   = "byContext";
+const TREND_DB_VERSION = 2;           // bumped: added compound keyPath + byContext index
+const TREND_DB_MAX_WORDS = 8000;      // per-context cap
+
 class TrendDetector {
-  // decay   — multiplier applied to `recent` on each decay tick (0–1).
-  //           0.85 means a word loses ~15 % of its recent weight per tick.
-  // minLen  — minimum word length to track (filters single-letter noise).
-  constructor({ decay = 0.85, minLen = 3 } = {}) {
-    this._words  = new Map(); // word -> { count, recent }
-    this._decay  = decay;
-    this._minLen = minLen;
-    // Dedup keys:
-    //   post:${author}/${permlink} for post bodies
-    //   sig:${id}                 for signals
-    this._seenPermlinks = new Set(); // don't count the same content twice
+  // context — a stable string identifying the view whose words this instance
+  //   tracks, e.g. "explore", "home", "profile:alice", "signals".
+  //   Words for different contexts are stored in separate namespaces inside
+  //   the shared IndexedDB store so they never bleed into each other, and
+  //   each context accumulates its own long-term historical baseline that
+  //   survives browser reloads.
+  constructor({ decay = 0.999, minLen = 3, context = "default" } = {}) {
+    this._words   = new Map();
+    this._decay   = decay;
+    this._minLen  = minLen;
+    this._context = context;
+
+    this._seenPermlinks = new Set();
+    this._idb = null;
+    this._ready = false;
+    this._pendingOps = [];
+    this._persistTimer = null;
+    this._initPromise = this._initPersistence();
   }
 
   // ── Text helpers ─────────────────────────────────────────────────────────
 
-  // Strip Markdown, HTML tags, URLs, and Steem back-links from body text,
-  // then tokenise into lowercase alpha-only words.
   _tokenize(text) {
     if (!text || typeof text !== "string") return [];
-    return text
-      // Remove the SteemTwist back-link footer entirely
+    
+    // SAFETY: prevent huge input (ReDoS / performance issues)
+    const safeText = text.slice(0, 50000);
+
+    return safeText
       .replace(/\n+<sub>Posted via \[SteemTwist\][^\n]*/gi, "")
-      // Remove HTML tags
       .replace(/<[^>]+>/g, " ")
-      // Remove URLs (http/https/www)
       .replace(/https?:\/\/\S+/gi, " ")
       .replace(/www\.\S+/gi, " ")
-      // Remove Markdown image/link syntax: ![alt](url) and [text](url)
       .replace(/!?\[[^\]]*\]\([^)]*\)/g, " ")
-      // Remove remaining Markdown symbols
       .replace(/[#*_`~>|\[\](){}\\^]/g, " ")
-      // Normalise to lowercase alpha only (keep hyphens between words briefly)
       .toLowerCase()
-      .replace(/[^a-z\s-]/g, " ")
-      // Split hyphens so "machine-learning" becomes two words
+      // Unicode-aware tokenizer
+      .replace(/[^\p{L}\p{N}\s-]/gu, " ")
       .replace(/-/g, " ")
       .split(/\s+/)
       .filter(w => w.length >= this._minLen && !TREND_STOPWORDS.has(w));
@@ -2004,103 +2014,314 @@ class TrendDetector {
 
   // ── Decay ─────────────────────────────────────────────────────────────────
 
-  // Apply the decay factor to every tracked word's `recent` counter.
-  // Call this:
-  //   • once per batch ingest (represents one "moment" passing)
-  //   • on a timer while the Firehose is active
-  decay() {
-    for (const data of this._words.values()) {
-      data.recent *= this._decay;
+  _decayToNow(data, now = Date.now()) {
+    if (!data || typeof data.lastUpdated !== "number") {
+      if (data) data.lastUpdated = now;
+      return data;
     }
+    const elapsedSeconds = Math.max(0, (now - data.lastUpdated) / 1000);
+    if (elapsedSeconds <= 0) return data;
+    data.recent *= Math.pow(this._decay, elapsedSeconds);
+    data.lastUpdated = now;
+    return data;
+  }
+
+  // Internal: apply decay immediately — call only from within a _runOrQueue closure.
+  _decayNow() {
+    const now = Date.now();
+    for (const data of this._words.values()) {
+      this._decayToNow(data, now);
+    }
+  }
+
+  // Public: safe to call from outside — defers until ready.
+  decay() {
+    this._runOrQueue(() => {
+      this._decayNow();
+      this._schedulePersist();
+    });
   }
 
   // ── Ingestion ─────────────────────────────────────────────────────────────
 
-  // Register a single word occurrence.
   _addWord(word) {
     let data = this._words.get(word);
     if (!data) {
-      data = { count: 0, recent: 0 };
+      data = { count: 0, recent: 0, lastUpdated: Date.now() };
       this._words.set(word, data);
+    } else {
+      this._decayToNow(data);
     }
-    data.count  += 1;
+    data.count += 1;
     data.recent += 1;
+    data.lastUpdated = Date.now();
   }
 
   _postDedupKey(author, permlink) {
     if (!permlink) return "";
-    // Steem permlinks are unique per author, not globally.
-    // Use author/permlink to avoid collisions between different users
-    // who happen to publish with the same permlink string.
     return "post:" + (author ? `${author}/${permlink}` : permlink);
   }
 
-  // Ingest one post body. Returns true if the post was new (not a duplicate).
+  // 🔥 NEW: memory safety for long sessions
+  _pruneSeenPermlinks() {
+    if (this._seenPermlinks.size > 5000) {
+      this._seenPermlinks.clear();
+    }
+  }
+
   _ingestBody(author, permlink, body) {
     const key = this._postDedupKey(author, permlink);
     if (!key || this._seenPermlinks.has(key)) return false;
+
+    this._pruneSeenPermlinks();
     this._seenPermlinks.add(key);
-    for (const word of this._tokenize(body)) this._addWord(word);
+
+    for (const word of this._tokenize(body)) {
+      this._addWord(word);
+    }
     return true;
   }
 
-  // Ingest an array of Steem post objects (shape used by TwistCardComponent).
-  // Applies one decay tick for the batch as a whole so that a large historical
-  // load doesn't artificially inflate recent scores.
   ingestPosts(posts) {
     if (!posts || posts.length === 0) return;
-    this.decay();
-    for (const post of posts) {
-      this._ingestBody(post.author, post.permlink, post.body);
-    }
+    this._runOrQueue(() => {
+      this._decayNow();
+      for (const post of posts) {
+        this._ingestBody(post.author, post.permlink, post.body);
+      }
+      this._schedulePersist();
+    });
   }
 
-  // Ingest a single real-time post (Firehose). No decay tick — the
-  // continuous timer in the view handles decay for live streams.
   ingestPost(post) {
     if (!post) return;
-    this._ingestBody(post.author, post.permlink, post.body);
+    this._runOrQueue(() => {
+      this._ingestBody(post.author, post.permlink, post.body);
+      this._schedulePersist();
+    });
   }
 
-  // Ingest an array of Signal objects (from fetchSignals / SignalsView).
-  // Extracts text from the signal body and, where available, treats the
-  // actor username and signal type as light signals too.
   ingestSignals(signals) {
     if (!signals || signals.length === 0) return;
-    this.decay();
-    for (const s of signals) {
-      // Use signal.id as the dedup key (sequence number string).
-      if (!s.id || this._seenPermlinks.has("sig:" + s.id)) continue;
-      this._seenPermlinks.add("sig:" + s.id);
-      for (const word of this._tokenize(s.body || "")) this._addWord(word);
-      // Treat the actor's username as a lightweight trending term so prolific
-      // interactors surface in the trends (useful on the Signals page).
-      if (s.actor && s.actor.length >= this._minLen) {
-        this._addWord(s.actor.toLowerCase());
+    this._runOrQueue(() => {
+      this._decayNow();
+      for (const s of signals) {
+        if (!s.id || this._seenPermlinks.has("sig:" + s.id)) continue;
+
+        this._pruneSeenPermlinks();
+        this._seenPermlinks.add("sig:" + s.id);
+
+        for (const word of this._tokenize(s.body || "")) {
+          this._addWord(word);
+        }
+
+        if (s.actor && s.actor.length >= this._minLen) {
+          this._addWord(s.actor.toLowerCase());
+        }
       }
-    }
+      this._schedulePersist();
+    });
   }
 
   // ── Output ────────────────────────────────────────────────────────────────
 
-  // Return the top N trending words, sorted by score descending.
-  // Only words with a non-trivial recent score are included (recent > 0.01)
-  // to avoid surfacing long-dead terms that still have count > 0.
   getTrends(topN = 10) {
+    const now = Date.now();
     const results = [];
+
     for (const [word, data] of this._words.entries()) {
+      this._decayToNow(data, now);
       if (data.recent < 0.01) continue;
+
       const score = data.recent / (data.count + 1);
       results.push({ word, score, count: data.count, recent: data.recent });
     }
+
     return results
       .sort((a, b) => b.score - a.score)
       .slice(0, topN);
   }
 
-  // Clear all state — call when the feed reloads from scratch.
+  // Clears only the in-memory state so the current session starts a fresh
+  // ingestion pass. The IndexedDB store is intentionally left intact so the
+  // long-term per-context baseline survives (it will be reloaded on the next
+  // TrendDetector construction for this context).
   reset() {
     this._words.clear();
     this._seenPermlinks.clear();
   }
+
+  // Call from Vue's beforeUnmount to cancel any pending timer and close the
+  // IDB connection cleanly (prevents zombie connections in multi-tab scenarios).
+  destroy() {
+    if (this._persistTimer) {
+      clearTimeout(this._persistTimer);
+      this._persistTimer = null;
+    }
+    if (this._idb) {
+      this._idb.close();
+      this._idb = null;
+    }
+  }
+
+  // ── Persistence ───────────────────────────────────────────────────────────
+
+  _runOrQueue(fn) {
+    if (this._ready) {
+      fn();
+    } else {
+      this._pendingOps.push(fn);
+    }
+  }
+
+  async _initPersistence() {
+    if (typeof indexedDB === "undefined") {
+      this._ready = true;
+      return;
+    }
+
+    try {
+      this._idb = await this._openTrendDB();
+      await this._loadPersistentWords();
+    } catch (e) {
+      console.warn("IndexedDB unavailable", e);
+      this._idb = null;
+    } finally {
+      this._ready = true;
+      const queued = this._pendingOps.splice(0);
+      for (const op of queued) op();
+    }
+  }
+
+  _openTrendDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(TREND_DB_NAME, TREND_DB_VERSION);
+
+      req.onupgradeneeded = (event) => {
+        const db        = event.target.result;
+        const oldVersion = event.oldVersion;
+
+        // v1 → v2: drop the old single-keyPath store and create a new one
+        // with a compound keyPath so words are namespaced by context.
+        if (oldVersion < 2) {
+          if (db.objectStoreNames.contains(TREND_DB_STORE)) {
+            db.deleteObjectStore(TREND_DB_STORE);
+          }
+          const store = db.createObjectStore(TREND_DB_STORE, { keyPath: ["context", "word"] });
+          store.createIndex(TREND_DB_INDEX, "context", { unique: false });
+        }
+      };
+
+      req.onsuccess = (event) => {
+        const db = event.target.result;
+        // Close gracefully if another tab upgrades the schema.
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
+      req.onerror  = () => reject(req.error);
+      req.onblocked = () => console.warn("TrendDetector: IDB upgrade blocked by another tab.");
+    });
+  }
+
+  _store(mode = "readonly") {
+    if (!this._idb) return null;
+    return this._idb.transaction(TREND_DB_STORE, mode).objectStore(TREND_DB_STORE);
+  }
+
+  _requestToPromise(req) {
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async _loadPersistentWords() {
+    const store = this._store("readonly");
+    if (!store) return;
+
+    // Load only rows that belong to this context — other views' words are
+    // stored under different context keys and are never touched here.
+    const index = store.index(TREND_DB_INDEX);
+    const rows  = await this._requestToPromise(
+      index.getAll(IDBKeyRange.only(this._context))
+    );
+    const now = Date.now();
+
+    for (const row of rows || []) {
+      if (!row || typeof row.word !== "string") continue;
+
+      const data = {
+        count:       Number(row.count)       || 0,
+        recent:      Number(row.recent)      || 0,
+        lastUpdated: typeof row.lastUpdated === "number" ? row.lastUpdated : now
+      };
+
+      this._decayToNow(data, now);
+
+      if (data.count <= 0 || data.recent < 0.01) continue;
+
+      this._words.set(row.word, data);
+    }
+  }
+
+  _schedulePersist() {
+    if (!this._idb || this._persistTimer) return;
+
+    this._persistTimer = setTimeout(() => {
+      this._persistTimer = null;
+      this._persistAllWords();
+    }, 300);
+  }
+
+  async _persistAllWords() {
+    const store = this._store("readwrite");
+    if (!store) return;
+
+    const now    = Date.now();
+    const ranked = [];
+
+    for (const [word, data] of this._words.entries()) {
+      this._decayToNow(data, now);
+
+      if (data.recent < 0.005 && data.count < 2) continue;
+
+      ranked.push({ word, data });
+    }
+
+    ranked.sort((a, b) =>
+      (b.data.recent - a.data.recent) ||
+      (b.data.count  - a.data.count)
+    );
+
+    // Apply per-context cap so a high-volume view (e.g. Firehose) cannot
+    // crowd out quieter views (e.g. a profile page) in the shared store.
+    const keep    = ranked.slice(0, TREND_DB_MAX_WORDS);
+    const keepSet = new Set(keep.map(item => item.word));
+
+    const tx = this._idb.transaction(TREND_DB_STORE, "readwrite");
+    const s  = tx.objectStore(TREND_DB_STORE);
+
+    tx.onerror  = (e) => console.warn("TrendDetector: persist transaction error", e);
+    tx.onabort  = (e) => console.warn("TrendDetector: persist transaction aborted", e);
+
+    for (const item of keep) {
+      // Compound keyPath ["context", "word"] — both fields must be present.
+      s.put({
+        context:     this._context,
+        word:        item.word,
+        count:       item.data.count,
+        recent:      item.data.recent,
+        lastUpdated: item.data.lastUpdated
+      });
+    }
+
+    for (const word of this._words.keys()) {
+      if (!keepSet.has(word)) {
+        // Delete by compound key [context, word].
+        s.delete([this._context, word]);
+        this._words.delete(word);
+      }
+    }
+  }
 }
+
