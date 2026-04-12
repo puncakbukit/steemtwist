@@ -10,6 +10,134 @@ function postKey(post) {
   return `${post.author}/${post.permlink}`;
 }
 
+const SIGNALS_READ_MAX = 2000;
+const SIGNALS_READ_TTL = 180 * 24 * 60 * 60 * 1000; // 180 days
+const STEEM_USER_KEY = "steem_user";
+const APP_CACHE_DEBUG = !!(typeof window !== "undefined" && window.STEEMTWIST_CACHE_DEBUG);
+
+function normalizeStoredBool(raw, fallback = false) {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return fallback;
+}
+
+function normalizeAppStorageUsername(username) {
+  return (username || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\-.]/g, "");
+}
+
+function appCacheDebugLog(...args) {
+  if (APP_CACHE_DEBUG) console.warn("[SteemTwist cache]", ...args);
+}
+
+function getStoredUsername() {
+  try {
+    const stored = localStorage.getItem(STEEM_USER_KEY) || "";
+    const normalized = normalizeAppStorageUsername(stored);
+    if (stored && normalized && stored !== normalized) {
+      localStorage.setItem(STEEM_USER_KEY, normalized);
+    }
+    return normalized;
+  } catch (e) {
+    appCacheDebugLog("Failed to read steem_user", e);
+    return "";
+  }
+}
+
+function signalsReadStorageKey(username) {
+  return "steemtwist_signals_read_" + normalizeAppStorageUsername(username);
+}
+
+function legacySignalsReadStorageKey(username) {
+  return "steemtwist_signals_read_" + (username || "");
+}
+
+function loadReadSignalEntries(username) {
+  if (!username) return [];
+  try {
+    const normalizedKey = signalsReadStorageKey(username);
+    const legacyKey = legacySignalsReadStorageKey(username);
+    const raw = localStorage.getItem(normalizedKey) || localStorage.getItem(legacyKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    let entries = [];
+
+    // New format: { v: 1, items: [{ id, ts }] }
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.items)) {
+      entries = parsed.items
+        .filter(e =>
+          e &&
+          (typeof e.id === "string" || typeof e.id === "number") &&
+          typeof e.ts === "number"
+        )
+        .map(e => ({ id: String(e.id), ts: e.ts }));
+    }
+    // Legacy format: ["123", "124", ...]
+    else if (Array.isArray(parsed)) {
+      entries = parsed
+        .map(id => String(id))
+        .filter(Boolean)
+        .map(id => ({ id, ts: now }));
+    }
+
+    // TTL + de-dup + cap (keep latest)
+    const dedup = new Map();
+    for (const e of entries) {
+      if (now - e.ts > SIGNALS_READ_TTL) continue;
+      dedup.set(e.id, e.ts);
+    }
+    const normalized = [...dedup.entries()]
+      .map(([id, ts]) => ({ id, ts }))
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, SIGNALS_READ_MAX);
+
+    // Persist normalized shape so legacy arrays and expired entries are pruned.
+    persistReadSignalEntries(username, normalized);
+    return normalized;
+  } catch (e) {
+    appCacheDebugLog("Failed to load signal read entries", e);
+    return [];
+  }
+}
+
+function persistReadSignalEntries(username, entries) {
+  if (!username) return;
+  try {
+    const normalized = (entries || [])
+      .filter(e => e && typeof e.id === "string" && typeof e.ts === "number")
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, SIGNALS_READ_MAX);
+    localStorage.setItem(
+      signalsReadStorageKey(username),
+      JSON.stringify({ v: 1, items: normalized })
+    );
+    const legacyKey = legacySignalsReadStorageKey(username);
+    if (legacyKey !== signalsReadStorageKey(username)) {
+      localStorage.removeItem(legacyKey);
+    }
+  } catch (e) {
+    appCacheDebugLog("Failed to persist signal read entries", e);
+  }
+}
+
+function readSignalIdSet(username) {
+  return new Set(loadReadSignalEntries(username).map(e => e.id));
+}
+
+function markSignalIdsRead(username, ids) {
+  if (!username) return;
+  const now = Date.now();
+  const existing = loadReadSignalEntries(username);
+  const byId = new Map(existing.map(e => [e.id, e.ts]));
+  for (const id of ids || []) byId.set(String(id), now);
+  const merged = [...byId.entries()].map(([id, ts]) => ({ id, ts }));
+  persistReadSignalEntries(username, merged);
+}
+
 // ============================================================
 // ROUTE VIEWS
 // ============================================================
@@ -190,7 +318,7 @@ const ExploreView = {
         if (res.success) {
           this.notify("Live Twist published! ⚡", "success");
           // Clear the live composer draft now that it's on-chain
-          try { localStorage.removeItem("st_draft_live_composer"); } catch {}
+          if (typeof draftStorage !== "undefined") draftStorage.clear("live_composer", this.username);
           await this.$router.push(`/@${res.author}/${res.permlink}`);
         } else {
           this.notify(res.error || res.message || "Failed to publish Live Twist.", "error");
@@ -577,7 +705,7 @@ const HomeView = {
         if (res.success) {
           this.notify("Live Twist published! ⚡", "success");
           // Clear the live composer draft now that it's on-chain
-          try { localStorage.removeItem("st_draft_live_composer"); } catch {}
+          if (typeof draftStorage !== "undefined") draftStorage.clear("live_composer", this.username);
           await this.$router.push(`/@${res.author}/${res.permlink}`);
         } else {
           this.notify(res.error || res.message || "Failed to publish Live Twist.", "error");
@@ -1188,6 +1316,10 @@ const SignalsView = {
   data() {
     return {
       signals:      [],
+      // Reactive snapshot of which signal IDs have been read.
+      // Populated once on created() and updated only when markAllRead() is
+      // called — never re-parsed from localStorage on every render.
+      readIds:      new Set(),
       loading:      true,
       filter:       "all",
       page:         1,
@@ -1198,13 +1330,6 @@ const SignalsView = {
   },
 
   computed: {
-    readIds() {
-      try {
-        return new Set(JSON.parse(
-          localStorage.getItem("steemtwist_signals_read_" + this.username) || "[]"
-        ));
-      } catch { return new Set(); }
-    },
     // In Twist Stream mode, only show signals for tw- permlinks
     // (or signals with no permlink, like follows).
     // In Understream mode, show all signals.
@@ -1236,6 +1361,8 @@ const SignalsView = {
   },
 
   async created() {
+    // Initialise readIds once from localStorage — no further polling needed.
+    this.readIds = readSignalIdSet(this.username);
     if (!this.username) { this.loading = false; return; }
     try {
       const result = await fetchSignals(this.username);
@@ -1272,12 +1399,10 @@ const SignalsView = {
 
     markAllRead() {
       const ids = this.signals.map(s => s.id);
-      try {
-        localStorage.setItem(
-          "steemtwist_signals_read_" + this.username,
-          JSON.stringify(ids)
-        );
-      } catch {}
+      markSignalIdsRead(this.username, ids);
+      // Rebuild the reactive Set so computed properties depending on
+      // readIds update without touching localStorage again.
+      this.readIds = new Set([...this.readIds, ...ids]);
       if (typeof this.refreshUnreadSignals === "function") {
         this.refreshUnreadSignals(this.username);
       }
@@ -1996,7 +2121,7 @@ const App = {
   },
 
   setup() {
-    const username      = ref(localStorage.getItem("steem_user") || "");
+    const username      = ref(getStoredUsername());
     const hasKeychain   = ref(false);
     const keychainReady = ref(false);
     const loginError    = ref("");
@@ -2023,6 +2148,10 @@ const App = {
 
     onMounted(() => {
       setRPC(0);
+      if (typeof draftStorage !== "undefined" && typeof draftStorage.gcAll === "function") {
+        draftStorage.gcAll();
+        setInterval(() => draftStorage.gcAll(), 30 * 60 * 1000);
+      }
       // Always load a profile — logged-in user's own, or @steemtwist as fallback
       loadProfile(username.value);
       if (username.value) refreshUnreadSignals(username.value);
@@ -2051,26 +2180,36 @@ const App = {
         return;
       }
       if (!user) return;
+      const normalizedUser = normalizeAppStorageUsername(user);
+      if (!normalizedUser) {
+        loginError.value = "Invalid Steem username format.";
+        return;
+      }
       isLoggingIn.value = true;
-      keychainLogin(user, (res) => {
+      keychainLogin(normalizedUser, (res) => {
         isLoggingIn.value = false;
         if (!res.success) {
           loginError.value = "Keychain sign-in was rejected.";
           return;
         }
-        const verified = res.data?.username || res.username;
-        if (verified !== user) {
+        const verified = normalizeAppStorageUsername(res.data?.username || res.username);
+        if (verified !== normalizedUser) {
           loginError.value = "Signed account does not match entered username.";
           return;
         }
-        username.value      = user;
+        username.value      = normalizedUser;
         hasKeychain.value   = true;
-        localStorage.setItem("steem_user", user);
+        localStorage.setItem(STEEM_USER_KEY, normalizedUser);
+        // Reload the Understream preference for this specific account.
+        understreamOn.value = normalizeStoredBool(
+          localStorage.getItem(understreamStorageKey(normalizedUser)),
+          false
+        );
         loginError.value    = "";
         showLoginForm.value = false;
-        notify("Logged in as @" + user, "success");
-        loadProfile(user);
-        refreshUnreadSignals(user);
+        notify("Logged in as @" + normalizedUser, "success");
+        loadProfile(normalizedUser);
+        refreshUnreadSignals(normalizedUser);
       });
     }
 
@@ -2078,18 +2217,34 @@ const App = {
       username.value      = "";
       loginError.value    = "";
       showLoginForm.value = false;
-      localStorage.removeItem("steem_user");
+      localStorage.removeItem(STEEM_USER_KEY);
       notify("Logged out.", "info");
       unreadSignals.value = 0;
+      // Revert to the unscoped (logged-out) Understream preference.
+      understreamOn.value = normalizeStoredBool(
+        localStorage.getItem(understreamStorageKey("")),
+        false
+      );
       loadProfile("");   // reload @steemtwist as fallback
     }
 
-    // Global Understream toggle — persisted in localStorage.
-    // OFF = Twist Stream only (SteemTwist data); ON = full Steem Understream.
-    const understreamOn = ref(localStorage.getItem("steemtwist_understream") === "true");
+    // Global Understream toggle — persisted in localStorage, scoped per user so
+    // different accounts on the same browser keep independent preferences.
+    // Logged-out state (empty username) uses the legacy unscoped key so the
+    // preference is still remembered before the user signs in.
+    function understreamStorageKey(user) {
+      const u = normalizeAppStorageUsername(user || "");
+      return u ? `steemtwist_understream_${u}` : "steemtwist_understream";
+    }
+    const understreamOn = ref(
+      normalizeStoredBool(
+        localStorage.getItem(understreamStorageKey(username.value)),
+        false
+      )
+    );
     function toggleUnderstream() {
       understreamOn.value = !understreamOn.value;
-      localStorage.setItem("steemtwist_understream", understreamOn.value);
+      localStorage.setItem(understreamStorageKey(username.value), String(understreamOn.value));
     }
 
     // Unread signal count — recomputed whenever the user navigates to /signals
@@ -2100,9 +2255,7 @@ const App = {
       if (!user) { unreadSignals.value = 0; return; }
       try {
         const signals = await fetchSignals(user);
-        let readIds;
-        try { readIds = new Set(JSON.parse(localStorage.getItem("steemtwist_signals_read_" + user) || "[]")); }
-        catch { readIds = new Set(); }
+        const readIds = readSignalIdSet(user);
         unreadSignals.value = signals.filter(s => !readIds.has(s.id)).length;
       } catch { unreadSignals.value = 0; }
     }
