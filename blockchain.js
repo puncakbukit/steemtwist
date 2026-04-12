@@ -49,11 +49,63 @@ function callWithFallbackAsync(apiCall, args) {
 
 // Fetch a single Steem account and extract its profile metadata.
 // Returns null if the account does not exist or the request fails.
+const ACCOUNT_CACHE_TTL = 90 * 1000; // 90 seconds
+const ACCOUNT_CACHE_MAX = 500;
+const accountCache    = new Map(); // username -> { ts, value }
+const accountInFlight = new Map(); // username -> Promise — deduplicates concurrent fetches
+const BLOCKCHAIN_CACHE_DEBUG = !!(typeof window !== "undefined" && window.STEEMTWIST_CACHE_DEBUG);
+
+function blockchainCacheDebugLog(...args) {
+  if (BLOCKCHAIN_CACHE_DEBUG) console.warn("[SteemTwist cache]", ...args);
+}
+
+function normalizeBlockchainStorageUsername(username) {
+  return (username || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\-.]/g, "");
+}
+
+function setAccountCached(key, value) {
+  if (accountCache.has(key)) accountCache.delete(key);
+  accountCache.set(key, { ts: Date.now(), value });
+  if (accountCache.size > ACCOUNT_CACHE_MAX) {
+    const oldestKey = accountCache.keys().next().value;
+    if (oldestKey !== undefined) accountCache.delete(oldestKey);
+  }
+  return value;
+}
+
 function fetchAccount(username) {
-  return new Promise(resolve => {
-    if (!username) return resolve(null);
+  if (!username) return Promise.resolve(null);
+  const key = normalizeBlockchainStorageUsername(username) || String(username).toLowerCase();
+
+  // 1. Hot-path: valid cache hit — return a copy immediately.
+  const cached = accountCache.get(key);
+  if (cached && (Date.now() - cached.ts) < ACCOUNT_CACHE_TTL) {
+    const v = cached.value;
+    // Return a copy so callers don't accidentally mutate cache.
+    return Promise.resolve(v && typeof v === "object" ? { ...v } : v);
+  }
+
+  // 2. In-flight dedup: if another caller is already fetching this account,
+  //    share the same Promise instead of firing a duplicate RPC call.
+  if (accountInFlight.has(key)) {
+    blockchainCacheDebugLog("in-flight hit", key);
+    // Each caller gets its own copy so they can't mutate each other's object.
+    return accountInFlight.get(key).then(v => v && typeof v === "object" ? { ...v } : v);
+  }
+
+  // 3. Cold fetch — create the promise, register it in the in-flight map, and
+  //    remove it when the fetch settles (whether it succeeds or fails).
+  const promise = new Promise(resolve => {
+    function setCached(value) {
+      return setAccountCached(key, value);
+    }
+
     steem.api.getAccounts([username], (err, result) => {
-      if (err || !result || !result.length) return resolve(null);
+      if (err || !result || !result.length) return resolve(setCached(null));
       const account = result[0];
       let profile = {};
       try {
@@ -87,7 +139,7 @@ function fetchAccount(username) {
 
       // Fetch follower/following counts in parallel with account data
       steem.api.getFollowCount(account.name, (fcErr, fc) => {
-        resolve({
+        const normalized = {
           username:       account.name,
           profileImage:   sanitizeImageUrl(profile.profile_image),
           displayName:    profile.name || account.name,
@@ -100,10 +152,20 @@ function fetchAccount(username) {
           followerCount:  (fc && !fcErr) ? (fc.follower_count  || 0) : null,
           followingCount: (fc && !fcErr) ? (fc.following_count || 0) : null,
           created:        account.created || ""
-        });
+        };
+        setCached(normalized);
+        resolve(normalized); // in-flight consumers each get their own copy below
       });
     });
+  }).finally(() => {
+    // Always remove from in-flight map once settled so stale entries never linger.
+    accountInFlight.delete(key);
+    blockchainCacheDebugLog("in-flight settled", key);
   });
+
+  accountInFlight.set(key, promise);
+  // The originating caller also gets its own copy of the resolved value.
+  return promise.then(v => v && typeof v === "object" ? { ...v } : v);
 }
 
 // ---- Post / comment helpers ----
@@ -1126,15 +1188,33 @@ function unpinTwist(username, callback) {
 const PIN_CACHE_KEY = "steemtwist_pending_pin";
 const PIN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+function pinCacheKey(username) {
+  return PIN_CACHE_KEY + "_" + normalizeBlockchainStorageUsername(username);
+}
+
+function legacyPinCacheKey(username) {
+  return PIN_CACHE_KEY + "_" + (username || "");
+}
+
 function setPinCache(username, author, permlink) {
   try {
-    localStorage.setItem(PIN_CACHE_KEY + "_" + username,
+    localStorage.setItem(pinCacheKey(username),
       JSON.stringify({ author, permlink, ts: Date.now() }));
-  } catch {}
+    const legacyKey = legacyPinCacheKey(username);
+    if (legacyKey !== pinCacheKey(username)) localStorage.removeItem(legacyKey);
+  } catch (e) {
+    blockchainCacheDebugLog("Failed to set pin cache", e);
+  }
 }
 
 function clearPinCache(username) {
-  try { localStorage.removeItem(PIN_CACHE_KEY + "_" + username); } catch {}
+  try {
+    localStorage.removeItem(pinCacheKey(username));
+    const legacyKey = legacyPinCacheKey(username);
+    if (legacyKey !== pinCacheKey(username)) localStorage.removeItem(legacyKey);
+  } catch (e) {
+    blockchainCacheDebugLog("Failed to clear pin cache", e);
+  }
 }
 
 // Steem username: 3-16 chars, lowercase a-z / 0-9 / hyphens / dots.
@@ -1144,11 +1224,14 @@ const _VALID_STEEM_PERMLINK = /^[a-z0-9-]{1,255}$/;
 
 function getPinCache(username) {
   try {
-    const raw = localStorage.getItem(PIN_CACHE_KEY + "_" + username);
+    const normalizedKey = pinCacheKey(username);
+    const legacyKey = legacyPinCacheKey(username);
+    const raw = localStorage.getItem(normalizedKey) || localStorage.getItem(legacyKey);
     if (!raw) return null;
     const cached = JSON.parse(raw);
     if (Date.now() - cached.ts > PIN_CACHE_TTL) {
-      localStorage.removeItem(PIN_CACHE_KEY + "_" + username);
+      localStorage.removeItem(normalizedKey);
+      if (legacyKey !== normalizedKey) localStorage.removeItem(legacyKey);
       return null;
     }
     // cached.author === null signals a pending unpin — allow it through.
@@ -1157,8 +1240,12 @@ function getPinCache(username) {
       if (typeof cached.author   !== "string" || !_VALID_STEEM_NAME.test(cached.author))      return null;
       if (typeof cached.permlink !== "string" || !_VALID_STEEM_PERMLINK.test(cached.permlink)) return null;
     }
+    if (legacyKey !== normalizedKey) localStorage.removeItem(legacyKey);
     return cached;
-  } catch { return null; }
+  } catch (e) {
+    blockchainCacheDebugLog("Failed to read pin cache", e);
+    return null;
+  }
 }
 
 // Scan a user's account history for the latest "steemtwist" custom_json
@@ -1220,11 +1307,13 @@ function fetchPinnedTwist(username) {
       if (cached.author === null) {
         // cached unpin — chain may still show old pin
         found = null;
+        // Chain has caught up with the unpin when it no longer returns a pin.
+        if (chainResult === null) clearPinCache(username);
       } else if (!chainResult || chainResult.permlink !== cached.permlink) {
         // cached pin not yet on chain — use cache
         found = { author: cached.author, permlink: cached.permlink };
       } else {
-        // chain has caught up — safe to clear cache
+        // chain has caught up with the pin — safe to clear cache
         clearPinCache(username);
       }
     }
