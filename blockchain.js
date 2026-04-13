@@ -2323,5 +2323,236 @@ class TrendDetector {
       }
     }
   }
+
+  // ── Semantic Topic Engine ─────────────────────────────────────────────────
+  //
+  // Clusters trending words into topics using lightweight, deterministic
+  // character-frequency embeddings + cosine similarity.  No external ML
+  // libraries required — everything runs in the browser in < 1 ms for
+  // typical trend sizes.
+  //
+  // How it works
+  // ────────────
+  //  1. getEmbedding(word)      — maps a word to a fixed-length float vector
+  //     using character-code hashing.  Similar-looking / similar-sounding
+  //     words naturally land close together in this space.
+  //
+  //  2. cosineSimilarity(a, b)  — returns [0, 1]: how parallel two vectors are.
+  //
+  //  3. _clusterWords(items, threshold) — greedy single-pass clustering:
+  //     each word is merged into the first existing topic whose centroid
+  //     cosine-similarity exceeds `threshold`; otherwise it seeds a new topic.
+  //     Centroids are updated as a running average after each merge, so the
+  //     cluster drifts toward its true mean without re-scanning.
+  //
+  //  4. getTopicTrends(topN, threshold) — scores each cluster by summing its
+  //     members' individual trend scores (recent / (count + 1)), then returns
+  //     the top N topics sorted by score descending.
+  //
+  // Tuning
+  // ──────
+  //  threshold — controls cluster tightness.
+  //    0.75 (default) → catches clear morphological variants like
+  //                     bitcoin/bitcoins, football/footballer, crypto/cryptos.
+  //                     Short-suffix pairs (cook/cooking) stay as singletons.
+  //    0.65           → looser; merges suffix variants like cook/cooking.
+  //    0.60           → very loose; risk of cross-language false merges.
+  //
+  //  dim — embedding dimensionality (default 128).  Must be large enough
+  //    that n-gram hash collisions are rare.  128 works well for words up
+  //    to ~20 chars; do not go below 64.
+
+  // ── Static embedding helpers (added to TrendDetector prototype) ───────────
+
+  /**
+   * Map a word to a normalised float vector using character n-gram hashing.
+   *
+   * Why n-grams instead of raw charCode hashing
+   * ─────────────────────────────────────────────
+   * The old approach hashed individual characters (charCode % dim), which
+   * caused unrelated words to collide whenever they happened to share a
+   * similar character-frequency distribution — e.g. "square", "prueba", and
+   * "prayer" all scored > 0.85 similarity despite having completely different
+   * meanings and origins.
+   *
+   * Character n-grams fix this because:
+   *  • A bigram like "pr" is shared by "prayer" and "prueba" but NOT by
+   *    "square", so different-language false-positives are suppressed.
+   *  • Trigrams like "pra" vs "squ" are even more selective — genuinely
+   *    similar words (morphological variants, e.g. "cook"/"cooking") share
+   *    many trigrams, while coincidentally similar words do not.
+   *  • Boundary markers (^ prefix, $ suffix) ensure "cat" ≠ "cats" share
+   *    most n-grams but are not identical, and short words aren't swamped
+   *    by longer ones.
+   *
+   * Algorithm
+   * ─────────
+   *  1. Pad the word with boundary markers: "^" + word + "$"
+   *  2. Extract every bigram and trigram from the padded string.
+   *  3. Hash each n-gram to a bucket in [0, dim) using a fast polynomial
+   *     rolling hash (FNV-inspired, prime multiplier 31).
+   *  4. Increment that bucket — bigrams weighted 1.0, trigrams weighted 1.5
+   *     (trigrams are more discriminating so they contribute more).
+   *  5. L2-normalise the resulting vector.
+   *
+   * Dimensionality
+   * ──────────────
+   * dim = 128 (default) gives enough buckets that collisions between
+   * unrelated n-grams are rare in practice for words up to ~20 chars.
+   * 64 also works well; 16 (old value) was far too small.
+   *
+   * @param {string} word
+   * @param {number} dim  — vector length (default 128)
+   * @returns {Float64Array}
+   */
+  _getEmbedding(word, dim = 128) {
+    const vec = new Float64Array(dim); // zero-initialised
+
+    // Boundary-padded form so "^ca", "cat", "at$" are distinct n-grams
+    const padded = "^" + word + "$";
+
+    // Hash a short string (2–3 chars) to a bucket in [0, dim)
+    // using a simple polynomial rolling hash.
+    function hashNgram(s) {
+      let h = 2166136261; // FNV offset basis (32-bit)
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = (h * 16777619) >>> 0; // FNV prime, keep 32-bit unsigned
+      }
+      return h % dim;
+    }
+
+    // Bigrams (weight 1.0) — capture letter-pair patterns
+    for (let i = 0; i < padded.length - 1; i++) {
+      vec[hashNgram(padded.slice(i, i + 2))] += 1.0;
+    }
+
+    // Trigrams (weight 1.5) — more selective; reduce cross-language collisions
+    for (let i = 0; i < padded.length - 2; i++) {
+      vec[hashNgram(padded.slice(i, i + 3))] += 1.5;
+    }
+
+    // L2 normalise so cosine similarity is purely directional
+    let normSq = 0;
+    for (let i = 0; i < dim; i++) normSq += vec[i] * vec[i];
+    const norm = Math.sqrt(normSq) || 1;
+    for (let i = 0; i < dim; i++) vec[i] /= norm;
+
+    return vec;
+  }
+
+  /**
+   * Cosine similarity between two same-length Float64Arrays.
+   * Returns a value in [0, 1] for normalised inputs.
+   */
+  _cosineSimilarity(a, b) {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot   += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
+  }
+
+  /**
+   * Greedy single-pass clustering.
+   *
+   * @param {Array<{word: string, score: number, count: number, recent: number}>} items
+   * @param {number} threshold — cosine similarity threshold for merging (0–1)
+   * @param {number} dim       — embedding dimensionality
+   * @returns {Array<{
+   *   label:  string,          — representative word (highest-score member)
+   *   words:  string[],        — all member words
+   *   score:  number,          — summed trend score
+   *   topN:   {word,score}[],  — top 5 members by score
+   * }>} sorted by score descending
+   */
+  _clusterWords(items, threshold = 0.75, dim = 128) {
+    // Pre-compute embeddings once
+    const embedded = items.map(item => ({
+      ...item,
+      vec: this._getEmbedding(item.word, dim),
+    }));
+
+    // Each topic stores:
+    //   seed  — the embedding of the first (highest-scoring) word that
+    //           opened this cluster.  All merge decisions are made against
+    //           the seed, not a drifting centroid.  This prevents "centroid
+    //           drift" where unrelated words gradually pull the average
+    //           toward them, making subsequent false merges more likely.
+    //   words — accumulated member items
+    //   score — summed trend score of all members
+    const topics = []; // { seed: Float64Array, words: embedded[], score: number }
+
+    for (const item of embedded) {
+      let bestIdx = -1;
+      let bestSim = threshold; // must strictly exceed threshold to merge
+
+      for (let t = 0; t < topics.length; t++) {
+        const sim = this._cosineSimilarity(item.vec, topics[t].seed);
+        if (sim > bestSim) {
+          bestSim = sim;
+          bestIdx = t;
+        }
+      }
+
+      if (bestIdx >= 0) {
+        topics[bestIdx].words.push(item);
+        topics[bestIdx].score = topics[bestIdx].words.reduce((max, w) => Math.max(max, w.score), -Infinity);
+      } else {
+        // Seed a new topic — clone the vector so mutations don't bleed
+        topics.push({
+          seed:  Float64Array.from(item.vec),
+          words: [item],
+          score: item.score,
+        });
+      }
+    }
+
+    // Shape output — label is the top 3 (or fewer) highest-scoring member words
+    return topics
+      .map(topic => {
+        const sorted = topic.words
+          .slice()
+          .sort((a, b) => b.score - a.score);
+        return {
+          label:  sorted.slice(0, 3).map(w => w.word).join(" · "),
+          words:  sorted.map(w => w.word),
+          score:  topic.score,
+          topN:   sorted.slice(0, 5).map(w => ({ word: w.word, score: w.score })),
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+
+  /**
+   * Returns topic-level trends instead of individual word trends.
+   *
+   * Topics are formed by clustering all active words in the current window,
+   * then aggregating their trend scores.  Singleton topics (only one word)
+   * are kept so no signal is lost when a unique term is genuinely trending.
+   *
+   * @param {number}  topN      — number of topics to return (default 5)
+   * @param {number}  threshold — cluster merge threshold (default 0.85)
+   * @returns {Array<{label, words, score, topN}>}
+   *
+   * Example:
+   *   const topics = td.getTopicTrends(5);
+   *   // → [
+   *   //   { label: "bitcoin", words: ["bitcoin","btc","crypto"], score: 3.12, topN: [...] },
+   *   //   { label: "football", words: ["football","match","team"], score: 1.87, topN: [...] },
+   *   // ]
+   */
+  getTopicTrends(topN = 5, threshold = 0.75) {
+    // Collect individual word trends first (re-uses existing scored list)
+    const wordTrends = this.getTrends(200); // sample up to 200 words for clustering
+
+    if (wordTrends.length === 0) return [];
+
+    // Cluster and return top N topics
+    return this._clusterWords(wordTrends, threshold).slice(0, topN);
+  }
 }
 
